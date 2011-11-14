@@ -1,0 +1,35 @@
+This examples illustrates how to solve the heat equation
+
+u_t = Lu  where _t denotes the time derivative and L is the Laplacian
+
+using a second order backward difference (BDF2) scheme.
+
+The time derivative is approximated by
+u_t ~ (3/2 u^{n+1} - 2 u^n + 1/2 u^{n-1})/dt where the superscripts denote the
+new, previous and twice ago time steps, and dt is the time step.
+Putting the solution at the new time step on the left side and known functions
+on the right side, and negating, the heat equation is
+
+-Lu^{n+1} + 3/(2*dt) u^{n+1} = (2 u^n - 1/2 u^{n-1})/dt
+
+PHAML only provides one "old" solution, which would seem to be a problem since
+we need two old solutions, u^n and u^{n-1}.  But we can keep as many old
+solutions as we want by using a system of equations (maybe not the most
+efficient way to do things if you were starting from scratch, but it can be
+done within PHAML's current framework).  We'll use a two component solution
+in which the first component, u, is the current time step solution u^{n+1},
+and the second component, v, is the previous time step solution u^n.  The "old"
+solution contains the multicomponent solution of the previous time step, i.e.
+u_old = u^n and v_old = u^{n-1}.  The second equation in the system just
+assigns u_old to the new v as a way of storing u^n.  Thus the system is
+
+-Lu + 3/(2*dt)*u = (2*u_old - 1/2 * v_old)/dt
+               v = u_old
+
+or in matrix form, for defining the arrays in pdecoefs
+
+-(| 1 0 |)|u|  )   - (| 1 0 |)|u|  )   + | 3/(2*dt) 0 ||u| =
+ (| 0 0 |)|v|_x)_x   (| 0 0 |)|v|_y)_y   |    0     1 ||v|
+
+   | (2*u_old - 1/2 *v_old)/dt |
+   |    u_old                  |

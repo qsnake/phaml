@@ -11,7 +11,7 @@
 ! the United States.                                                  !
 !                                                                     !
 !     William F. Mitchell                                             !
-!     Mathematical and Computational Sciences Division                !
+!     Applied and Computational Mathematics Division                  !
 !     National Institute of Standards and Technology                  !
 !     william.mitchell@nist.gov                                       !
 !     http://math.nist.gov/phaml                                      !
@@ -1133,6 +1133,13 @@ real(quad_real) :: x1y2,x2y3,x3y1,x1y3,x2y1,x3y2
 !----------------------------------------------------
 ! Begin executable code
 
+! Do a faster, less careful barycentric if not using quad precision
+
+if (quad_real == my_real) then
+   call fast_barycentric(x,y,xvert,yvert,zeta,dzdx,dzdy)
+   return
+endif
+
 ! put the vertices in local variables to shorten expressions
 
 x1 = real(xvert(1),quad_real)
@@ -1268,6 +1275,80 @@ dzdy(2) = (x1-x3)/det
 dzdy(3) = (x2-x1)/det
 
 end subroutine barycentric
+
+!          ----------------
+subroutine fast_barycentric(x,y,xvert,yvert,zeta,dzdx,dzdy)
+!          ----------------
+
+!----------------------------------------------------
+! This subroutine returns the barycentric coordinates of each (x,y) and
+! their derivatives, without using quad precision or being careful about
+! the order in which numbers are added.
+! RESTRICTION triangles
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+
+real(my_real), intent(in) :: x(:),y(:),xvert(:),yvert(:)
+real(my_real), intent(out) :: zeta(:,:),dzdx(:),dzdy(:)
+
+!----------------------------------------------------
+! Local variables:
+
+real(quad_real) :: x1,x2,x3,y1,y2,y3,det,ssump,ssumm
+real(quad_real), dimension(size(x)) :: xy1,xy2,xy3,yx1,yx2,yx3,sump,summ
+real(quad_real) :: x1y2,x2y3,x3y1,x1y3,x2y1,x3y2
+
+!----------------------------------------------------
+! Begin executable code
+
+! put the vertices in local variables to shorten expressions
+
+x1 = xvert(1)
+x2 = xvert(2)
+x3 = xvert(3)
+y1 = yvert(1)
+y2 = yvert(2)
+y3 = yvert(3)
+
+! compute the barycentric coordinates of the point
+
+! products needed for the sums
+
+xy1 = x*y1
+xy2 = x*y2
+xy3 = x*y3
+yx1 = y*x1
+yx2 = y*x2
+yx3 = y*x3
+x1y2 = x1*y2
+x2y3 = x2*y3
+x3y1 = x3*y1
+x1y3 = x1*y3
+x2y1 = x2*y1
+x3y2 = x3*y2
+
+! compute the determinant
+
+det = x1*(y2-y3)+x2*(y3-y1)+x3*(y1-y2)
+
+! compute the coordinates
+
+zeta(:,1) = (x*(y2-y3) + y*(x3-x2) + (x2*y3-x3*y2))/det
+zeta(:,2) = (x*(y3-y1) + y*(x1-x3) + (x3*y1-x1*y3))/det
+zeta(:,3) = (x*(y1-y2) + y*(x2-x1) + (x1*y2-x2*y1))/det
+
+! derivatives
+
+dzdx(1) = (y2-y3)/det
+dzdx(2) = (y3-y1)/det
+dzdx(3) = (y1-y2)/det
+dzdy(1) = (x3-x2)/det
+dzdy(2) = (x1-x3)/det
+dzdy(3) = (x2-x1)/det
+
+end subroutine fast_barycentric
 
 !          ---------
 subroutine dlegendre(x,degree,deriv0,deriv1,deriv2,deriv3)

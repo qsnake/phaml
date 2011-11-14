@@ -1,5 +1,5 @@
 ---------------------------------------------------------
-           PHAML   Version 1.8.0
+           PHAML   Version 1.9.1
 
 Output from the master process
   PDE id is     0
@@ -20,6 +20,7 @@ Subroutine phaml_solve_pde parameters:
   print_grid_when    FINAL
   print_grid_who     MASTER
   print_linsys_when  NEVER
+  print_solver_when  NEVER
   print_error_when   NEVER
   print_time_when    NEVER
   pause_after_draw   false
@@ -49,16 +50,16 @@ Subroutine phaml_solve_pde parameters:
 ---------------------------------------------------------
 
 Total Grid:
-   number of vertices      =        1485
-   number of leaf elements =        2840
-   number of levels        =          10
-   degrees of freedom      =        1485
+   number of vertices      =        1089
+   number of leaf elements =        2048
+   number of levels        =           9
+   degrees of freedom      =        1089
    min and max degree      =           1          1
 
 ---------------------------------------------------------
 phaml_solve_pde complete
 
-number of loops through phases =           7
+number of loops through phases =           6
 termination condition:
   maximum equations achieved
 ---------------------------------------------------------

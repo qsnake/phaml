@@ -11,7 +11,7 @@
 ! the United States.                                                  !
 !                                                                     !
 !     William F. Mitchell                                             !
-!     Mathematical and Computational Sciences Division                !
+!     Applied and Computational Mathematics Division                  !
 !     National Institute of Standards and Technology                  !
 !     william.mitchell@nist.gov                                       !
 !     http://math.nist.gov/phaml                                      !
@@ -40,6 +40,7 @@ use opengl_glut
 use hash_mod
 use view_modifier
 use gridtype_mod
+use grid_util
 use evaluate
 use phaml_type_mod
 !----------------------------------------------------
@@ -275,7 +276,11 @@ if (ni > 0) then
 ! initialize graphics
 
    case (GRAPHICS_INIT)
-      allocate(grid%head_level_elem(1))
+      allocate(grid%head_level_elem(1),stat=allocstat)
+      if (allocstat /= 0) then
+         call fatal("allocation failed in process_message",intlist=(/allocstat/))
+         stop
+      endif
       call hash_table_init(grid%elem_hash,imess(2))
       call hash_table_init(grid%edge_hash,imess(3))
       call hash_table_init(grid%vert_hash,imess(4))
@@ -588,7 +593,7 @@ allocate(all_minsolut(ncompnt,neigen), all_maxsolut(ncompnt,neigen), &
          all_minerror(ncompnt,neigen), all_maxerror(ncompnt,neigen), &
          all_maxabserr(ncompnt,neigen), stat=allocstat)
 if (allocstat /= 0) then
-   call fatal("allocation failed for min/max solut",intlist=(/allocstat/))
+   call fatal("allocation failed in unpack_grid",intlist=(/allocstat/))
    stop
 endif
 all_minsolut  =  huge(myzero)
@@ -620,7 +625,7 @@ do while (elem /= END_OF_ELEMENTS)
             element(elem)%exact(ssize/(neigen*ncompnt),ncompnt,neigen), &
             stat=allocstat)
    if (allocstat /= 0) then
-      call fatal("allocation failed for solution",intlist=(/allocstat/))
+      call fatal("allocation failed in unpack_grid",intlist=(/allocstat/))
       stop
    endif
    element(elem)%solution=reshape(rmess(rind+1:rind+ssize), &
@@ -659,7 +664,11 @@ do while (elem /= END_OF_ELEMENTS)
    num_elem = max(num_elem,elem)
    if (element(elem)%level > size(grid%head_level_elem)) then
       head_temp => grid%head_level_elem
-      allocate(grid%head_level_elem(element(elem)%level))
+      allocate(grid%head_level_elem(element(elem)%level),stat=allocstat)
+      if (allocstat /= 0) then
+         call fatal("allocation failed in unpack_grid",intlist=(/allocstat/))
+         stop
+      endif
       grid%head_level_elem = END_OF_LIST
       grid%head_level_elem(1:size(head_temp)) = head_temp
       deallocate(head_temp)
@@ -706,7 +715,7 @@ do while (iedge /= END_OF_EDGES)
    allocate(edge(iedge)%solution(ssize/(neigen*ncompnt),ncompnt,neigen), &
            edge(iedge)%exact(ssize/(neigen*ncompnt),ncompnt,neigen),stat=allocstat)
    if (allocstat /= 0) then
-      call fatal("allocation failed for solution",intlist=(/allocstat/))
+      call fatal("allocation failed in unpack_grid",intlist=(/allocstat/))
       stop
    endif
    edge(iedge)%solution=reshape(rmess(rind+1:rind+ssize), &
@@ -761,7 +770,6 @@ end do
 maxdomain = max(abs(xmax-xmin),abs(ymax-ymin))
 
 ! TEMP071026 keep a constant z scale, for movie of time dependent Schroedinger
-!tds_scale = -1 ! TEMP081007
 if (tds_scale == -1) then
    all_minsolut = -3.0_my_real
    all_maxsolut =  3.0_my_real
@@ -3179,8 +3187,9 @@ integer, intent(in) :: elem
 ! Local variables:
 
 real(gldouble) :: x, y, z
-integer :: i
+integer :: i, j, nelem, allocstat
 integer :: allc(MAX_CHILD), children(MAX_CHILD)
+integer, allocatable :: initial_elements(:)
 !----------------------------------------------------
 
 !----------------------------------------------------
@@ -3188,12 +3197,31 @@ integer :: allc(MAX_CHILD), children(MAX_CHILD)
 
 ! if elem is the root, then do all the initial elements
 
+! the list of elements is in reverse order; make a new list to reverse it
+
 if (elem == REFTREE_ROOT) then
    i = grid%head_level_elem(1)
+   nelem = 0
    do while (i /= END_OF_LIST)
-      call draw_sfc(i)
+      nelem = nelem+1
       i = element(i)%next
    end do
+   allocate(initial_elements(nelem),stat=allocstat)
+   if (allocstat /= 0) then
+      call fatal("allocation failed in draw_sfc",intlist=(/allocstat/))
+      stop
+   endif
+   i = grid%head_level_elem(1)
+   j = 0
+   do while (i /= END_OF_LIST)
+      j = j+1
+      initial_elements(j) = i
+      i = element(i)%next
+   end do
+   do i=nelem,1,-1
+      call draw_sfc(initial_elements(i))
+   end do
+   deallocate(initial_elements)
    return
 endif
 
@@ -4737,13 +4765,17 @@ subroutine exact_to_oldsoln
 !----------------------------------------------------
 ! Local variables:
 
-integer :: lev, elem, i, edge
+integer :: lev, elem, i, edge, allocstat
 !----------------------------------------------------
 ! Begin executable code
 
 ! initialize data structures for oldsoln; this puts solution in there
 
-allocate(grid%initial_neighbor(3,size(grid%element)))
+allocate(grid%initial_neighbor(3,size(grid%element)),stat=allocstat)
+if (allocstat /= 0) then
+   call fatal("allocation failed in exact_to_oldsoln",intlist=(/allocstat/))
+   stop
+endif
 grid%initial_neighbor = BOUNDARY
 call set_grid_for_old_soln(grid)
 call copy_old(grid)

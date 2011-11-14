@@ -11,7 +11,7 @@
 ! the United States.                                                  !
 !                                                                     !
 !     William F. Mitchell                                             !
-!     Mathematical and Computational Sciences Division                !
+!     Applied and Computational Mathematics Division                  !
 !     National Institute of Standards and Technology                  !
 !     william.mitchell@nist.gov                                       !
 !     http://math.nist.gov/phaml                                      !
@@ -32,6 +32,7 @@ module evaluate
 use global
 use message_passing
 use gridtype_mod
+use grid_util
 use basis_functions
 !----------------------------------------------------
 
@@ -1087,6 +1088,7 @@ do j=1,EDGES_PER_ELEMENT
    do k=1,grid%edge(grid%element(elem)%edge(j))%degree-1
       isub = isub + 1
       if (.not. associated(grid%edge(grid%element(elem)%edge(j))%oldsoln)) cycle
+      if (k > size(grid%edge(grid%element(elem)%edge(j))%oldsoln,dim=1)) cycle
       solnval = grid%edge(grid%element(elem)%edge(j))%oldsoln(k,loc_comp,loc_eigen)
       if (present(u)) u = u + solnval*basis(isub)
       if (present(ux)) ux = ux + solnval*basisx(isub)

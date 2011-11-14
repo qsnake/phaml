@@ -11,7 +11,7 @@
 ! the United States.                                                  !
 !                                                                     !
 !     William F. Mitchell                                             !
-!     Mathematical and Computational Sciences Division                !
+!     Applied and Computational Mathematics Division                  !
 !     National Institute of Standards and Technology                  !
 !     william.mitchell@nist.gov                                       !
 !     http://math.nist.gov/phaml                                      !
@@ -100,13 +100,14 @@ if (object_type == VERTEX_ID .or. object_type == EDGE_ID) then
    case (VERTEX_ID)
       lid = hash_decode_key(grid_gid,grid%vert_hash)
       if (lid /= HASH_NOT_FOUND) then
-         if (grid%vertex_type(lid,system_rank) == PERIODIC_SLAVE .or. &
+         do while (grid%vertex_type(lid,system_rank) == PERIODIC_SLAVE .or. &
              grid%vertex_type(lid,system_rank) == PERIODIC_SLAVE_DIR .or. &
              grid%vertex_type(lid,system_rank) == PERIODIC_SLAVE_NAT .or. &
-             grid%vertex_type(lid,system_rank) == PERIODIC_SLAVE_MIX) then
-            gid = grid%vertex(grid%vertex(lid)%next)%gid
-         endif
+             grid%vertex_type(lid,system_rank) == PERIODIC_SLAVE_MIX)
+            lid = grid%vertex(lid)%next
+         end do
       endif
+      gid = grid%vertex(lid)%gid
    case (EDGE_ID)
       lid = hash_decode_key(grid_gid,grid%edge_hash)
       if (lid /= HASH_NOT_FOUND) then
@@ -1740,7 +1741,7 @@ type real_arrays
    real(my_real), pointer :: val(:)
 end type real_arrays
 integer :: nproc, my_processor, p, q, ni, nr, i, j, step, loop, recv_rind, &
-           to, from, mess_size, proxy, nstep, ndelay
+           to, from, mess_size, proxy, nstep, ndelay, allocstat
 logical :: timeit
 integer, allocatable :: send_iind(:), send_rind(:), send_iind_next(:), &
                         send_rind_next(:)
@@ -1776,14 +1777,25 @@ endif
 
 allocate(send_int(nproc),send_real(nproc),send_int_next(nproc), &
          send_real_next(nproc),send_iind(nproc), send_rind(nproc), &
-         send_iind_next(nproc),send_rind_next(nproc))
+         send_iind_next(nproc),send_rind_next(nproc),stat=allocstat)
+if (allocstat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("allocation failed in exchange_fudop_vect",procs=procs)
+   return
+endif
 
 ! create and send the first messages
 
 do p=1,nproc
    if (linear_system%fudop_comm_mess_size(p,1) == 0) cycle
    allocate(send_int(p)%val(3*linear_system%fudop_comm_nchunk(p,1)), &
-            send_real(p)%val(linear_system%fudop_comm_mess_size(p,1)))
+            send_real(p)%val(linear_system%fudop_comm_mess_size(p,1)), &
+            stat=allocstat)
+   if (allocstat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("allocation failed in exchange_fudop_vect",procs=procs)
+      return
+   endif
    send_iind(p) = 0
    send_rind(p) = 0
    do q=1,nproc
@@ -1831,7 +1843,13 @@ do step = 1,nstep
       do p=1,nproc
          if (linear_system%fudop_comm_mess_size(p,step+1) /= 0) then
             allocate(send_int_next(p)%val(3*linear_system%fudop_comm_nchunk(p,step+1)),&
-                    send_real_next(p)%val(linear_system%fudop_comm_mess_size(p,step+1)))
+                    send_real_next(p)%val(linear_system%fudop_comm_mess_size(p,step+1)),&
+                    stat=allocstat)
+         if (allocstat /= 0) then
+            ierr = ALLOC_FAILED
+            call fatal("allocation failed in exchange_fudop_vect",procs=procs)
+            return
+         endif
          endif
       end do
    endif
@@ -2201,7 +2219,7 @@ type real_arrays
    real(my_real), pointer :: val(:)
 end type real_arrays
 integer :: nproc, my_processor, p, q, ni, nr, i, j, step, loop, recv_rind, &
-           to, from, mess_size, proxy, ind, lasteq, nstep, ndelay
+           to, from, mess_size, proxy, ind, lasteq, nstep, ndelay, allocstat
 logical :: timeit, do_soln
 integer, allocatable :: send_iind(:), send_rind(:), send_iind_next(:), &
                         send_rind_next(:)
@@ -2251,7 +2269,12 @@ endif
 linear_system%r_others = 0.0_my_real
 allocate(send_int(nproc),send_real(nproc),send_int_next(nproc), &
          send_real_next(nproc),send_iind(nproc), send_rind(nproc), &
-         send_iind_next(nproc),send_rind_next(nproc))
+         send_iind_next(nproc),send_rind_next(nproc),stat=allocstat)
+if (allocstat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("allocation failed in exchange_fudop_soln_residual",procs=procs)
+   return
+endif
 
 
 ! create the first messages
@@ -2259,7 +2282,13 @@ allocate(send_int(nproc),send_real(nproc),send_int_next(nproc), &
 do p=1,nproc
    if (linear_system%resid_comm_mess_size(p,1) == 0) cycle
    allocate(send_int(p)%val(3*linear_system%resid_comm_nchunk(p,1)), &
-            send_real(p)%val(linear_system%resid_comm_mess_size(p,1)))
+            send_real(p)%val(linear_system%resid_comm_mess_size(p,1)), &
+            stat=allocstat)
+   if (allocstat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("allocation failed in exchange_fudop_soln_residual",procs=procs)
+      return
+   endif
    send_iind(p) = 0
    send_rind(p) = 0
    do q=1,nproc
@@ -2312,7 +2341,13 @@ do step = 1,nstep
       do p=1,nproc
          if (linear_system%resid_comm_mess_size(p,step+1) /= 0) then
             allocate(send_int_next(p)%val(3*linear_system%resid_comm_nchunk(p,step+1)),&
-                     send_real_next(p)%val(linear_system%resid_comm_mess_size(p,step+1)))
+                     send_real_next(p)%val(linear_system%resid_comm_mess_size(p,step+1)),&
+                     stat=allocstat)
+            if (allocstat /= 0) then
+               ierr = ALLOC_FAILED
+               call fatal("allocation failed in exchange_fudop_soln_residual",procs=procs)
+               return
+            endif
          endif
       end do
    endif
@@ -2737,7 +2772,7 @@ logical, intent(in), optional :: notime
 !----------------------------------------------------
 ! Local variables:
 
-integer :: nproc, p, i, nr
+integer :: nproc, p, i, nr, allocstat
 real(my_real), allocatable :: send_real(:)
 logical :: timeit
 !----------------------------------------------------
@@ -2768,7 +2803,12 @@ do p=1,nproc
 ! create the message, send it, and destroy it
 
    nr = linear_system%nn_comm_end_of_send(p,max_deg)
-   allocate(send_real(nr))
+   allocate(send_real(nr),stat=allocstat)
+   if (allocstat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("allocation failed in send_neigh_vect",procs=procs)
+      return
+   endif
    do i=1,nr
       send_real(i) = vector(linear_system%nn_comm_send_lid(p)%lid(i))
    end do
@@ -2863,7 +2903,7 @@ type(linsys_type), intent(inout) :: linear_system
 !----------------------------------------------------
 ! Local variables:
 
-integer :: lev, i, j, eq, nblack, neigh
+integer :: lev, i, j, eq, nblack, neigh, allocstat
 logical :: has_face, has_edge
 integer, allocatable :: black_list(:)
 logical(small_logical), allocatable :: on_black_list(:)
@@ -2898,7 +2938,13 @@ if (has_edge) call basis_change(linear_system%nlev+1,TO_HIER,linear_system, &
 ! simulate the first half of a V cycle to identify the equations that need
 ! r_others at each level in relax.  See hbmg.f90/relax for comments.
 
-allocate(on_black_list(linear_system%neq),black_list(linear_system%neq))
+allocate(on_black_list(linear_system%neq),black_list(linear_system%neq), &
+         stat=allocstat)
+if (allocstat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("allocation failed in make_need_r_others")
+   return
+endif
 do lev=linear_system%nlev,2,-1
    nblack = 0
    on_black_list = .false.

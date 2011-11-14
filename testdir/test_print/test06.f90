@@ -6,7 +6,7 @@ call phaml_create(soln,nproc=2,output_unit=11)
 call phaml_popen(soln,11,"test06..out")
 call phaml_solve_pde(soln,                   &
                      max_vert=500,           &
-                     mg_cycles=2,            &
+                     mg_cycles=5,            &
                      print_grid_when=FINAL, &
                      print_grid_who=SLAVES  ,&
                      print_linsys_when=NEVER, &

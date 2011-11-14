@@ -11,7 +11,7 @@
 ! the United States.                                                  !
 !                                                                     !
 !     William F. Mitchell                                             !
-!     Mathematical and Computational Sciences Division                !
+!     Applied and Computational Mathematics Division                  !
 !     National Institute of Standards and Technology                  !
 !     william.mitchell@nist.gov                                       !
 !     http://math.nist.gov/phaml                                      !

@@ -11,7 +11,7 @@
 ! the United States.                                                  !
 !                                                                     !
 !     William F. Mitchell                                             !
-!     Mathematical and Computational Sciences Division                !
+!     Applied and Computational Mathematics Division                  !
 !     National Institute of Standards and Technology                  !
 !     william.mitchell@nist.gov                                       !
 !     http://math.nist.gov/phaml                                      !
@@ -80,6 +80,9 @@ logical, intent(in) :: still_sequential
 ! Local variables:
 
 integer :: allocstat
+integer :: proc, ni, nr
+integer, pointer :: irecv(:)
+real(my_real), pointer :: rrecv(:)
 !----------------------------------------------------
 ! Begin executable code
 
@@ -133,23 +136,40 @@ if (mumps_matrix%mumps_var%n > 0) then
    mumps_matrix%mumps_var%job = 4
    do
       call dmumps(mumps_matrix%mumps_var)
-      if (mumps_matrix%mumps_var%info(1) /= -9) exit
-! if info is -9, increase space for fill-in and try again
-      fillin_size = 1.5*mumps_matrix%mumps_var%icntl(14)
-      mumps_matrix%mumps_var%icntl(14) = fillin_size
-      call warning("increasing space for MUMPS fill-in",intlist=(/fillin_size/))
-   end do
-   if (mumps_matrix%mumps_var%info(1) < 0) then
-      call fatal("MUMPS returned error.  Code is", &
-                 intlist=(/mumps_matrix%mumps_var%info(1), &
-                           mumps_matrix%mumps_var%info(2)/),procs=procs)
-      stop
-   elseif (mumps_matrix%mumps_var%info(1) > 0) then
-      call warning("MUMPS returned warning. Code is", &
+      if (mumps_matrix%mumps_var%info(1) == 0) exit
+! if info is -8 or -9, increase space for fill-in and try again
+      if (mumps_matrix%mumps_var%info(1) == -8 .or. &
+          mumps_matrix%mumps_var%info(1) == -9) then
+         fillin_size = 1.5*mumps_matrix%mumps_var%icntl(14)
+         mumps_matrix%mumps_var%icntl(14) = fillin_size
+         call warning("increasing space for MUMPS fill-in",intlist=(/fillin_size/))
+         do proc=1,num_proc(procs)
+            if (proc==my_proc(procs)) cycle
+            call phaml_send(procs,proc,(/1/),1,(/0.0_my_real/),0,1500)
+         end do
+         cycle
+      endif
+      if (mumps_matrix%mumps_var%info(1) < 0) then
+         call warning("MUMPS returned error.  Waiting 1 second to see if another processor is increasing space for fill-in")
+         call my_pause(1.0)
+         nullify(irecv)
+         call phaml_recv(procs,proc,irecv,ni,rrecv,nr,1500,.true.)
+         if (associated(irecv)) then
+            fillin_size = 1.5*mumps_matrix%mumps_var%icntl(14)
+            mumps_matrix%mumps_var%icntl(14) = fillin_size
+            cycle
+         endif
+         call fatal("MUMPS returned error.  Code is", &
                     intlist=(/mumps_matrix%mumps_var%info(1), &
-                              mumps_matrix%mumps_var%info(2)/))
-   endif
-
+                              mumps_matrix%mumps_var%info(2)/),procs=procs)
+         stop
+      elseif (mumps_matrix%mumps_var%info(1) > 0) then
+         call warning("MUMPS returned warning. Code is", &
+                       intlist=(/mumps_matrix%mumps_var%info(1), &
+                                 mumps_matrix%mumps_var%info(2)/))
+         exit
+      endif
+   end do
 endif
 
 end subroutine create_mumps_linear_system
@@ -413,7 +433,13 @@ KEY_SIZE_EQ = KEY_SIZE+1
 if (still_sequential) then
    if (my_processor /= 1) then
       mumps_var%nz_loc = 0
-      allocate(mumps_var%irn_loc(1),mumps_var%jcn_loc(1),mumps_var%a_loc(1))
+      allocate(mumps_var%irn_loc(1),mumps_var%jcn_loc(1),mumps_var%a_loc(1), &
+               stat=allocstat)
+      if (allocstat /= 0) then
+         ierr = ALLOC_FAILED
+         call fatal("allocation failed in make_mumps_matrix",procs=procs)
+         return
+      endif
       counter = 0
       do i=1,phaml_matrix%neq
          if (phaml_matrix%equation_type(i) == DIRICHLET) then
@@ -455,7 +481,12 @@ end do
 
 ! determine how many equations are owned by each processor
 
-allocate(neq_all(nproc))
+allocate(neq_all(nproc),stat=allocstat)
+if (allocstat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("allocation failed in make_mumps_matrix",procs=procs)
+   return
+endif
 neq_all = 0
 neq_all(my_processor) = my_neq
 if (.not. still_sequential) then

@@ -26,7 +26,7 @@
 ! the United States.                                                  !
 !                                                                     !
 !     William F. Mitchell                                             !
-!     Mathematical and Computational Sciences Division                !
+!     Applied and Computational Mathematics Division                  !
 !     National Institute of Standards and Technology                  !
 !     william.mitchell@nist.gov                                       !
 !     http://math.nist.gov/phaml                                      !
@@ -55,7 +55,7 @@ public hash_key, hash_table, & ! types
        hash_table_store, hash_table_restore, hash_table_copy, &
        hash_read_key, hash_overflow, &
        hash_insert, hash_remove, hash_decode_key, hash_print_key, &
-       hash_pack_key, hash_unpack_key, hash_pack_key_pvm, hash_unpack_key_pvm, &
+       hash_pack_key, hash_unpack_key, &
        mod,           & ! mod(key,integer)
        assignment(=), & ! key = integer
        operator(+),   & ! key + integer
@@ -189,18 +189,6 @@ integer, parameter :: LOG_MAX_KEY = 2*(bit_size(0) - 2)
 !   integer, intent(in) :: array(:), ind
 !   end function hash_unpack_key
 
-!   subroutine hash_pack_key_pvm(keys,itype_pvm)
-! This routine packs an array of keys into a PVM message buffer
-!   type(hash_key), intent(in) :: keys(:)
-!   integer, intent(in) :: itype_pvm
-!   end subroutine hash_pack_key_pvm
-
-!   subroutine hash_unpack_key_pvm(keys,nkey,itype_pvm)
-! This routine unpacks an array of keys from a PVM message buffer
-!   type(hash_key), intent(inout) :: keys(:)
-!   integer, intent(in) :: nkey, itype_pvm
-!   end subroutine hash_unpack_key_pvm
-
 !----------------------------------------------------
 ! The following interface operators are defined:
 
@@ -269,14 +257,6 @@ end interface
 
 interface hash_unpack_key
    module procedure hash_unpack_key_loc
-end interface
-
-interface hash_pack_key_pvm
-   module procedure hash_pack_key_pvm_loc
-end interface
-
-interface hash_unpack_key_pvm
-   module procedure hash_unpack_key_pvm_loc
 end interface
 
 interface hash_print_key
@@ -1257,68 +1237,6 @@ hash_unpack_key_loc%key2 = array(ind+1)
 
 return
 end function hash_unpack_key_loc
-
-!          -----------------
-subroutine hash_pack_key_pvm_loc(keys,itype_pvm)
-!          -----------------
-
-!----------------------------------------------------
-! This routine packs an array of keys into a PVM message buffer.  This is
-! used so we don't have to copy the keys into an integer array which then
-! gets packed into the message.
-!----------------------------------------------------
-
-!----------------------------------------------------
-! Dummy arguments
-
-type(hash_key), intent(in) :: keys(:)
-integer, intent(in) :: itype_pvm
-
-!----------------------------------------------------
-! Local variables:
-
-integer :: info, i
-!----------------------------------------------------
-! Begin executable code
-
-do i=1,size(keys)
-   call pvmfpack(itype_pvm,(/keys(i)%key/),1,1,info)
-   call pvmfpack(itype_pvm,(/keys(i)%key2/),1,1,info)
-end do
-
-return
-end subroutine hash_pack_key_pvm_loc
-
-!          -------------------
-subroutine hash_unpack_key_pvm_loc(keys,nkey,itype_pvm)
-!          -------------------
-
-!----------------------------------------------------
-! This routine unpacks an array of keys from a PVM message buffer.  This is
-! used so we don't have to copy the keys from an integer array which was
-! unpacked from the message.
-!----------------------------------------------------
-
-!----------------------------------------------------
-! Dummy arguments
-
-type(hash_key), intent(inout) :: keys(:)
-integer, intent(in) :: nkey, itype_pvm
-
-!----------------------------------------------------
-! Local variables:
-
-integer :: info, i, unpacked(2)
-!----------------------------------------------------
-! Begin executable code
-
-do i=1,nkey
-   call pvmfunpack(itype_pvm,unpacked,2,1,info)
-   keys(i)%key = unpacked(1)
-   keys(i)%key2= unpacked(2)
-end do
-
-end subroutine hash_unpack_key_pvm_loc
 
 !        ------------
 function hash_modfunc(key,int)

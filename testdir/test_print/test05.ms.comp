@@ -1,5 +1,5 @@
 ---------------------------------------------------------
-           PHAML   Version 1.8.0
+           PHAML   Version 1.9.1
 
 Output from the master process
   PDE id is     0
@@ -21,6 +21,8 @@ Subroutine phaml_solve_pde parameters:
   print_grid_who     MASTER_ALL
   print_linsys_when  PHASES
   print_linsys_who   MASTER_ALL
+  print_solver_when  PHASES
+  print_solver_who   MASTER_ALL
   print_error_when   PHASES
   print_error_who    MASTER_ALL
   print_error_what   ENERGY_LINF_L2_ERR
@@ -43,7 +45,7 @@ Subroutine phaml_solve_pde parameters:
   prebalance         BALANCE_ELEMENTS
   ignore_quad_err    false
   solver             MG_SOLVER
-  mg_cycles                   2
+  mg_cycles                   5
   mg_tol             MG_ERREST_TOL
   mg_prerelax                 1
   mg_postrelax                2
@@ -78,21 +80,21 @@ Individual Linear Systems:
    condensed matrix number of equations =           9          9          9          9
    condensed matrix number of equations I own =           9          9          9          9
    condensed matrix number of nonzeroes =          41         41         41         41
-   coarse matrix neq =           1
-   coarse (half) bandwidth =           0
 
 Total Linear System:
    number of equations =           9
    number of nonzeroes =          41
    condensed matrix number of equations =           9
    condensed matrix number of nonzeroes =          41
-   coarse matrix neq =           1
-   coarse (half) bandwidth =           0
+
+Solver information:
+   number of iterations =           1
+   relative residual =   1.8361992673E-16
 
 Norms of error:
-   energy norm of error       3.8589726446E+00  3.8589726446E+00  3.8589726446E+00  3.8589726446E+00
+   energy norm of error       4.0333158308E+00  4.0333158308E+00  4.0333158308E+00  4.0333158308E+00
    energy error estimate      2.7431604171E+00  2.7431604171E+00  2.7431604171E+00  2.7431604171E+00
-      effectivity             7.1085251689E-01  7.1085251689E-01  7.1085251689E-01  7.1085251689E-01
+      effectivity             6.8012536884E-01  6.8012536884E-01  6.8012536884E-01  6.8012536884E-01
    Linf norm of error         1.0536246503E+00  1.0536246503E+00  1.0536246503E+00  1.0536246503E+00
    Linf error estimate        1.1645061848E+00  1.1645061848E+00  1.1645061848E+00  1.1645061848E+00
       effectivity            1.1052381742E+00  1.1052381742E+00  1.1052381742E+00  1.1052381742E+00
@@ -101,58 +103,58 @@ Norms of error:
       effectivity            8.5551681976E-01  8.5551681976E-01  8.5551681976E-01  8.5551681976E-01
 
 Individual Grids:
-   number of vertices       =          27         27         27         27
-   number of vertices I own =          27         27         27         27
-   number of elements       =          68         68         68         68
-   number of leaf elements  =          38         38         38         38
-   leaf elements I own      =          38         38         38         38
-   number of levels         =           4          4          4          4
-   degrees of freedom       =          27         27         27         27
-   degrees of freedom I own =          27         27         27         27
+   number of vertices       =          29         29         29         29
+   number of vertices I own =          29         29         29         29
+   number of elements       =          72         72         72         72
+   number of leaf elements  =          40         40         40         40
+   leaf elements I own      =          40         40         40         40
+   number of levels         =           5          5          5          5
+   degrees of freedom       =          29         29         29         29
+   degrees of freedom I own =          29         29         29         29
    min degree               =           1          1          1          1
    max degree               =           1          1          1          1
 
 Total Grid:
-   number of vertices      =          27
-   number of leaf elements =          38
-   number of levels        =           4
-   degrees of freedom      =          27
+   number of vertices      =          29
+   number of leaf elements =          40
+   number of levels        =           5
+   degrees of freedom      =          29
    min and max degree      =           1          1
 
 Individual Linear Systems:
-   number of equations =          27         27         27         27
-   number of equations I own =          27         27         27         27
-   number of nonzeroes =         155        155        155        155
-   condensed matrix number of equations =          27         27         27         27
-   condensed matrix number of equations I own =          27         27         27         27
-   condensed matrix number of nonzeroes =         155        155        155        155
-   coarse matrix neq =           1
-   coarse (half) bandwidth =           0
+   number of equations =          29         29         29         29
+   number of equations I own =          29         29         29         29
+   number of nonzeroes =         165        165        165        165
+   condensed matrix number of equations =          29         29         29         29
+   condensed matrix number of equations I own =          29         29         29         29
+   condensed matrix number of nonzeroes =         165        165        165        165
 
 Total Linear System:
-   number of equations =          27
-   number of nonzeroes =         155
-   condensed matrix number of equations =          27
-   condensed matrix number of nonzeroes =         155
-   coarse matrix neq =           1
-   coarse (half) bandwidth =           0
+   number of equations =          29
+   number of nonzeroes =         165
+   condensed matrix number of equations =          29
+   condensed matrix number of nonzeroes =         165
+
+Solver information:
+   number of iterations =           3
+   relative residual =   1.8623819943E-05
 
 Norms of error:
-   energy norm of error       2.9445536356E+00  2.9445536356E+00  2.9445536356E+00  2.9445536356E+00
-      reduced by              7.6304081598E-01  7.6304081598E-01  7.6304081598E-01  7.6304081598E-01
-   energy error estimate      1.1756930091E+00  1.1756930091E+00  1.1756930091E+00  1.1756930091E+00
-      reduced by              4.2859068753E-01  4.2859068753E-01  4.2859068753E-01  4.2859068753E-01
-      effectivity             3.9927715866E-01  3.9927715866E-01  3.9927715866E-01  3.9927715866E-01
-   Linf norm of error         6.7489276612E-01  6.7489276612E-01  6.7489276612E-01  6.7489276612E-01
-      reduced by              6.4054382737E-01  6.4054382737E-01  6.4054382737E-01  6.4054382737E-01
-   Linf error estimate        3.1966359115E-01  3.1966359115E-01  3.1966359115E-01  3.1966359115E-01
-      reduced by              2.7450570493E-01  2.7450570493E-01  2.7450570493E-01  2.7450570493E-01
-      effectivity            4.7365093715E-01  4.7365093715E-01  4.7365093715E-01  4.7365093715E-01
-   L2 norm of error           1.8334069947E-01  1.8334069947E-01  1.8334069947E-01  1.8334069947E-01
-      reduced by              4.0431628393E-01  4.0431628393E-01  4.0431628393E-01  4.0431628393E-01
-   L2 error estimate          5.8854826900E-02  5.8854826900E-02  5.8854826900E-02  5.8854826900E-02
-      reduced by              1.5171058516E-01  1.5171058516E-01  1.5171058516E-01  1.5171058516E-01
-      effectivity            3.2101343057E-01  3.2101343057E-01  3.2101343057E-01  3.2101343057E-01
+   energy norm of error       3.0143054217E+00  3.0143054217E+00  3.0143054217E+00  3.0143054217E+00
+      reduced by              7.4735169478E-01  7.4735169478E-01  7.4735169478E-01  7.4735169478E-01
+   energy error estimate      1.0981752824E+00  1.0981752824E+00  1.0981752824E+00  1.0981752824E+00
+      reduced by              4.0033214083E-01  4.0033214083E-01  4.0033214083E-01  4.0033214083E-01
+      effectivity             3.6432117146E-01  3.6432117146E-01  3.6432117146E-01  3.6432117146E-01
+   Linf norm of error         5.2342002897E-01  5.2342002897E-01  5.2342002897E-01  5.2342002897E-01
+      reduced by              4.9678035609E-01  4.9678035609E-01  4.9678035609E-01  4.9678035609E-01
+   Linf error estimate        1.9362275570E-01  1.9362275570E-01  1.9362275570E-01  1.9362275570E-01
+      reduced by              1.6627026823E-01  1.6627026823E-01  1.6627026823E-01  1.6627026823E-01
+      effectivity            3.6991850710E-01  3.6991850710E-01  3.6991850710E-01  3.6991850710E-01
+   L2 norm of error           1.6018458492E-01  1.6018458492E-01  1.6018458492E-01  1.6018458492E-01
+      reduced by              3.5325073104E-01  3.5325073104E-01  3.5325073104E-01  3.5325073104E-01
+   L2 error estimate          5.2590615143E-02  5.2590615143E-02  5.2590615143E-02  5.2590615143E-02
+      reduced by              1.3556327353E-01  1.3556327353E-01  1.3556327353E-01  1.3556327353E-01
+      effectivity            3.2831258495E-01  3.2831258495E-01  3.2831258495E-01  3.2831258495E-01
 
 Individual Grids:
    number of vertices       =          36         36         36         36
@@ -180,33 +182,33 @@ Individual Linear Systems:
    condensed matrix number of equations =          36         36         36         36
    condensed matrix number of equations I own =          36         36         36         36
    condensed matrix number of nonzeroes =         202        202        202        202
-   coarse matrix neq =           1
-   coarse (half) bandwidth =           0
 
 Total Linear System:
    number of equations =          36
    number of nonzeroes =         202
    condensed matrix number of equations =          36
    condensed matrix number of nonzeroes =         202
-   coarse matrix neq =           1
-   coarse (half) bandwidth =           0
+
+Solver information:
+   number of iterations =           3
+   relative residual =   1.0129595913E-05
 
 Norms of error:
-   energy norm of error       2.9224671391E+00  2.9224671391E+00  2.9224671391E+00  2.9224671391E+00
-      reduced by              9.9249920388E-01  9.9249920388E-01  9.9249920388E-01  9.9249920388E-01
-   energy error estimate      8.7510266200E-01  8.7510266200E-01  8.7510266200E-01  8.7510266200E-01
-      reduced by              7.4432922132E-01  7.4432922132E-01  7.4432922132E-01  7.4432922132E-01
-      effectivity             2.9943969268E-01  2.9943969268E-01  2.9943969268E-01  2.9943969268E-01
-   Linf norm of error         4.7530105786E-01  4.7530105786E-01  4.7530105786E-01  4.7530105786E-01
-      reduced by              7.0426159787E-01  7.0426159787E-01  7.0426159787E-01  7.0426159787E-01
-   Linf error estimate        1.3917147125E-01  1.3917147125E-01  1.3917147125E-01  1.3917147125E-01
-      reduced by              4.3536854087E-01  4.3536854087E-01  4.3536854087E-01  4.3536854087E-01
-      effectivity            2.9280698821E-01  2.9280698821E-01  2.9280698821E-01  2.9280698821E-01
-   L2 norm of error           1.6071015387E-01  1.6071015387E-01  1.6071015387E-01  1.6071015387E-01
-      reduced by              8.7656561985E-01  8.7656561985E-01  8.7656561985E-01  8.7656561985E-01
-   L2 error estimate          3.5587864849E-02  3.5587864849E-02  3.5587864849E-02  3.5587864849E-02
-      reduced by              6.0467198230E-01  6.0467198230E-01  6.0467198230E-01  6.0467198230E-01
-      effectivity            2.2144129659E-01  2.2144129659E-01  2.2144129659E-01  2.2144129659E-01
+   energy norm of error       2.9236225954E+00  2.9236225954E+00  2.9236225954E+00  2.9236225954E+00
+      reduced by              9.6991584673E-01  9.6991584673E-01  9.6991584673E-01  9.6991584673E-01
+   energy error estimate      8.7510915694E-01  8.7510915694E-01  8.7510915694E-01  8.7510915694E-01
+      reduced by              7.9687566364E-01  7.9687566364E-01  7.9687566364E-01  7.9687566364E-01
+      effectivity             2.9932357149E-01  2.9932357149E-01  2.9932357149E-01  2.9932357149E-01
+   Linf norm of error         4.7530075334E-01  4.7530075334E-01  4.7530075334E-01  4.7530075334E-01
+      reduced by              9.0806756912E-01  9.0806756912E-01  9.0806756912E-01  9.0806756912E-01
+   Linf error estimate        1.3917355990E-01  1.3917355990E-01  1.3917355990E-01  1.3917355990E-01
+      reduced by              7.1878720761E-01  7.1878720761E-01  7.1878720761E-01  7.1878720761E-01
+      effectivity            2.9281157020E-01  2.9281157020E-01  2.9281157020E-01  2.9281157020E-01
+   L2 norm of error           1.6068325425E-01  1.6068325425E-01  1.6068325425E-01  1.6068325425E-01
+      reduced by              1.0031130919E+00  1.0031130919E+00  1.0031130919E+00  1.0031130919E+00
+   L2 error estimate          3.5588300732E-02  3.5588300732E-02  3.5588300732E-02  3.5588300732E-02
+      reduced by              6.7670440125E-01  6.7670440125E-01  6.7670440125E-01  6.7670440125E-01
+      effectivity            2.2148108027E-01  2.2148108027E-01  2.2148108027E-01  2.2148108027E-01
 
 Individual Grids:
    number of vertices       =          75         75         75         75
@@ -234,225 +236,225 @@ Individual Linear Systems:
    condensed matrix number of equations =          75         75         75         75
    condensed matrix number of equations I own =          75         75         75         75
    condensed matrix number of nonzeroes =         439        439        439        439
-   coarse matrix neq =           1
-   coarse (half) bandwidth =           0
 
 Total Linear System:
    number of equations =          75
    number of nonzeroes =         439
    condensed matrix number of equations =          75
    condensed matrix number of nonzeroes =         439
-   coarse matrix neq =           1
-   coarse (half) bandwidth =           0
+
+Solver information:
+   number of iterations =           4
+   relative residual =   2.1361444499E-06
 
 Norms of error:
-   energy norm of error       2.0694572753E+00  2.0694572753E+00  2.0694572753E+00  2.0694572753E+00
-      reduced by              7.0811994689E-01  7.0811994689E-01  7.0811994689E-01  7.0811994689E-01
-   energy error estimate      5.2463178417E-01  5.2463178417E-01  5.2463178417E-01  5.2463178417E-01
-      reduced by              5.9950884273E-01  5.9950884273E-01  5.9950884273E-01  5.9950884273E-01
-      effectivity             2.5351177356E-01  2.5351177356E-01  2.5351177356E-01  2.5351177356E-01
-   Linf norm of error         2.5534403332E-01  2.5534403332E-01  2.5534403332E-01  2.5534403332E-01
-      reduced by              5.3722588893E-01  5.3722588893E-01  5.3722588893E-01  5.3722588893E-01
-   Linf error estimate        5.3212994702E-02  5.3212994702E-02  5.3212994702E-02  5.3212994702E-02
-      reduced by              3.8235562379E-01  3.8235562379E-01  3.8235562379E-01  3.8235562379E-01
-      effectivity            2.0839725139E-01  2.0839725139E-01  2.0839725139E-01  2.0839725139E-01
-   L2 norm of error           6.5235431360E-02  6.5235431360E-02  6.5235431360E-02  6.5235431360E-02
-      reduced by              4.0591978657E-01  4.0591978657E-01  4.0591978657E-01  4.0591978657E-01
-   L2 error estimate          1.2385956688E-02  1.2385956688E-02  1.2385956688E-02  1.2385956688E-02
-      reduced by              3.4803876940E-01  3.4803876940E-01  3.4803876940E-01  3.4803876940E-01
-      effectivity            1.8986548306E-01  1.8986548306E-01  1.8986548306E-01  1.8986548306E-01
+   energy norm of error       2.0694813621E+00  2.0694813621E+00  2.0694813621E+00  2.0694813621E+00
+      reduced by              7.0784832674E-01  7.0784832674E-01  7.0784832674E-01  7.0784832674E-01
+   energy error estimate      5.2466983456E-01  5.2466983456E-01  5.2466983456E-01  5.2466983456E-01
+      reduced by              5.9954787400E-01  5.9954787400E-01  5.9954787400E-01  5.9954787400E-01
+      effectivity             2.5352720936E-01  2.5352720936E-01  2.5352720936E-01  2.5352720936E-01
+   Linf norm of error         2.5521099956E-01  2.5521099956E-01  2.5521099956E-01  2.5521099956E-01
+      reduced by              5.3694633928E-01  5.3694633928E-01  5.3694633928E-01  5.3694633928E-01
+   Linf error estimate        5.3216400614E-02  5.3216400614E-02  5.3216400614E-02  5.3216400614E-02
+      reduced by              3.8237435797E-01  3.8237435797E-01  3.8237435797E-01  3.8237435797E-01
+      effectivity            2.0851922803E-01  2.0851922803E-01  2.0851922803E-01  2.0851922803E-01
+   L2 norm of error           6.5141246413E-02  6.5141246413E-02  6.5141246413E-02  6.5141246413E-02
+      reduced by              4.0540158785E-01  4.0540158785E-01  4.0540158785E-01  4.0540158785E-01
+   L2 error estimate          1.2387422106E-02  1.2387422106E-02  1.2387422106E-02  1.2387422106E-02
+      reduced by              3.4807568361E-01  3.4807568361E-01  3.4807568361E-01  3.4807568361E-01
+      effectivity            1.9016249746E-01  1.9016249746E-01  1.9016249746E-01  1.9016249746E-01
 
 Individual Grids:
-   number of vertices       =         171        171        171        171
-   number of vertices I own =         171        171        171        171
-   number of elements       =         580        580        580        580
-   number of leaf elements  =         294        294        294        294
-   leaf elements I own      =         294        294        294        294
+   number of vertices       =         170        170        170        170
+   number of vertices I own =         170        170        170        170
+   number of elements       =         572        572        572        572
+   number of leaf elements  =         290        290        290        290
+   leaf elements I own      =         290        290        290        290
    number of levels         =           9          9          9          9
-   degrees of freedom       =         171        171        171        171
-   degrees of freedom I own =         171        171        171        171
+   degrees of freedom       =         170        170        170        170
+   degrees of freedom I own =         170        170        170        170
    min degree               =           1          1          1          1
    max degree               =           1          1          1          1
 
 Total Grid:
-   number of vertices      =         171
-   number of leaf elements =         294
+   number of vertices      =         170
+   number of leaf elements =         290
    number of levels        =           9
-   degrees of freedom      =         171
+   degrees of freedom      =         170
    min and max degree      =           1          1
 
 Individual Linear Systems:
-   number of equations =         171        171        171        171
-   number of equations I own =         171        171        171        171
-   number of nonzeroes =        1099       1099       1099       1099
-   condensed matrix number of equations =         171        171        171        171
-   condensed matrix number of equations I own =         171        171        171        171
-   condensed matrix number of nonzeroes =        1099       1099       1099       1099
-   coarse matrix neq =           1
-   coarse (half) bandwidth =           0
+   number of equations =         170        170        170        170
+   number of equations I own =         170        170        170        170
+   number of nonzeroes =        1088       1088       1088       1088
+   condensed matrix number of equations =         170        170        170        170
+   condensed matrix number of equations I own =         170        170        170        170
+   condensed matrix number of nonzeroes =        1088       1088       1088       1088
 
 Total Linear System:
-   number of equations =         171
-   number of nonzeroes =        1099
-   condensed matrix number of equations =         171
-   condensed matrix number of nonzeroes =        1099
-   coarse matrix neq =           1
-   coarse (half) bandwidth =           0
+   number of equations =         170
+   number of nonzeroes =        1088
+   condensed matrix number of equations =         170
+   condensed matrix number of nonzeroes =        1088
+
+Solver information:
+   number of iterations =           4
+   relative residual =   3.9390784188E-06
 
 Norms of error:
-   energy norm of error       1.2036913481E+00  1.2036913481E+00  1.2036913481E+00  1.2036913481E+00
-      reduced by              5.8164590417E-01  5.8164590417E-01  5.8164590417E-01  5.8164590417E-01
-   energy error estimate      3.4962141610E-01  3.4962141610E-01  3.4962141610E-01  3.4962141610E-01
-      reduced by              6.6641295220E-01  6.6641295220E-01  6.6641295220E-01  6.6641295220E-01
-      effectivity             2.9045769637E-01  2.9045769637E-01  2.9045769637E-01  2.9045769637E-01
-   Linf norm of error         1.0115694205E-01  1.0115694205E-01  1.0115694205E-01  1.0115694205E-01
-      reduced by              3.9615941182E-01  3.9615941182E-01  3.9615941182E-01  3.9615941182E-01
-   Linf error estimate        1.6603506558E-02  1.6603506558E-02  1.6603506558E-02  1.6603506558E-02
-      reduced by              3.1201977358E-01  3.1201977358E-01  3.1201977358E-01  3.1201977358E-01
-      effectivity            1.6413610595E-01  1.6413610595E-01  1.6413610595E-01  1.6413610595E-01
-   L2 norm of error           2.0328331279E-02  2.0328331279E-02  2.0328331279E-02  2.0328331279E-02
-      reduced by              3.1161488252E-01  3.1161488252E-01  3.1161488252E-01  3.1161488252E-01
-   L2 error estimate          4.8125393184E-03  4.8125393184E-03  4.8125393184E-03  4.8125393184E-03
-      reduced by              3.8854805000E-01  3.8854805000E-01  3.8854805000E-01  3.8854805000E-01
-      effectivity            2.3674050035E-01  2.3674050035E-01  2.3674050035E-01  2.3674050035E-01
+   energy norm of error       1.2083481139E+00  1.2083481139E+00  1.2083481139E+00  1.2083481139E+00
+      reduced by              5.8388934349E-01  5.8388934349E-01  5.8388934349E-01  5.8388934349E-01
+   energy error estimate      3.5146529662E-01  3.5146529662E-01  3.5146529662E-01  3.5146529662E-01
+      reduced by              6.6987898572E-01  6.6987898572E-01  6.6987898572E-01  6.6987898572E-01
+      effectivity             2.9086427377E-01  2.9086427377E-01  2.9086427377E-01  2.9086427377E-01
+   Linf norm of error         1.0088007735E-01  1.0088007735E-01  1.0088007735E-01  1.0088007735E-01
+      reduced by              3.9528107145E-01  3.9528107145E-01  3.9528107145E-01  3.9528107145E-01
+   Linf error estimate        1.8331456009E-02  1.8331456009E-02  1.8331456009E-02  1.8331456009E-02
+      reduced by              3.4447004678E-01  3.4447004678E-01  3.4447004678E-01  3.4447004678E-01
+      effectivity            1.8171532468E-01  1.8171532468E-01  1.8171532468E-01  1.8171532468E-01
+   L2 norm of error           2.0279034251E-02  2.0279034251E-02  2.0279034251E-02  2.0279034251E-02
+      reduced by              3.1130866183E-01  3.1130866183E-01  3.1130866183E-01  3.1130866183E-01
+   L2 error estimate          4.8904643732E-03  4.8904643732E-03  4.8904643732E-03  4.8904643732E-03
+      reduced by              3.9479274472E-01  3.9479274472E-01  3.9479274472E-01  3.9479274472E-01
+      effectivity            2.4115864260E-01  2.4115864260E-01  2.4115864260E-01  2.4115864260E-01
 
 Individual Grids:
-   number of vertices       =         107        145        131        106
-   number of vertices I own =          78         81         74         75
-   number of elements       =         354        502        446        350
-   number of leaf elements  =         181        255        227        179
-   leaf elements I own      =         128        157        123        129
-   number of levels         =          10         11         11          9
-   degrees of freedom       =         107        145        131        106
-   degrees of freedom I own =          78         81         74         75
+   number of vertices       =         106        128        128        106
+   number of vertices I own =          78         64         73         76
+   number of elements       =         350        436        436        350
+   number of leaf elements  =         179        222        222        179
+   leaf elements I own      =         129        123        122        130
+   number of levels         =           9         10         10          9
+   degrees of freedom       =         106        128        128        106
+   degrees of freedom I own =          78         64         73         76
    min degree               =           1          1          1          1
    max degree               =           1          1          1          1
 
 Total Grid:
-   number of vertices      =         308
-   number of leaf elements =         537
-   number of levels        =          11
-   degrees of freedom      =         308
+   number of vertices      =         291
+   number of leaf elements =         504
+   number of levels        =          10
+   degrees of freedom      =         291
    min and max degree      =           1          1
 
 Individual Linear Systems:
-   number of equations =         107        145        131        106
-   number of equations I own =          78         81         74         75
-   number of nonzeroes =         681        943        845        674
-   condensed matrix number of equations =         107        145        131        106
-   condensed matrix number of equations I own =          78         81         74         75
-   condensed matrix number of nonzeroes =         681        943        845        674
-   coarse matrix neq =           1
-   coarse (half) bandwidth =           0
+   number of equations =         106        128        128        106
+   number of equations I own =          78         64         73         76
+   number of nonzeroes =         674        826        826        674
+   condensed matrix number of equations =         106        128        128        106
+   condensed matrix number of equations I own =          78         64         73         76
+   condensed matrix number of nonzeroes =         674        826        826        674
 
 Total Linear System:
-   number of equations =         308
-   number of nonzeroes =        1996
-   condensed matrix number of equations =         308
-   condensed matrix number of nonzeroes =        1996
-   coarse matrix neq =           1
-   coarse (half) bandwidth =           0
+   number of equations =         291
+   number of nonzeroes =        1879
+   condensed matrix number of equations =         291
+   condensed matrix number of nonzeroes =        1879
+
+Solver information:
+   number of iterations =           5
+   relative residual =   5.8592332664E-07
 
 Norms of error:
-   energy norm of error       3.9765402981E-01  3.4331109337E-01  3.7625304629E-01  3.9804275838E-01
-      reduced by              3.3036212352E-01  2.8521522060E-01  3.1258266241E-01  3.3068507057E-01
-   energy error estimate      1.2861269187E-01  1.0922365979E-01  1.2684427332E-01  1.2876444955E-01
-      reduced by              3.6786273938E-01  3.1240551854E-01  3.6280464377E-01  3.6829680224E-01
-      effectivity             3.2342861441E-01  3.1814777297E-01  3.3712490722E-01  3.2349401374E-01
-   Linf norm of error         3.6433886944E-02  3.4194451590E-02  4.0665439316E-02  3.6434136930E-02
-      reduced by              3.6017188940E-01  3.3803366231E-01  4.0200344625E-01  3.6017436067E-01
-   Linf error estimate        8.8449389994E-03  6.1591562349E-03  9.2018216206E-03  8.8449389994E-03
-      reduced by              5.3271512064E-01  3.7095514813E-01  5.5420953328E-01  5.3271512064E-01
-      effectivity            2.4276682345E-01  1.8012150944E-01  2.2628113148E-01  2.4276515775E-01
-   L2 norm of error           4.9083731727E-03  4.3816589082E-03  4.8230576529E-03  4.9454511895E-03
-      reduced by              2.4145480046E-01  2.1554444622E-01  2.3725792278E-01  2.4327875818E-01
-   L2 error estimate          1.2644005401E-03  1.0388831301E-03  1.2498019514E-03  1.2718096650E-03
-      reduced by              2.6273043324E-01  2.1587005556E-01  2.5969698504E-01  2.6426997907E-01
-      effectivity            2.5760073564E-01  2.3709812923E-01  2.5913062653E-01  2.5716757000E-01
+   energy norm of error       3.9804555907E-01  3.7573180550E-01  3.7514566100E-01  3.9859803005E-01
+      reduced by              3.2941298495E-01  3.1094665616E-01  3.1046157699E-01  3.2987019673E-01
+   energy error estimate      1.2881133500E-01  1.2693399035E-01  1.2682389960E-01  1.2891973097E-01
+      reduced by              3.6649801912E-01  3.6115653971E-01  3.6084330608E-01  3.6680643069E-01
+      effectivity             3.2360952677E-01  3.3783136933E-01  3.3806575095E-01  3.2343293555E-01
+   Linf norm of error         3.6357080034E-02  4.0589131665E-02  4.0589130746E-02  3.6357076859E-02
+      reduced by              3.6039901028E-01  4.0235032259E-01  4.0235031347E-01  3.6039897881E-01
+   Linf error estimate        8.8449389994E-03  9.2051168873E-03  9.2051169117E-03  8.8449389994E-03
+      reduced by              4.8250062597E-01  5.0214870454E-01  5.0214870587E-01  4.8250062597E-01
+      effectivity            2.4327968558E-01  2.2678772641E-01  2.2678773215E-01  2.4327970683E-01
+   L2 norm of error           4.9214435052E-03  4.8292662192E-03  4.7736113364E-03  4.9754343072E-03
+      reduced by              2.4268628596E-01  2.3814083843E-01  2.3539638413E-01  2.4534868108E-01
+   L2 error estimate          1.2721227753E-03  1.2502059859E-03  1.2432033702E-03  1.2789670861E-03
+      reduced by              2.6012310452E-01  2.5564156907E-01  2.5420967731E-01  2.6152262617E-01
+      effectivity            2.5848570119E-01  2.5888114863E-01  2.6043246561E-01  2.5705637078E-01
 
 Individual Grids:
-   number of vertices       =         230        229        251        230
-   number of vertices I own =         198        147        193        192
-   number of elements       =         808        812        884        808
-   number of leaf elements  =         408        410        446        408
-   leaf elements I own      =         350        280        333        351
-   number of levels         =          11         11         12         11
-   degrees of freedom       =         230        229        251        230
-   degrees of freedom I own =         198        147        193        192
+   number of vertices       =         230        259        259        230
+   number of vertices I own =         193        169        182        190
+   number of elements       =         808        924        924        808
+   number of leaf elements  =         408        466        466        408
+   leaf elements I own      =         338        323        320        341
+   number of levels         =          11         12         12         11
+   degrees of freedom       =         230        259        259        230
+   degrees of freedom I own =         193        169        182        190
    min degree               =           1          1          1          1
    max degree               =           1          1          1          1
 
 Total Grid:
-   number of vertices      =         730
-   number of leaf elements =        1314
+   number of vertices      =         734
+   number of leaf elements =        1322
    number of levels        =          12
-   degrees of freedom      =         730
+   degrees of freedom      =         734
    min and max degree      =           1          1
 
 Individual Linear Systems:
-   number of equations =         230        229        251        230
-   number of equations I own =         198        147        193        192
-   number of nonzeroes =        1504       1505       1643       1504
-   condensed matrix number of equations =         230        229        251        230
-   condensed matrix number of equations I own =         198        147        193        192
-   condensed matrix number of nonzeroes =        1504       1505       1643       1504
-   coarse matrix neq =           1
-   coarse (half) bandwidth =           0
+   number of equations =         230        259        259        230
+   number of equations I own =         193        169        182        190
+   number of nonzeroes =        1504       1707       1707       1504
+   condensed matrix number of equations =         230        259        259        230
+   condensed matrix number of equations I own =         193        169        182        190
+   condensed matrix number of nonzeroes =        1504       1707       1707       1504
 
 Total Linear System:
-   number of equations =         730
-   number of nonzeroes =        4816
-   condensed matrix number of equations =         730
-   condensed matrix number of nonzeroes =        4816
-   coarse matrix neq =           1
-   coarse (half) bandwidth =           0
+   number of equations =         734
+   number of nonzeroes =        4844
+   condensed matrix number of equations =         734
+   condensed matrix number of nonzeroes =        4844
+
+Solver information:
+   number of iterations =           5
+   relative residual =   3.2608428049E-07
 
 Norms of error:
-   energy norm of error       2.4089547877E-01  2.1363817037E-01  2.3471011384E-01  2.4090668990E-01
-      reduced by              6.0579161963E-01  6.2228740783E-01  6.2380920541E-01  6.0522816915E-01
-   energy error estimate      7.6752495381E-02  7.1367985324E-02  8.2073913859E-02  7.6767345044E-02
-      reduced by              5.9677232676E-01  6.5341140795E-01  6.4704469274E-01  5.9618431418E-01
-      effectivity             3.1861326652E-01  3.3406008486E-01  3.4968205040E-01  3.1866007987E-01
-   Linf norm of error         3.0902420028E-02  1.5309111479E-02  1.5299902329E-02  3.0902420799E-02
-      reduced by              8.4817796343E-01  4.4770747203E-01  3.7623846161E-01  8.4817216496E-01
-   Linf error estimate        3.4344293830E-03  3.4631256050E-03  3.4630880533E-03  3.4344293830E-03
-      reduced by              3.8829316780E-01  5.6227273233E-01  3.7634809672E-01  3.8829316780E-01
-      effectivity            1.1113787787E-01  2.2621336384E-01  2.2634706933E-01  1.1113787510E-01
-   L2 norm of error           1.9385595551E-03  1.6217440998E-03  1.7696183760E-03  1.9407800058E-03
-      reduced by              3.9494950503E-01  3.7012102807E-01  3.6690798729E-01  3.9243739984E-01
-   L2 error estimate          5.1550160426E-04  4.7234695765E-04  5.0438926065E-04  5.1824855285E-04
-      reduced by              4.0770435309E-01  4.5466804107E-01  4.0357535055E-01  4.0748908199E-01
-      effectivity            2.6591992127E-01  2.9125862565E-01  2.8502713776E-01  2.6703106549E-01
+   energy norm of error       2.3988927427E-01  2.2439786208E-01  2.2407600495E-01  2.4018994233E-01
+      reduced by              6.0266788262E-01  5.9722881799E-01  5.9730400279E-01  6.0258687755E-01
+   energy error estimate      7.6454349713E-02  7.6788119811E-02  7.6705755088E-02  7.6536985539E-02
+      reduced by              5.9353743762E-01  6.0494529162E-01  6.0482097876E-01  5.9367937682E-01
+      effectivity             3.1870682817E-01  3.4219630748E-01  3.4232025471E-01  3.1865191689E-01
+   Linf norm of error         3.0902548795E-02  1.5230147249E-02  1.5230129013E-02  3.0902548786E-02
+      reduced by              8.4997334126E-01  3.7522722524E-01  3.7522678444E-01  8.4997341524E-01
+   Linf error estimate        3.4344293830E-03  3.3415394038E-03  3.3415394040E-03  3.4344293830E-03
+      reduced by              3.8829316780E-01  3.6300890523E-01  3.6300890429E-01  3.8829316780E-01
+      effectivity            1.1113741478E-01  2.1940296105E-01  2.1940322378E-01  1.1113741481E-01
+   L2 norm of error           1.8822070136E-03  1.7161427082E-03  1.7034409588E-03  1.8937072561E-03
+      reduced by              3.8245019203E-01  3.5536303661E-01  3.5684533966E-01  3.8061144800E-01
+   L2 error estimate          5.0060078667E-04  4.9475499381E-04  4.9207652243E-04  5.0323389244E-04
+      reduced by              3.9351609482E-01  3.9573878177E-01  3.9581337553E-01  3.9346899379E-01
+      effectivity            2.6596478657E-01  2.8829478541E-01  2.8887207385E-01  2.6574006665E-01
 
 Individual Grids:
-   number of vertices       =         230        229        251        230
-   number of vertices I own =         198        147        193        192
-   number of elements       =         808        812        884        808
-   number of leaf elements  =         408        410        446        408
-   leaf elements I own      =         350        280        333        351
-   number of levels         =          11         11         12         11
-   degrees of freedom       =         230        229        251        230
-   degrees of freedom I own =         198        147        193        192
+   number of vertices       =         230        259        259        230
+   number of vertices I own =         193        169        182        190
+   number of elements       =         808        924        924        808
+   number of leaf elements  =         408        466        466        408
+   leaf elements I own      =         338        323        320        341
+   number of levels         =          11         12         12         11
+   degrees of freedom       =         230        259        259        230
+   degrees of freedom I own =         193        169        182        190
    min degree               =           1          1          1          1
    max degree               =           1          1          1          1
 
 Total Grid:
-   number of vertices      =         730
-   number of leaf elements =        1314
+   number of vertices      =         734
+   number of leaf elements =        1322
    number of levels        =          12
-   degrees of freedom      =         730
+   degrees of freedom      =         734
    min and max degree      =           1          1
 
 Norms of error:
-   energy norm of error       2.4089547877E-01  2.1363817037E-01  2.3471011384E-01  2.4090668990E-01
-   energy error estimate      7.6752495381E-02  7.1367985324E-02  8.2073913859E-02  7.6767345044E-02
-      effectivity             3.1861326652E-01  3.3406008486E-01  3.4968205040E-01  3.1866007987E-01
-   Linf norm of error         3.0902420028E-02  1.5309111479E-02  1.5299902329E-02  3.0902420799E-02
-   Linf error estimate        3.4344293830E-03  3.4631256050E-03  3.4630880533E-03  3.4344293830E-03
-      effectivity            1.1113787787E-01  2.2621336384E-01  2.2634706933E-01  1.1113787510E-01
-   L2 norm of error           1.9385595551E-03  1.6217440998E-03  1.7696183760E-03  1.9407800058E-03
-   L2 error estimate          5.1550160426E-04  4.7234695765E-04  5.0438926065E-04  5.1824855285E-04
-      effectivity            2.6591992127E-01  2.9125862565E-01  2.8502713776E-01  2.6703106549E-01
+   energy norm of error       2.3988927427E-01  2.2439786208E-01  2.2407600495E-01  2.4018994233E-01
+   energy error estimate      7.6454349713E-02  7.6788119811E-02  7.6705755088E-02  7.6536985539E-02
+      effectivity             3.1870682817E-01  3.4219630748E-01  3.4232025471E-01  3.1865191689E-01
+   Linf norm of error         3.0902548795E-02  1.5230147249E-02  1.5230129013E-02  3.0902548786E-02
+   Linf error estimate        3.4344293830E-03  3.3415394038E-03  3.3415394040E-03  3.4344293830E-03
+      effectivity            1.1113741478E-01  2.1940296105E-01  2.1940322378E-01  1.1113741481E-01
+   L2 norm of error           1.8822070136E-03  1.7161427082E-03  1.7034409588E-03  1.8937072561E-03
+   L2 error estimate          5.0060078667E-04  4.9475499381E-04  4.9207652243E-04  5.0323389244E-04
+      effectivity            2.6596478657E-01  2.8829478541E-01  2.8887207385E-01  2.6574006665E-01
 
 ---------------------------------------------------------
 phaml_solve_pde complete

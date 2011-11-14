@@ -37,7 +37,7 @@ echo "# done by the U.S. Government, and is not subject to copyright in     !" 1
 echo "# the United States.                                                  !" 1>>$f
 echo "#                                                                     !" 1>>$f
 echo "#     William F. Mitchell                                             !" 1>>$f
-echo "#     Mathematical and Computational Sciences Division                !" 1>>$f
+echo "#     Applied and Computational Mathematics Division                  !" 1>>$f
 echo "#     National Institute of Standards and Technology                  !" 1>>$f
 echo "#     william.mitchell@nist.gov                                       !" 1>>$f
 echo "#     http://math.nist.gov/phaml                                      !" 1>>$f
@@ -115,8 +115,6 @@ echo "	mpi_stringf.o mpi_stringc.o mpipack1.o mpipack2.o mpif.o "'\' 1>>$f
       then
 echo "	mpi2_stringf.o "'\' 1>>$f
       fi ;;
-   pvm)
-echo "	pvmpack1.o pvmpack2.o pvmf.o "'\' 1>>$f ;;
    none)
       : ;;
    *)
@@ -132,7 +130,7 @@ case "$PHAML_ARPACK" in
       case "$PHAML_PARLIB" in
          lam|mpi|mpich|mpich2|myrinet|openmpi)
             : ;;
-         pvm|none)
+         none)
 echo "	parpack.o "'\' 1>>$f ;;
       esac ;;
    no)
@@ -189,8 +187,6 @@ echo "	mpi_stringf.o mpi_stringc.o mpipack1.o mpipack2.o mpif.o "'\' 1>>$f
       then
 echo "	mpi2_stringf.o "'\' 1>>$f
       fi ;;
-   pvm)
-echo "	pvmpack1.o pvmpack2.o pvmf.o "'\' 1>>$f ;;
    none)
       : ;;
    *)
@@ -206,7 +202,7 @@ case "$PHAML_ARPACK" in
       case "$PHAML_PARLIB" in
          lam|mpi|mpich|mpich2|myrinet|openmpi)
             : ;;
-         pvm|none)
+         none)
 echo "	parpack.o "'\' 1>>$f ;;
       esac ;;
    no)
@@ -301,11 +297,12 @@ echo "" 1>>$f
 echo "refine_top.o: refine_top.f90 "'\' 1>>$f
 echo "        global.o gridtype.o grid_util.o linsystype.o messpass.o "'\' 1>>$f
 echo "        refine_uniform.o refine_adapt.o refine_elements.o hash.o "'\' 1>>$f
-echo "        hp_strategies.o" 1>>$f
+echo "        hp_strategies.o zoltan_interf.o" 1>>$f
 echo "	"'$(F90) $(FFLAGS)'" $ZOLTANMOD -c refine_top.f90" 1>>$f
 echo "" 1>>$f
 echo "refine_adapt.o: refine_adapt.f90 "'\' 1>>$f
 echo "        global.o gridtype.o grid_util.o linsystype.o hp_strategies.o "'\' 1>>$f
+echo "        zoltan_interf.o "'\' 1>>$f
 echo "        refine_elements.o messpass.o hash.o linsys_io.o loadbal.o errest.o" 1>>$f
 echo "	"'$(F90) $(FFLAGS)'" $ZOLTANMOD -c refine_adapt.f90" 1>>$f
 echo "" 1>>$f
@@ -316,12 +313,7 @@ echo "        quadrules.o evaluate.o errest.o make_linsys.o" 1>>$f
 echo "	"'$(F90) $(FFLAGS)'" -c hp_strategies.f90" 1>>$f
 echo "" 1>>$f
 echo "refine_uniform.o: refine_uniform.f90 "'\' 1>>$f
-case "$PHAML_PARALLEL" in
-   openmp|hybrid_spawn|hybrid_nospawn) ;;
-   *)
-echo "        openmp_stubs.o "'\' 1>>$f ;;
-esac
-echo "        global.o gridtype.o refine_elements.o grid_util.o hash.o" 1>>$f
+echo "        global.o gridtype.o refine_elements.o grid_util.o hash.o messpass.o" 1>>$f
 echo "	"'$(F90) $(FFLAGS)'" -c refine_uniform.f90" 1>>$f
 echo "" 1>>$f
 echo "refine_elements.o: refine_elements.f90 "'\' 1>>$f
@@ -341,21 +333,21 @@ echo "        global.o gridtype.o messpass.o hash.o quadrules.o basis.o" 1>>$f
 echo "	"'$(F90) $(FFLAGS)'" -c grid_util.f90" 1>>$f
 echo "" 1>>$f
 echo "gridtype.o: gridtype.f90 "'\' 1>>$f
-echo "        global.o hash.o" 1>>$f
+echo "        global.o hash.o messpass.o" 1>>$f
 echo "	"'$(F90) $(FFLAGS)'" -c gridtype.f90" 1>>$f
 echo "" 1>>$f
 echo "grid_io.o: grid_io.f90 "'\' 1>>$f
-echo "        global.o stopwatch.o messpass.o hash.o gridtype.o "'\' 1>>$f
+echo "        global.o stopwatch.o messpass.o hash.o grid_util.o gridtype.o "'\' 1>>$f
 echo "        zoltan_interf.o errest.o" 1>>$f
 echo "	"'$(F90) $(FFLAGS)'" $ZOLTANMOD -c grid_io.f90" 1>>$f
 echo "" 1>>$f
 echo "errest.o: errest.f90 "'\' 1>>$f
 echo "        global.o messpass.o hash.o gridtype.o hash.o make_linsys.o "'\' 1>>$f
-echo "        evaluate.o quadrules.o" 1>>$f
+echo "        evaluate.o quadrules.o grid_util.o" 1>>$f
 echo "	"'$(F90) $(FFLAGS)'" -c errest.f90" 1>>$f
 echo "" 1>>$f
 echo "evaluate.o: evaluate.f90 "'\' 1>>$f
-echo "        global.o messpass.o gridtype.o basis.o" 1>>$f
+echo "        global.o messpass.o gridtype.o grid_util.o basis.o" 1>>$f
 echo "	"'$(F90) $(FFLAGS)'" -c evaluate.f90" 1>>$f
 echo "" 1>>$f
 echo "linsys.o: linsys.f90 "'\' 1>>$f
@@ -399,7 +391,7 @@ echo "	"'$(F90) $(FFLAGS)'" -c hbmg.f90" 1>>$f
 echo "" 1>>$f
 echo "make_linsys.o: make_linsys.f90 "'\' 1>>$f
 echo "        stopwatch.o global.o messpass.o linsystype.o evaluate.o "'\' 1>>$f
-echo "        gridtype.o hash.o hashext.o linsys_util.o quadrules.o basis.o" 1>>$f
+echo "        gridtype.o grid_util.o hash.o hashext.o linsys_util.o quadrules.o basis.o" 1>>$f
 echo "	"'$(F90) $(FFLAGS)'" -c make_linsys.f90" 1>>$f
 echo "" 1>>$f
 echo "quadrules.o: quadrules.f90 "'\' 1>>$f
@@ -412,7 +404,7 @@ echo "	"'$(F90) $(FFLAGS)'" -c basis.f90" 1>>$f
 echo "" 1>>$f
 echo "linsys_io.o: linsys_io.f90 "'\' 1>>$f
 echo "        stopwatch.o global.o messpass.o linsystype.o sysdep.o "'\' 1>>$f
-echo "        gridtype.o make_linsys.o errest.o quadrules.o evaluate.o" 1>>$f
+echo "        gridtype.o grid_util.o make_linsys.o errest.o quadrules.o evaluate.o" 1>>$f
 echo "	"'$(F90) $(FFLAGS)'" -c linsys_io.f90" 1>>$f
 echo "" 1>>$f
 echo "lapack_solve.o: lapack_solve.f90 "'\' 1>>$f
@@ -427,7 +419,7 @@ echo "" 1>>$f
 case "$PHAML_ZOLTAN" in
    yes)
 echo "zoltan_interf.o: zoltan_interf.f90 "'\' 1>>$f
-echo "        global.o messpass.o hash.o gridtype.o" 1>>$f
+echo "        global.o messpass.o hash.o gridtype.o grid_util.o" 1>>$f
 echo "	"'$(F90) $(FFLAGS)'" $ZOLTANMOD -c zoltan_interf.f90" 1>>$f
 echo "" 1>>$f
 case "$PHAML_DRUM" in
@@ -537,7 +529,7 @@ echo "	"'$(F90) $(FFLAGS)'" $PETSCINC -c petsctype.F90" 1>>$f
 echo "" 1>>$f ;;
    no)
 echo "petsc_interf.o: petsc_interf.dum.f90 "'\' 1>>$f
-echo "        global.o" 1>>$f
+echo "        global.o messpass.o linsystype.o" 1>>$f
 echo "	"'$(F90) $(FFLAGS)'" -o petsc_interf.o -c petsc_interf.dum.f90" 1>>$f
 echo "" 1>>$f
 echo "petsc_init.o: petsc_init.dum.f90 "'\' 1>>$f
@@ -550,7 +542,8 @@ echo "	"'$(F90) $(FFLAGS)'" -o petsctype.o -c petsctype.dum.f90" 1>>$f
 echo "" 1>>$f ;;
 esac
 
-echo "hypretype.o: hypretype.f90" 1>>$f
+echo "hypretype.o: hypretype.f90 "'\' 1>>$f
+echo "	global.o" 1>>$f
 echo "	"'$(F90) $(FFLAGS)'" -c hypretype.f90" 1>>$f
 echo "" 1>>$f
 if [ $PHAML_HYPRE = "yes" ]
@@ -585,6 +578,11 @@ echo "        global.o hash.o" 1>>$f
 echo "	"'$(F90) $(FFLAGS)'" -o hashext.o -c hashext$PHAML_HASHSIZE.f90" 1>>$f
 echo "" 1>>$f
 echo "global.o: global.f90 "'\' 1>>$f
+case "$PHAML_PARALLEL" in
+   openmp|hybrid_spawn|hybrid_nospawn) ;;
+   *)
+echo "        openmp_stubs.o "'\' 1>>$f ;;
+esac
 echo "        stopwatch.o" 1>>$f
 echo "	"'$(F90) $(FFLAGS)'" -c global.f90" 1>>$f
 echo "" 1>>$f
@@ -624,9 +622,9 @@ case "$PHAML_ARPACK" in
       case "$PHAML_PARLIB" in
          lam|mpi|mpich|mpich2|myrinet|openmpi)
             : ;;
-         pvm|none)
+         none)
 echo "parpack.o: parpack.dum.f "'\' 1>>$f
-echo "          global.o" 1>>$f
+echo "          global.o messpass.o" 1>>$f
             if [ $PHAML_F90 = "xlf" ]
             then
 echo "	ln -s parpack.dum.f parpack.dum.f90" 1>>$f
@@ -639,7 +637,7 @@ echo "" 1>>$f ;;
       esac ;;
    no)
 echo "arpack.o: arpack.dum.f "'\' 1>>$f
-echo "          global.o" 1>>$f
+echo "          global.o messpass.o" 1>>$f
       if [ $PHAML_F90 = "xlf" ]
       then
 echo "	ln -s arpack.dum.f arpack.dum.f90" 1>>$f
@@ -650,7 +648,7 @@ echo "	"'$(F90) $(FFLAGS)'" -o arpack.o -c arpack.dum.f" 1>>$f
       fi
 echo "" 1>>$f
 echo "parpack.o: parpack.dum.f "'\' 1>>$f
-echo "          global.o" 1>>$f
+echo "          global.o messpass.o" 1>>$f
       if [ $PHAML_F90 = "xlf" ]
       then
 echo "	ln -s parpack.dum.f parpack.dum.f90" 1>>$f
@@ -676,7 +674,7 @@ echo "mpipack1.o: mpipack1.f90" 1>>$f
 echo "	"'$(F90) $(FFLAGS)'" -c mpipack1.f90" 1>>$f
 echo "" 1>>$f
 echo "mpipack2.o: mpipack2.f90 "'\' 1>>$f
-echo "        global.o" 1>>$f
+echo "        global.o messpass.o" 1>>$f
 echo "	"'$(F90) $(FFLAGS)'" -c mpipack2.f90" 1>>$f
 echo "" 1>>$f
 echo "mpif.o: mpif.f" 1>>$f
@@ -704,28 +702,6 @@ echo "mpi2_stringf.o: mpi2_stringf.f90" 1>>$f
 echo "	"'$(F90) $(FFLAGS)'" -c mpi2_stringf.f90" 1>>$f
 echo "" 1>>$f ;;
    esac ;;
-   pvm)
-echo "pvmpack1.o: pvmpack1.f90" 1>>$f
-echo "	"'$(F90) $(FFLAGS)'" -c pvmpack1.f90" 1>>$f
-echo "" 1>>$f
-echo "pvmpack2.o: pvmpack2.f90 "'\' 1>>$f
-echo "        global.o" 1>>$f
-echo "	"'$(F90) $(FFLAGS)'" -c pvmpack2.f90" 1>>$f
-echo "" 1>>$f
-echo "pvmf.o: pvmf.f" 1>>$f
-if [ $PHAML_F90 = "xlf" ]
-then
-echo "	ln -s pvmf.f pvmf.f90" 1>>$f
-echo "	"'$(F90) $(FFLAGS) -qfixed'" $MESSPASSINC -c pvmf.f90" 1>>$f
-echo "	rm -f pvmf.f90" 1>>$f
-else
-echo "	"'$(F90) $(FFLAGS)'" $MESSPASSINC -c pvmf.f" 1>>$f
-fi
-echo "" 1>>$f
-echo "messpass.o: messpass.pvm.f90 pvmf.o "'\' 1>>$f
-echo "        global.o hash.o hashext.o stopwatch.o" 1>>$f
-echo "	"'$(F90) $(FFLAGS)'" -o messpass.o -c messpass.pvm.f90" 1>>$f
-echo "" 1>>$f ;;
    none)
 echo "messpass.o: messpass.dummy.f90 "'\' 1>>$f
 echo "        global.o hash.o hashext.o stopwatch.o" 1>>$f
@@ -786,7 +762,7 @@ fi
 case "$PHAML_GRAPHICS" in
    metro|mesa|opengl)
 echo "graphics.o: graphics.f90 "'\' 1>>$f
-echo "        global.o messpass.o hash.o rendereps.o modview.o gridtype.o evaluate.o phamltype.o" 1>>$f
+echo "        global.o messpass.o hash.o rendereps.o modview.o gridtype.o grid_util.o evaluate.o phamltype.o" 1>>$f
 echo "	"'$(F90) $(FFLAGS)'" $OGLMODS $ZOLTANMOD -c graphics.f90" 1>>$f
 echo "" 1>>$f
 echo "modview.o: modview.f90" 1>>$f

@@ -11,7 +11,7 @@
 ! the United States.                                                  !
 !                                                                     !
 !     William F. Mitchell                                             !
-!     Mathematical and Computational Sciences Division                !
+!     Applied and Computational Mathematics Division                  !
 !     National Institute of Standards and Technology                  !
 !     william.mitchell@nist.gov                                       !
 !     http://math.nist.gov/phaml                                      !
@@ -1155,6 +1155,23 @@ if (my_proc(procs) == MASTER) then
    return
 endif
 
+! TEMP101124 zero out Dirichlet columns -- only sequential and degree=1
+
+do i=1,linsys%neq
+   do j=linsys%begin_row(i),linsys%end_row(i)
+      if (linsys%column_index(j) == NO_ENTRY) cycle
+      if (linsys%equation_type(linsys%column_index(j)) == DIRICHLET .and. &
+          linsys%column_index(j) /= i) then
+         linsys%matrix_val(j) = 0
+         linsys%stiffness(j) = 0
+         linsys%mass(j) = 0
+         linsys%shifted(j) = 0
+         linsys%condensed(j) = 0
+      endif
+   end do
+end do
+! end TEMP101124
+
 ! use linsys for solving the (statically condensed) shifted linear systems,
 ! and full_matrix for operations that need the whole matrix.  full_matrix
 ! points to entries in linsys with the following pointers/values different:
@@ -1467,7 +1484,12 @@ end do ! ii
 ! sort the eigenvalues, if they are on the left or both sides of lambda0
 
 if (nev > 1 .and. lambda0 /= -huge(0.0_my_real)) then
-   allocate(tmpptr(neq_full))
+   allocate(tmpptr(neq_full),stat=allocstat)
+   if (allocstat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("memory allocation failed in eigen_blopex",procs=procs)
+      return
+   endif
 
    call sort(grid%eigenvalue,nev,iperm,1,info)
 

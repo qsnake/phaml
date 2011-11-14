@@ -1,0 +1,39 @@
+This illustrates the solution of the wave equation
+
+  u_tt = k^2 Lu  where L is the Laplacian and k is a constant
+
+by reformulating it as a coupled system of two equations with first order
+time derivatives, and solving that system with a backward Euler scheme.
+
+Note that the system is not symmetric, so this examples requires a nonsymmetric
+solver.  It is currently configured to use the LAPACK indefinite solver,
+however this can only be used on one processor, and should not be used with
+too big a grid.  To run this example in parallel or to high accuracy, you
+need to use a nonsymmetric solver from one of the optional external packages
+like PETSc or MUMPS.
+
+Let v = u_t, where _t denote the time derivative.  Then the wave equation is
+equivalent to
+
+  u_t = v
+  v_t = k^2 Lu
+
+Replacing the time derivatives with differences u_t ~ (u-u_old)/dt, and
+similar for v, where u_old is the solution at the previous time step and
+dt is the time step, the equation to solve at each time step is
+
+ - (| 1 0 | |u|  )   - (| 1 0 | |u|  )   + |  0   1/(k^2 dt)||u| = 
+   (| 0 0 | |v|_x)_x   (| 0 0 | |v|_y)_y   |-1/dt     1     ||v|
+
+          |  0   1/(k^2 dt)||u_old|
+          |-1/dt     0     ||v_old|
+
+where the vertical lines denote square brackets to form matrices and vectors,
+and vertically piled parentheses represent a large parenthesis.
+
+We take the exact solution to be u = sin(a*t)sin(pi*x)sin(pi*y) with
+a = k*sqrt(2)*pi.  Boundary conditions are u = 0 on the unit square.
+The initial condition is
+
+ |u|(0) = |             0              |
+ |v|      |a*cos(a*t)sin(pi*x)sin(pi*y)|

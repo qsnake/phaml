@@ -1,5 +1,5 @@
 ---------------------------------------------------------
-           PHAML   Version 1.8.0
+           PHAML   Version 1.9.1
 
 Output from slave number     2
   PDE id is     0
@@ -21,6 +21,8 @@ Subroutine phaml_solve_pde parameters:
   print_grid_who     EVERYONE
   print_linsys_when  PHASES
   print_linsys_who   EVERYONE
+  print_solver_when  PHASES
+  print_solver_who   EVERYONE
   print_error_when   PHASES
   print_error_who    EVERYONE
   print_error_what   LINF_ERR
@@ -43,7 +45,7 @@ Subroutine phaml_solve_pde parameters:
   prebalance         BALANCE_ELEMENTS
   ignore_quad_err    false
   solver             MG_SOLVER
-  mg_cycles                   2
+  mg_cycles                   5
   mg_tol             MG_ERREST_TOL
   mg_prerelax                 1
   mg_postrelax                2
@@ -70,8 +72,10 @@ My Linear System:
    condensed matrix number of equations =           9
    condensed matrix number of equations I own =           9
    condensed matrix number of nonzeroes =          41
-   coarse matrix neq =           1
-   coarse (half) bandwidth =           0
+
+Solver information:
+   number of iterations =           1
+   relative residual =   1.8361992673E-16
 
 Norms of error:
    Linf norm of error         1.0536246503E+00
@@ -79,32 +83,34 @@ Norms of error:
       effectivity             1.1052381742E+00
 
 My Grid:
-   number of vertices       =          27
-   number of vertices I own =          27
-   number of elements       =          68
-   number of leaf elements  =          38
-   leaf elements I own      =          38
-   number of levels         =           4
-   degrees of freedom       =          27
-   degrees of freedom I own =          27
+   number of vertices       =          29
+   number of vertices I own =          29
+   number of elements       =          72
+   number of leaf elements  =          40
+   leaf elements I own      =          40
+   number of levels         =           5
+   degrees of freedom       =          29
+   degrees of freedom I own =          29
    min and max degree       =           1          1
 
 My Linear System:
-   number of equations =          27
-   number of equations I own =          27
-   number of nonzeroes =         155
-   condensed matrix number of equations =          27
-   condensed matrix number of equations I own =          27
-   condensed matrix number of nonzeroes =         155
-   coarse matrix neq =           1
-   coarse (half) bandwidth =           0
+   number of equations =          29
+   number of equations I own =          29
+   number of nonzeroes =         165
+   condensed matrix number of equations =          29
+   condensed matrix number of equations I own =          29
+   condensed matrix number of nonzeroes =         165
+
+Solver information:
+   number of iterations =           3
+   relative residual =   1.8623819943E-05
 
 Norms of error:
-   Linf norm of error         6.7489276612E-01
-      reduced by              6.4054382737E-01
-   Linf error estimate        3.1966359115E-01
-      reduced by              2.7450570493E-01
-      effectivity             4.7365093715E-01
+   Linf norm of error         5.2342002897E-01
+      reduced by              4.9678035609E-01
+   Linf error estimate        1.9362275570E-01
+      reduced by              1.6627026823E-01
+      effectivity             3.6991850710E-01
 
 My Grid:
    number of vertices       =          36
@@ -124,15 +130,17 @@ My Linear System:
    condensed matrix number of equations =          36
    condensed matrix number of equations I own =          36
    condensed matrix number of nonzeroes =         202
-   coarse matrix neq =           1
-   coarse (half) bandwidth =           0
+
+Solver information:
+   number of iterations =           3
+   relative residual =   1.0129595913E-05
 
 Norms of error:
-   Linf norm of error         4.7530105786E-01
-      reduced by              7.0426159787E-01
-   Linf error estimate        1.3917147125E-01
-      reduced by              4.3536854087E-01
-      effectivity             2.9280698821E-01
+   Linf norm of error         4.7530075334E-01
+      reduced by              9.0806756912E-01
+   Linf error estimate        1.3917355990E-01
+      reduced by              7.1878720761E-01
+      effectivity             2.9281157020E-01
 
 My Grid:
    number of vertices       =          75
@@ -152,115 +160,123 @@ My Linear System:
    condensed matrix number of equations =          75
    condensed matrix number of equations I own =          75
    condensed matrix number of nonzeroes =         439
-   coarse matrix neq =           1
-   coarse (half) bandwidth =           0
+
+Solver information:
+   number of iterations =           4
+   relative residual =   2.1361444499E-06
 
 Norms of error:
-   Linf norm of error         2.5534403332E-01
-      reduced by              5.3722588893E-01
-   Linf error estimate        5.3212994702E-02
-      reduced by              3.8235562379E-01
-      effectivity             2.0839725139E-01
+   Linf norm of error         2.5521099956E-01
+      reduced by              5.3694633928E-01
+   Linf error estimate        5.3216400614E-02
+      reduced by              3.8237435797E-01
+      effectivity             2.0851922803E-01
 
 My Grid:
-   number of vertices       =         171
-   number of vertices I own =         171
-   number of elements       =         580
-   number of leaf elements  =         294
-   leaf elements I own      =         294
+   number of vertices       =         170
+   number of vertices I own =         170
+   number of elements       =         572
+   number of leaf elements  =         290
+   leaf elements I own      =         290
    number of levels         =           9
-   degrees of freedom       =         171
-   degrees of freedom I own =         171
+   degrees of freedom       =         170
+   degrees of freedom I own =         170
    min and max degree       =           1          1
 
 My Linear System:
-   number of equations =         171
-   number of equations I own =         171
-   number of nonzeroes =        1099
-   condensed matrix number of equations =         171
-   condensed matrix number of equations I own =         171
-   condensed matrix number of nonzeroes =        1099
-   coarse matrix neq =           1
-   coarse (half) bandwidth =           0
+   number of equations =         170
+   number of equations I own =         170
+   number of nonzeroes =        1088
+   condensed matrix number of equations =         170
+   condensed matrix number of equations I own =         170
+   condensed matrix number of nonzeroes =        1088
+
+Solver information:
+   number of iterations =           4
+   relative residual =   3.9390784188E-06
 
 Norms of error:
-   Linf norm of error         1.0115694205E-01
-      reduced by              3.9615941182E-01
-   Linf error estimate        1.6603506558E-02
-      reduced by              3.1201977358E-01
-      effectivity             1.6413610595E-01
+   Linf norm of error         1.0088007735E-01
+      reduced by              3.9528107145E-01
+   Linf error estimate        1.8331456009E-02
+      reduced by              3.4447004678E-01
+      effectivity             1.8171532468E-01
 
 My Grid:
-   number of vertices       =         176
+   number of vertices       =         175
    number of vertices I own =         149
-   number of elements       =         600
-   number of leaf elements  =         304
+   number of elements       =         596
+   number of leaf elements  =         302
    leaf elements I own      =         252
    number of levels         =          10
-   degrees of freedom       =         176
+   degrees of freedom       =         175
    degrees of freedom I own =         149
    min and max degree       =           1          1
 
 My Linear System:
-   number of equations =         176
+   number of equations =         175
    number of equations I own =         149
-   number of nonzeroes =        1134
-   condensed matrix number of equations =         176
+   number of nonzeroes =        1127
+   condensed matrix number of equations =         175
    condensed matrix number of equations I own =         149
-   condensed matrix number of nonzeroes =        1134
-   coarse matrix neq =           1
-   coarse (half) bandwidth =           0
+   condensed matrix number of nonzeroes =        1127
+
+Solver information:
+   number of iterations =           5
+   relative residual =   4.7173433559E-07
 
 Norms of error:
-   Linf norm of error         4.0757234166E-02
-      reduced by              4.0291089607E-01
-   Linf error estimate        9.2017496201E-03
-      reduced by              5.5420519682E-01
-      effectivity             2.2576972674E-01
+   Linf norm of error         4.0589120643E-02
+      reduced by              4.0235021333E-01
+   Linf error estimate        9.2051169502E-03
+      reduced by              5.0214870797E-01
+      effectivity             2.2678778955E-01
 
 My Grid:
-   number of vertices       =         405
-   number of vertices I own =         370
-   number of elements       =        1446
-   number of leaf elements  =         727
-   leaf elements I own      =         657
+   number of vertices       =         409
+   number of vertices I own =         372
+   number of elements       =        1462
+   number of leaf elements  =         735
+   leaf elements I own      =         661
    number of levels         =          12
-   degrees of freedom       =         405
-   degrees of freedom I own =         370
+   degrees of freedom       =         409
+   degrees of freedom I own =         372
    min and max degree       =           1          1
 
 My Linear System:
-   number of equations =         405
-   number of equations I own =         370
-   number of nonzeroes =        2667
-   condensed matrix number of equations =         405
-   condensed matrix number of equations I own =         370
-   condensed matrix number of nonzeroes =        2667
-   coarse matrix neq =           1
-   coarse (half) bandwidth =           0
+   number of equations =         409
+   number of equations I own =         372
+   number of nonzeroes =        2695
+   condensed matrix number of equations =         409
+   condensed matrix number of equations I own =         372
+   condensed matrix number of nonzeroes =        2695
+
+Solver information:
+   number of iterations =           5
+   relative residual =   2.6552182090E-07
 
 Norms of error:
-   Linf norm of error         3.0902407719E-02
-      reduced by              7.5820669266E-01
-   Linf error estimate        3.4627402338E-03
-      reduced by              3.7631324223E-01
-      effectivity             1.1205405952E-01
+   Linf norm of error         3.0902548784E-02
+      reduced by              7.6135053667E-01
+   Linf error estimate        3.4344293830E-03
+      reduced by              3.7310002704E-01
+      effectivity             1.1113741481E-01
 
 My Grid:
-   number of vertices       =         405
-   number of vertices I own =         370
-   number of elements       =        1446
-   number of leaf elements  =         727
-   leaf elements I own      =         657
+   number of vertices       =         409
+   number of vertices I own =         372
+   number of elements       =        1462
+   number of leaf elements  =         735
+   leaf elements I own      =         661
    number of levels         =          12
-   degrees of freedom       =         405
-   degrees of freedom I own =         370
+   degrees of freedom       =         409
+   degrees of freedom I own =         372
    min and max degree       =           1          1
 
 Norms of error:
-   Linf norm of error         3.0902407719E-02
-   Linf error estimate        3.4627402338E-03
-      effectivity             1.1205405952E-01
+   Linf norm of error         3.0902548784E-02
+   Linf error estimate        3.4344293830E-03
+      effectivity             1.1113741481E-01
 
 ---------------------------------------------------------
 phaml_solve_pde complete

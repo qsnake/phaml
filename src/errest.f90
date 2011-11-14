@@ -11,7 +11,7 @@
 ! the United States.                                                  !
 !                                                                     !
 !     William F. Mitchell                                             !
-!     Mathematical and Computational Sciences Division                !
+!     Applied and Computational Mathematics Division                  !
 !     National Institute of Standards and Technology                  !
 !     william.mitchell@nist.gov                                       !
 !     http://math.nist.gov/phaml                                      !
@@ -35,17 +35,22 @@ module error_estimators
 use global
 use message_passing
 use gridtype_mod
+use grid_util
 use hash_mod
 use make_linsys
 use evaluate
 use basis_functions
 use quadrature_rules
+use omp_lib
 !----------------------------------------------------
 
 implicit none
 private
-public all_error_indicators, error_indicator, error_estimate, set_edge_mass, &
-       equilibrated_residual_ei_one
+public all_error_indicators,        & ! not thread safe (is OpenMP parallel)
+       error_indicator,             & ! thread safe
+       error_estimate,              & ! not thread safe
+       set_edge_mass,               & ! not thread safe
+       equilibrated_residual_ei_one   ! thread safe
 
 !----------------------------------------------------
 ! Non-module procedures used are:
@@ -101,6 +106,7 @@ end interface
 
 type(grid_type), pointer :: hold_grid
 integer :: hold_elem
+!$omp threadprivate(hold_grid,hold_elem)
 
 ! for equilibrated residual patch type
 integer, parameter :: INTERIOR_VERTEX     = 1, &
@@ -160,13 +166,6 @@ case (EQUILIBRATED_RESIDUAL)
 
 case (INITIAL_CONDITION)
    call init_cond_ei(grid,elem,energy,work,energy_est,Linf,L2)
-
-case (REFSOLN_ERREST)
-   if (present(energy)) energy = 0.0_my_real
-   if (present(work)) work = 1.0_my_real
-   if (present(energy_est)) energy_est = 0.0_my_real
-   if (present(Linf)) Linf = 0.0_my_real
-   if (present(L2)) L2 = 0.0_my_real
 
 case default
    call fatal("illegal value for error_indicator choice")
@@ -451,10 +450,17 @@ real(my_real) :: int_resid_L2sq_comps(grid%system_size,max(1,grid%num_eval)), &
                  loc_energy(max(1,grid%num_eval))
 real(my_real) :: elem_diam, edge_len(EDGES_PER_ELEMENT)
 integer :: qorder, jerr, nqpoints, astat, i, e, edge, eigen, comp, soln, pow(4)
-integer :: all_comp(grid%system_size), all_eigen(max(1,grid%num_eval))
+! PGI bug workaround; need allocatable instead of automatic
+integer, allocatable :: all_comp(:), all_eigen(:)
 !----------------------------------------------------
 ! Begin executable code
 
+allocate(all_comp(grid%system_size), all_eigen(max(1,grid%num_eval)),stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("memory allocation failed in explicit_ei")
+   return
+endif
 all_comp  = (/ (i,i=1,grid%system_size) /)
 all_eigen = (/ (i,i=1,max(1,grid%num_eval)) /)
 
@@ -544,7 +550,7 @@ do e=1,EDGES_PER_ELEMENT
 
 end do
 
-deallocate(resid,stat=astat)
+deallocate(all_comp,all_eigen,resid,stat=astat)
 
 ! set the element diameter as the longest edge length
 
@@ -1016,11 +1022,11 @@ endif
 ! energy error indicator is sqrt(e Ae)
 
 if (my_real == kind(1.0)) then
-   call sgemm("N","N",full_n,nev,full_n,1.0_my_real,copy_mat, &
-             full_n,full_rs,full_n,0.0_my_real,temp,full_n)
+   call sgemm("N","N",full_n,nev,full_n,1.0,copy_mat, &
+             full_n,full_rs,full_n,0.0,temp,full_n)
 elseif (my_real == kind(1.0d0)) then
-   call dgemm("N","N",full_n,nev,full_n,1.0_my_real,copy_mat, &
-             full_n,full_rs,full_n,0.0_my_real,temp,full_n)
+   call dgemm("N","N",full_n,nev,full_n,1.0d0,copy_mat, &
+             full_n,full_rs,full_n,0.0d0,temp,full_n)
 else
    ierr = PHAML_INTERNAL_ERROR
    call fatal("my_real is neither single nor double precision. Can't call GEMM")
@@ -1222,9 +1228,9 @@ endif
 ! energy error indicator is sqrt(e Ae)
 
 if (my_real == kind(1.0)) then
-   call sgemm("N","N",n,nev,n,1.0_my_real,mat,n,rs,n,0.0_my_real,temp2,n)
+   call sgemm("N","N",n,nev,n,1.0,mat,n,rs,n,0.0,temp2,n)
 elseif (my_real == kind(1.0d0)) then
-   call dgemm("N","N",n,nev,n,1.0_my_real,mat,n,rs,n,0.0_my_real,temp2,n)
+   call dgemm("N","N",n,nev,n,1.0d0,mat,n,rs,n,0.0d0,temp2,n)
 else
    ierr = PHAML_INTERNAL_ERROR
    call fatal("my_real is neither single nor double precision. Can't call GEMM")
@@ -1418,6 +1424,7 @@ real(my_real) :: u(hold_grid%system_size,max(1,hold_grid%num_eval),size(x)), &
                  cyy(hold_grid%system_size,hold_grid%system_size,size(x)), &
                  cx (hold_grid%system_size,hold_grid%system_size,size(x)), &
                  cy (hold_grid%system_size,hold_grid%system_size,size(x)), &
+                 pders(hold_grid%system_size,size(x)), &
                  uxsum(size(x)), uysum(size(x))
 real(my_real) :: xx(size(x)),yy(size(y)) ! TEMP081103 battery cludge
 !----------------------------------------------------
@@ -1456,7 +1463,7 @@ if (bmark == huge(0)) then
 
    do i=1,size(x)
       call pdecoefs(xx(i),yy(i),cxx(:,:,i),cxy(:,:,i),cyy(:,:,i),cx(:,:,i), &
-                    cy(:,:,i),c(:,:,i),rs(:,i))
+                    cy(:,:,i),c(:,:,i),pders(:,i))
    end do
 
 ! find the neighbor that shares the (x,y) edge; it has the same index as edge
@@ -1471,7 +1478,7 @@ if (bmark == huge(0)) then
 
 ! add normal derivative of solution to right side
 
-   do i=1,hold_grid%system_size
+   do i=1,grid%system_size
       uxsum = 0.0_my_real
       uysum = 0.0_my_real
       do j=1,ss
@@ -1501,7 +1508,7 @@ if (bmark == huge(0)) then
       yy = y + normal(2)*1.0e-13_my_real
       do i=1,size(x)
          call pdecoefs(xx(i),yy(i),cxx(:,:,i),cxy(:,:,i),cyy(:,:,i),cx(:,:,i), &
-                       cy(:,:,i),c(:,:,i),rs(:,i))
+                       cy(:,:,i),c(:,:,i),pders(:,i))
       end do
    endif
 
@@ -1514,7 +1521,7 @@ if (bmark == huge(0)) then
 ! TEMP I don't know why this should be -1/2 the jump, but adding the extra rs
 !      is the only thing that works
 
-   do i=1,hold_grid%system_size
+   do i=1,grid%system_size
       uxsum = 0.0_my_real
       uysum = 0.0_my_real
       do j=1,ss
@@ -1555,10 +1562,15 @@ else
       call evaluate_soln_local(grid,x,y,elem,(/(j,j=1,ss)/),(/(i,i=1,max(1,grid%num_eval))/),u)
    endif
 
+   do i=1,size(x)
+      call pdecoefs(x(i),y(i),cxx(:,:,i),cxy(:,:,i),cyy(:,:,i),cx(:,:,i), &
+                    cy(:,:,i),c(:,:,i),pders(:,i))
+   end do
+
    do i=1,ss
       if (itype(i) == NATURAL .or. itype(i) == MIXED) then
          call evaluate_soln_local(grid,x,y,elem,(/i/), &
-                                  (/(i,i=1,max(1,grid%num_eval))/),ux=ux,uy=uy)
+                                  (/(j,j=1,max(1,grid%num_eval))/),ux=ux,uy=uy)
          uxsum = 0.0_my_real
          uysum = 0.0_my_real
          do j=1,ss
@@ -1914,12 +1926,15 @@ deallocate(qw,xq,yq,err)
 end subroutine init_cond_ei
 
 !          --------------------
-subroutine all_error_indicators(grid,method)
+subroutine all_error_indicators(grid,method,delayed)
 !          --------------------
 
 !----------------------------------------------------
 ! This routine computes the error indicators for all elements, and the
-! global error estimates
+! global error estimates.
+! If delayed is true, only compute those for which the error indicator is
+! negative, which is a flag to indicate which ones need updating.
+! NOTE: if delayed is true, the error estimates are not computed
 !----------------------------------------------------
 
 !----------------------------------------------------
@@ -1927,19 +1942,31 @@ subroutine all_error_indicators(grid,method)
 
 type(grid_type), intent(inout) :: grid
 integer, intent(in) :: method
+logical, intent(in), optional :: delayed
 !----------------------------------------------------
 ! Local variables:
 
-integer :: lev, elem, mate, eval, comp, nev, ss, nelem, astat
+integer :: i, lev, elem, eval, comp, nev, ss, nelem, astat, nleaf
+integer :: leaf_elements(grid%nelem_leaf)
 real(my_real) :: energy(max(1,grid%num_eval)), &
                  Linf(grid%system_size,max(1,grid%num_eval)), &
                  L2(grid%system_size,max(1,grid%num_eval)), &
+                 sum_errest_energy(max(1,grid%num_eval)), &
+                 max_errest_Linf(grid%nsoln), &
+                 sum_errest_L2(grid%nsoln), &
+                 sum_errest_eigenvalue(max(1,grid%num_eval)), &
                  diam,xvert(3),yvert(3),area,domain_area
 real(my_real), allocatable :: all_energy(:,:),all_work(:),all_energy_est(:,:), &
                               all_Linf(:,:,:),all_L2(:,:,:)
-logical :: compatibly_divisible
+logical :: loc_delayed
 !----------------------------------------------------
 ! Begin executable code
+
+if (present(delayed)) then
+   loc_delayed = delayed
+else
+   loc_delayed = .false.
+endif
 
 ss = grid%system_size
 nev = max(1,grid%num_eval)
@@ -1962,87 +1989,89 @@ endif
 
 domain_area = (grid%boundbox_max%x-grid%boundbox_min%x)*(grid%boundbox_max%y-grid%boundbox_min%y)
 
-! initialize error estimates to 0
+! initializations
 
-grid%errest_energy = 0.0_my_real
-grid%errest_Linf = 0.0_my_real
-grid%errest_L2 = 0.0_my_real
-grid%errest_eigenvalue = 0.0_my_real
+if (.not. loc_delayed) grid%element_errind = 0.0_my_real
+grid%element%work = 1.0_my_real
+sum_errest_energy = 0.0_my_real
+max_errest_Linf = -huge(0.0_my_real)
+sum_errest_L2 = 0.0_my_real
+sum_errest_eigenvalue = 0.0_my_real
+
+! make a list of the leaf elements
+
+call list_elements(grid,leaf_elements,nleaf,leaf=.true.)
 
 ! for each leaf element ...
 
-do lev=1,grid%nlev
-   elem = grid%head_level_elem(lev)
-   do while (elem /= END_OF_LIST)
-      grid%element_errind(elem,:) = 0.0_my_real
-      grid%element(elem)%work = 1.0_my_real
-      if (grid%element(elem)%isleaf) then
+!$omp parallel do &
+!$omp  default(shared) &
+!$omp  private(i,elem,energy,Linf,L2,xvert,yvert, &
+!$omp          area,diam,eval,comp) &
+!$omp  reduction(+ : sum_errest_energy, sum_errest_L2, sum_errest_eigenvalue) &
+!$omp  reduction(max : max_errest_Linf)
 
-! identify the mate and whether or not elem is compatibly divisible
+do i=1,nleaf
+   elem = leaf_elements(i)
 
-         compatibly_divisible = .true.
-         if (grid%element(elem)%mate == BOUNDARY) then
-            mate = BOUNDARY
-         else
-            mate = hash_decode_key(grid%element(elem)%mate,grid%elem_hash)
-            if (mate == HASH_NOT_FOUND) then
-               mate = hash_decode_key(grid%element(elem)%mate/2,grid%elem_hash)
-               compatibly_divisible = .false.
-            endif
-         endif
+! if delayed is true, only compute those for which the error indicator is
+! negative, which is a flag to indicate which ones need updating.
+
+   if (.not. loc_delayed .or. grid%element_errind(elem,1) < 0.0_my_real) then
 
 ! compute error indicators
 
-         if (method == EQUILIBRATED_RESIDUAL) then
-            grid%element_errind(elem,:) = all_energy(:,elem)
-            grid%element(elem)%work = all_work(elem)
-            energy = all_energy_est(:,elem)
-            Linf = all_Linf(:,:,elem)
-            L2 = all_L2(:,:,elem)
-         else
-            call error_indicator(grid,elem,method, &
-                                 grid%element_errind(elem,:), &
-                                 grid%element(elem)%work,energy,Linf,L2)
-         endif
+      if (method == EQUILIBRATED_RESIDUAL) then
+         grid%element_errind(elem,:) = all_energy(:,elem)
+         grid%element(elem)%work = all_work(elem)
+         energy = all_energy_est(:,elem)
+         Linf = all_Linf(:,:,elem)
+         L2 = all_L2(:,:,elem)
+      else
+         if (loc_delayed) grid%element_errind(elem,:) = 0.0_my_real
+         call error_indicator(grid,elem,method, &
+                              grid%element_errind(elem,:), &
+                              grid%element(elem)%work,energy,Linf,L2)
+      endif
 
 ! if I own the element, add to error estimate.
 
-         if (grid%element(elem)%iown) then
-            grid%errest_energy = grid%errest_energy + energy**2
-            grid%errest_Linf = &
-               max(grid%errest_Linf,reshape(Linf,(/grid%nsoln/)))
-            grid%errest_L2 = grid%errest_L2 + reshape(L2**2,(/grid%nsoln/))
-            if (grid%num_eval > 0) then
-               xvert = grid%vertex(grid%element(elem)%vertex)%coord%x
-               yvert = grid%vertex(grid%element(elem)%vertex)%coord%y
-               area = abs(xvert(1)*(yvert(2)-yvert(3)) + &
-                          xvert(2)*(yvert(3)-yvert(1)) + &
-                          xvert(3)*(yvert(1)-yvert(2))) / 2
-               diam = sqrt(area/domain_area)
-               do eval=1,grid%num_eval
-                  do comp=1,grid%system_size
-                     grid%errest_eigenvalue(eval)=grid%errest_eigenvalue(eval) &
-                      + ((diam**(grid%element(elem)%degree-1))*L2(comp,eval))**2
-                  end do
+      if (grid%element(elem)%iown) then
+         sum_errest_energy = sum_errest_energy + energy**2
+         max_errest_Linf = max(max_errest_Linf,reshape(Linf,(/grid%nsoln/)))
+         sum_errest_L2 = sum_errest_L2 + reshape(L2**2,(/grid%nsoln/))
+         if (grid%num_eval > 0) then
+            xvert = grid%vertex(grid%element(elem)%vertex)%coord%x
+            yvert = grid%vertex(grid%element(elem)%vertex)%coord%y
+            area = abs(xvert(1)*(yvert(2)-yvert(3)) + &
+                       xvert(2)*(yvert(3)-yvert(1)) + &
+                       xvert(3)*(yvert(1)-yvert(2))) / 2
+            diam = sqrt(area/domain_area)
+            do eval=1,grid%num_eval
+               do comp=1,grid%system_size
+                  sum_errest_eigenvalue(eval)=sum_errest_eigenvalue(eval) + &
+                       ((diam**(grid%element(elem)%degree-1))*L2(comp,eval))**2
                end do
-            endif
+            end do
          endif
-
       endif
-
-      elem = grid%element(elem)%next
-   end do
+   endif
 end do
+!$omp end parallel do
 
-grid%errest_energy = sqrt(grid%errest_energy)
-grid%errest_L2 = sqrt(grid%errest_L2)
-grid%errest_eigenvalue = sqrt(grid%errest_eigenvalue)
+if (.not. loc_delayed) then
+
+   grid%errest_energy = sqrt(sum_errest_energy)
+   grid%errest_Linf = max_errest_Linf
+   grid%errest_L2 = sqrt(sum_errest_L2)
+   grid%errest_eigenvalue = sqrt(sum_errest_eigenvalue)
+
 ! remove the arbitrary constant that was applied to the L2 error indicators
-if (method == EXPLICIT_ERRIND) then
-   grid%errest_eigenvalue = grid%errest_eigenvalue*10
-endif
-if (method == REFSOLN_ERREST) then
-   grid%errest_energy = grid%refsoln_errest
+
+   if (method == EXPLICIT_ERRIND) then
+      grid%errest_eigenvalue = grid%errest_eigenvalue*10
+   endif
+
 endif
 
 if (method == EQUILIBRATED_RESIDUAL) then
@@ -2087,19 +2116,6 @@ if (my_proc(procs) == MASTER) then
    if (present(errest_L2)) errest_L2 = 0.0_my_real
    if (present(errest_eigenvalue)) errest_eigenvalue = 0.0_my_real
    return
-endif
-
-! for REFSOLN_ERREST, the error estimate is stored in the grid data
-! structure.  The places where this routine is called without method present
-! (hbmg and krylov solvers to get error estimate for termination criteria)
-! are OK to use a different method.
-! The norm is actually the H1 seminorm, but we'll return it in energy anyway.
-
-if (present(method)) then
-   if (method == REFSOLN_ERREST) then
-      if (present(errest_energy)) errest_energy = grid%refsoln_errest
-      return
-   endif
 endif
 
 ! compute error indicators if they are not up to date
@@ -2279,9 +2295,8 @@ real(my_real), allocatable :: u(:,:,:),ux(:,:,:),uy(:,:,:),cxx(:,:,:), &
                               c(:,:,:),rs(:,:),bcc(:,:,:),bcrs(:,:)
 real(my_real) :: normal(2)
 integer :: itype(grid%system_size)
-integer :: i, j, p, iedge, neigh, neighbors(3)
+integer :: i, j, p, iedge, neigh, neighbors(3), astat
 logical :: first_loop, first_loop2
-logical, save :: first_call = .true. ! TEMP for periodic problem
 !----------------------------------------------------
 ! Begin executable code
 
@@ -2296,7 +2311,12 @@ allocate(u(size(comp),size(eigen),size(x)), &
          c  (grid%system_size,grid%system_size,size(x)), &
          rs (grid%system_size,size(x)), &
          bcc(grid%system_size,grid%system_size,size(x)), &
-         bcrs(grid%system_size,size(x)))
+         bcrs(grid%system_size,size(x)),stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("memory allocation failed in boundary_residual")
+   stop 
+endif
 
 first_loop = .true.
 first_loop2 = .true.
@@ -2389,28 +2409,14 @@ do i=1,size(comp)
          if (first_loop2) then
             first_loop2 = .false.
 
-            if (grid%edge_type(edge,i) == INTERIOR) then
-               neighbors = get_neighbors(elem,grid)
-               neigh = neighbors(iedge)
-
-            elseif (grid%edge_type(edge,i) == PERIODIC_SLAVE .or. &
-                    grid%edge_type(edge,i) == PERIODIC_MASTER) then
-! TEMP for periodic problem
-               if (first_call) then
-                  call warning("Have not determined how to find the neighbor across a periodic boundary in", &
-                               "boundary_residual.  Omitting jump term.")
-                  first_call = .false.
-               endif
-               resid(i,:,:) = 0.0_my_real
-               cycle
-      
-            endif
+            neighbors = get_neighbors(elem,grid)
+            neigh = neighbors(iedge)
 
 ! compute the solution derivatives in the neighbor
 
             call evaluate_soln_local(grid,x,y,neigh,comp,eigen,ux=ux,uy=uy)
 
-         endif ! first_loop2
+         endif
 
 ! subtract the normal derivative to get the jump
 
@@ -2521,7 +2527,8 @@ real(my_real), intent(out), optional :: energy(:,:), work(:), energy_est(:,:), &
 !----------------------------------------------------
 ! Local variables:
 
-integer :: lev, vert, K, ss, nev, astat
+integer :: i, lev, vert, K, ss, nev, astat, nvert, nelem
+integer :: vert_list(grid%nvert), leaf_elements(grid%nelem_leaf)
 !----------------------------------------------------
 ! Begin executable code
 
@@ -2530,36 +2537,57 @@ nev = max(1,grid%num_eval)
 
 ! allocate space for the flux moments
 
-allocate(mu_K(size(grid%element),3,2,ss,nev),stat=astat)
+! check if it is allocated, and if it is big enough
+if (.not. allocated(mu_K)) then
+   allocate(mu_K(size(grid%element),3,2,ss,nev),stat=astat)
+elseif (size(mu_K,dim=1) < size(grid%element)) then
+   deallocate(mu_K)
+   allocate(mu_K(size(grid%element),3,2,ss,nev),stat=astat)
+else
+   astat = 0
+endif
 if (astat /= 0) then
    ierr = ALLOC_FAILED
    call fatal("allocation failed in equilibrated_residual_ei_all")
    stop
 endif
 
-! For each vertex ...
+! Make a list of all vertices
 
+nvert = 0
 do lev = 1,grid%nlev
    vert = grid%head_level_vert(lev)
    do while (vert /= END_OF_LIST)
-      call eq_resid_worker1(grid,vert)
+      nvert = nvert + 1
+      vert_list(nvert) = vert
       vert = grid%vertex(vert)%next
    end do
 end do
 
-! for each element K ...
+! Call worker1 with each vertex
 
-do lev=1,grid%nlev
-   K = grid%head_level_elem(lev)
-   do while (K /= END_OF_LIST)
-      if (.not. grid%element(K)%isleaf) then
-         K = grid%element(K)%next
-         cycle
-      endif
-      call eq_resid_worker2_all(grid,K,energy,work,energy_est,Linf,L2,multi_p)
-      K = grid%element(K)%next
-   end do
+!$omp parallel do &
+!$omp  default(shared) &
+!$omp  private(i)
+do i=1,nvert
+   call eq_resid_worker1(grid,vert_list(i))
 end do
+!$omp end parallel do
+
+! Make a list of leaf elements.
+
+call list_elements(grid,leaf_elements,nelem,leaf=.true.)
+
+! Call worker2 with each leaf element
+
+!$omp parallel do &
+!$omp  default(shared) &
+!$omp  private(i)
+do i=1,nelem
+   call eq_resid_worker2_all(grid,leaf_elements(i),energy,work,energy_est, &
+                             Linf,L2,multi_p)
+end do
+!$omp end parallel do
 
 deallocate(mu_K)
 
@@ -2596,12 +2624,21 @@ nev = max(1,grid%num_eval)
 
 ! allocate space for the flux moments
 
-allocate(mu_K(size(grid%element),3,2,ss,nev),stat=astat)
+!$omp critical (ei_one_critical1)
+if (.not. allocated(mu_k)) then
+   allocate(mu_K(size(grid%element),3,2,ss,nev),stat=astat)
+elseif (size(mu_K,dim=1) < size(grid%element)) then
+   deallocate(mu_K)
+   allocate(mu_K(size(grid%element),3,2,ss,nev),stat=astat)
+else
+   astat = 0
+endif
 if (astat /= 0) then
    ierr = ALLOC_FAILED
    call fatal("allocation failed in equilibrated_residual_ei_one")
    stop
 endif
+!$omp end critical (ei_one_critical1)
 
 do i=1,3
    vert = grid%element(K)%vertex(i)
@@ -2610,7 +2647,11 @@ end do
 
 call eq_resid_worker2_one(grid,K,energy,work,energy_est,Linf,L2,multi_p)
 
-deallocate(mu_K)
+! if there is more than one active thread, don't deallocate
+
+if (.not. omp_in_parallel()) then
+   deallocate(mu_K)
+endif
 
 end subroutine equilibrated_residual_ei_one
 
@@ -2634,14 +2675,30 @@ integer, intent(in) :: vert
 
 integer :: i1, i2, K, num_patch_elements, astat, vert_local_index, &
            edge_local_index, vert_local_edge_index, gamma, ss, nev, comp, &
-           patch_type(grid%system_size)
+           patch_type(grid%system_size), gamma_mate, vert_mate, use_vert, use_gamma
 integer, pointer :: patch_element(:), patch_edge(:)
 real(my_real), allocatable :: sigma(:,:,:), mu_K_tilde(:,:,:,:)
+real(my_real) :: temp
 !----------------------------------------------------
 ! Begin executable code
 
 ss = grid%system_size
 nev = max(1,grid%num_eval)
+
+! If vert is on a periodic boundary, find the matching vertex
+
+if (any(grid%vertex_type(vert,:) == PERIODIC_SLAVE) .or. &
+    any(grid%vertex_type(vert,:) == PERIODIC_MASTER) .or. &
+    any(grid%vertex_type(vert,:) == PERIODIC_SLAVE_DIR) .or. &
+    any(grid%vertex_type(vert,:) == PERIODIC_MASTER_DIR) .or. &
+    any(grid%vertex_type(vert,:) == PERIODIC_SLAVE_NAT) .or. &
+    any(grid%vertex_type(vert,:) == PERIODIC_MASTER_NAT) .or. &
+    any(grid%vertex_type(vert,:) == PERIODIC_SLAVE_MIX) .or. &
+    any(grid%vertex_type(vert,:) == PERIODIC_MASTER_MIX)) then
+   vert_mate = matching_periodic_vert(grid,vert)
+else
+   vert_mate = vert
+endif
 
 ! Identify the patch of elements around the vertex
 
@@ -2664,13 +2721,19 @@ endif
 do i1 = 1,num_patch_elements
    K = patch_element(i1)
 
-! determine the local index of this vertex in this element
+! Determine the local index of this vertex in this element.
 
    if (grid%element(K)%vertex(1) == vert) then
       vert_local_index = 1
    elseif (grid%element(K)%vertex(2) == vert) then
       vert_local_index = 2
    elseif (grid%element(K)%vertex(3) == vert) then
+      vert_local_index = 3
+   elseif (grid%element(K)%vertex(1) == vert_mate) then
+      vert_local_index = 1
+   elseif (grid%element(K)%vertex(2) == vert_mate) then
+      vert_local_index = 2
+   elseif (grid%element(K)%vertex(3) == vert_mate) then
       vert_local_index = 3
    else
       ierr = PHAML_INTERNAL_ERROR
@@ -2713,10 +2776,42 @@ do i1 = 1,num_patch_elements+1
 
       K = patch_element(i1+i2-2)
 
+! In the case of periodic boundary conditions, make sure we have picked the
+! vertex and edge that are in this element.
+
+      if (any(grid%element(K)%vertex == vert)) then
+         use_vert = vert
+      elseif (any(grid%element(K)%vertex == vert_mate)) then
+         use_vert = vert_mate
+      else
+         ierr = PHAML_INTERNAL_ERROR
+         call fatal("eq_resid_worker1: failed to find vertex in element")
+         stop
+      endif
+
+      if (any(grid%element(K)%edge == gamma)) then
+         use_gamma = gamma
+      else
+         if (any(grid%edge_type(gamma,:) == PERIODIC_MASTER) .or. &
+             any(grid%edge_type(gamma,:) == PERIODIC_SLAVE)) then
+            gamma_mate = matching_periodic_edge(grid,gamma)
+         else
+            gamma_mate = 0
+         endif
+         if (any(grid%element(K)%edge == gamma_mate)) then
+            use_gamma = gamma_mate
+         else
+            ierr = PHAML_INTERNAL_ERROR
+            call fatal("eq_resid_worker1: failed to find edge in element")
+            stop
+         endif
+      endif
+
 ! Compute the approximate flux moments
 ! tilde{mu}_{K,n}^gamma = integral_gamma theta_n n_K dot del u_X|_K ds
 
-      mu_K_tilde(i1+i2-2,3-i2,:,:) = compute_mu_K_tilde(grid,K,gamma,vert)
+      mu_K_tilde(i1+i2-2,3-i2,:,:) = compute_mu_K_tilde(grid,K,use_gamma, &
+                                                        use_vert)
 
 ! next element; next patch edge
 
@@ -2728,18 +2823,44 @@ end do
 do i1 = 1,num_patch_elements
    K = patch_element(i1)
 
+   if (any(grid%element(K)%vertex == vert)) then
+      use_vert = vert
+   elseif (any(grid%element(K)%vertex == vert_mate)) then
+      use_vert = vert_mate
+   else
+      ierr = PHAML_INTERNAL_ERROR
+      call fatal("eq_resid_worker1: failed to find vertex in element")
+      stop
+   endif
+
 ! For each element edge, gamma ...
 
    do i2 = 1,2
       gamma = patch_edge(i1+i2-1)
+      if (any(grid%edge_type(gamma,:) == PERIODIC_MASTER) .or. &
+          any(grid%edge_type(gamma,:) == PERIODIC_SLAVE)) then
+         gamma_mate = matching_periodic_edge(grid,gamma)
+      else
+         gamma_mate = gamma
+      endif
+
+      if (any(grid%element(K)%edge == gamma)) then
+         use_gamma = gamma
+      elseif (any(grid%element(K)%edge == gamma_mate)) then
+         use_gamma = gamma_mate
+      else
+         ierr = PHAML_INTERNAL_ERROR
+         call fatal("eq_resid_worker1: failed to find edge in element")
+         stop
+      endif
 
 ! determine the local index of the edge in the element
 
-      if (grid%element(K)%edge(1) == gamma) then
+      if (grid%element(K)%edge(1) == use_gamma) then
          edge_local_index = 1
-      elseif (grid%element(K)%edge(2) == gamma) then
+      elseif (grid%element(K)%edge(2) == use_gamma) then
          edge_local_index = 2
-      elseif (grid%element(K)%edge(3) == gamma) then
+      elseif (grid%element(K)%edge(3) == use_gamma) then
          edge_local_index = 3
       else
          ierr = PHAML_INTERNAL_ERROR
@@ -2749,9 +2870,9 @@ do i1 = 1,num_patch_elements
 
 ! determine the local index of the vertex in the edge
 
-      if (grid%edge(gamma)%vertex(1) == vert) then
+      if (grid%edge(use_gamma)%vertex(1) == use_vert) then
          vert_local_edge_index = 1
-      elseif (grid%edge(gamma)%vertex(2) == vert) then
+      elseif (grid%edge(use_gamma)%vertex(2) == use_vert) then
          vert_local_edge_index = 2
       else
          ierr = PHAML_INTERNAL_ERROR
@@ -2778,21 +2899,29 @@ do i1 = 1,num_patch_elements
 !    Neumann
             if (patch_type(comp)==NEUMANN_NEUMANN) then
 
-               mu_K(K,edge_local_index,vert_local_edge_index,comp,:) = &
-                  integral_g_theta_n(grid,vert,gamma,K,comp)
+               temp = integral_g_theta_n(grid,use_vert,use_gamma,K,comp)
+!$omp critical (mu_K_critical)
+               mu_K(K,edge_local_index,vert_local_edge_index,comp,:) = temp
+!$omp end critical (mu_K_critical)
+
 !    Dirichlet
             elseif (patch_type(comp)==DIRICHLET_NEUMANN .or. &
                     patch_type(comp)==DIRICHLET_DIRICHLET) then
 
+!$omp critical (mu_K_critical)
                mu_K(K,edge_local_index,vert_local_edge_index,comp,:) = &
                   sigma(i1,:,comp) + mu_K_tilde(i1,i2,comp,:)
+!$omp end critical (mu_K_critical)
+
 !    interior
             else
 
+!$omp critical (mu_K_critical)
                mu_K(K,edge_local_index,vert_local_edge_index,comp,:) = &
                   (sigma(i1,:,comp)-sigma(num_patch_elements,:,comp) + &
                    mu_K_tilde(i1,i2,comp,:) - &
                    mu_K_tilde(num_patch_elements,2,comp,:))/2
+!$omp end critical (mu_K_critical)
             endif
 
 ! last element, second edge
@@ -2803,38 +2932,48 @@ do i1 = 1,num_patch_elements
             if (patch_type(comp)==NEUMANN_NEUMANN .or. &
                 patch_type(comp)==DIRICHLET_NEUMANN) then
 
-               mu_K(K,edge_local_index,vert_local_edge_index,comp,:) = &
-                  integral_g_theta_n(grid,vert,gamma,K,comp)
+               temp = integral_g_theta_n(grid,use_vert,use_gamma,K,comp)
+!$omp critical (mu_K_critical)
+               mu_K(K,edge_local_index,vert_local_edge_index,comp,:) = temp
+!$omp end critical (mu_K_critical)
 
 !    Dirichlet
             elseif (patch_type(comp)==DIRICHLET_DIRICHLET) then
 
+!$omp critical (mu_K_critical)
                mu_K(K,edge_local_index,vert_local_edge_index,comp,:) = &
                   sigma(i1,:,comp) + mu_K_tilde(i1,i2,comp,:)
+!$omp end critical (mu_K_critical)
 
 !    interior
             else
 
+!$omp critical (mu_K_critical)
                mu_K(K,edge_local_index,vert_local_edge_index,comp,:) = &
                   (sigma(i1,:,comp)-sigma(1,:,comp) + &
                    mu_K_tilde(i1,i2,comp,:)-mu_K_tilde(1,1,comp,:))/2
+!$omp end critical (mu_K_critical)
             endif
 
 ! edge between element and previous element
 
          elseif (i2==1) then
 
+!$omp critical (mu_K_critical)
             mu_K(K,edge_local_index,vert_local_edge_index,comp,:) = &
                (sigma(i1,:,comp)-sigma(i1-1,:,comp) + &
                 mu_K_tilde(i1,i2,comp,:)-mu_K_tilde(i1-1,2,comp,:))/2
+!$omp end critical (mu_K_critical)
 
 ! edge between element and next element
 
          else
 
+!$omp critical (mu_K_critical)
             mu_K(K,edge_local_index,vert_local_edge_index,comp,:) = &
                (sigma(i1,:,comp)-sigma(i1+1,:,comp) + &
                 mu_K_tilde(i1,i2,comp,:)-mu_K_tilde(i1+1,1,comp,:))/2
+!$omp end critical (mu_K_critical)
 
          endif
 
@@ -2952,10 +3091,10 @@ do i=1,inc_deg
       stop
    endif
    if (my_real == kind(1.0)) then
-      call sgelss(n,n,nev,factors,n,err,n,S,1.0e-5_my_real,rank,rwork, &
+      call sgelss(n,n,nev,factors,n,err,n,S,1.0e-5,rank,rwork, &
                   lwork,info)
    elseif (my_real == kind(1.0d0)) then
-      call dgelss(n,n,nev,factors,n,err,n,S,1.0e-12_my_real,rank,rwork, &
+      call dgelss(n,n,nev,factors,n,err,n,S,1.0d-12,rank,rwork, &
                   lwork,info)
    else
       ierr = PHAML_INTERNAL_ERROR
@@ -2974,11 +3113,11 @@ do i=1,inc_deg
 ! sqrt(e^T A e)
 
       if (my_real == kind(1.0)) then
-         call sgemm("N","N",n,nev,n,1.0_my_real,matrix,n,err,n,0.0_my_real,Ax,n)
+         call sgemm("N","N",n,nev,n,1.0,matrix,n,err,n,0.0,Ax,n)
       else
-         call dgemm("N","N",n,nev,n,1.0_my_real,matrix,n,err,n,0.0_my_real,Ax,n)
+         call dgemm("N","N",n,nev,n,1.0d0,matrix,n,err,n,0.0d0,Ax,n)
       endif
-      do j=1,nev
+      do j=1,size(multi_p,dim=2)
             multi_p(inc_deg-i+1,j,K) = sqrt(abs(dot_product(Ax(:,j),err(:,j))))
       end do
 
@@ -3032,9 +3171,9 @@ end do
 ! energy error indicator is sqrt(e^T A e)
 
 if (my_real == kind(1.0)) then
-   call sgemm("N","N",n,nev,n,1.0_my_real,matrix,n,err,n,0.0_my_real,Ax,n)
+   call sgemm("N","N",n,nev,n,1.0,matrix,n,err,n,0.0,Ax,n)
 else
-   call dgemm("N","N",n,nev,n,1.0_my_real,matrix,n,err,n,0.0_my_real,Ax,n)
+   call dgemm("N","N",n,nev,n,1.0d0,matrix,n,err,n,0.0d0,Ax,n)
 endif
 
 do i=1,nev
@@ -3192,17 +3331,22 @@ do i=1,inc_deg
       call fatal("allocation failed in eq_resid_worker2")
       stop
    endif
+! apparently dgelss is not thread safe in the lapack library on CentOS 5.5
+! because I get sporatic instances of one of the threads getting stuck in it
+! unless I make the two places it is called under eq_resid_worker2_one critical
+!$omp critical (gelss_critical)
    if (my_real == kind(1.0)) then
-      call sgelss(n,n,nev,factors,n,err,n,S,1.0e-5_my_real,rank,rwork, &
+      call sgelss(n,n,nev,factors,n,err,n,S,1.0e-5,rank,rwork, &
                   lwork,info)
    elseif (my_real == kind(1.0d0)) then
-      call dgelss(n,n,nev,factors,n,err,n,S,1.0e-12_my_real,rank,rwork, &
+      call dgelss(n,n,nev,factors,n,err,n,S,1.0d-12,rank,rwork, &
                   lwork,info)
    else
       ierr = PHAML_INTERNAL_ERROR
       call fatal("my_real is neither single nor double precision. Can't call LAPACK routines in eq_resid_worker2")
       stop
    endif
+!$omp end critical (gelss_critical)
    if (info /= 0) then
       ierr = PHAML_INTERNAL_ERROR
       call fatal("dgelss failed in eq_resid_worker2")
@@ -3215,11 +3359,11 @@ do i=1,inc_deg
 ! sqrt(e^T A e)
 
       if (my_real == kind(1.0)) then
-         call sgemm("N","N",n,nev,n,1.0_my_real,matrix,n,err,n,0.0_my_real,Ax,n)
+         call sgemm("N","N",n,nev,n,1.0,matrix,n,err,n,0.0,Ax,n)
       else
-         call dgemm("N","N",n,nev,n,1.0_my_real,matrix,n,err,n,0.0_my_real,Ax,n)
+         call dgemm("N","N",n,nev,n,1.0d0,matrix,n,err,n,0.0d0,Ax,n)
       endif
-      do j=1,nev
+      do j=1,size(multi_p,dim=2)
             multi_p(inc_deg-i+1,j) = sqrt(abs(dot_product(Ax(:,j),err(:,j))))
       end do
 
@@ -3273,9 +3417,9 @@ end do
 ! energy error indicator is sqrt(e^T A e)
 
 if (my_real == kind(1.0)) then
-   call sgemm("N","N",n,nev,n,1.0_my_real,matrix,n,err,n,0.0_my_real,Ax,n)
+   call sgemm("N","N",n,nev,n,1.0,matrix,n,err,n,0.0,Ax,n)
 else
-   call dgemm("N","N",n,nev,n,1.0_my_real,matrix,n,err,n,0.0_my_real,Ax,n)
+   call dgemm("N","N",n,nev,n,1.0d0,matrix,n,err,n,0.0d0,Ax,n)
 endif
 
 do i=1,nev
@@ -3366,6 +3510,7 @@ nrhs = size(rhs,dim=2)
 ! on the first call, nullify all the topological matrices so we can test
 ! them for allocation on subsequent calls
 
+!$omp critical (topmat_critical1)
 if (first_call) then
    do j=1,4
       do i=1,maxelem
@@ -3374,6 +3519,7 @@ if (first_call) then
    end do
    first_call = .false.
 endif
+!$omp end critical (topmat_critical1)
 
 ! check input
 
@@ -3395,6 +3541,7 @@ do comp=1,ss
 
 ! on first call for this size and type, allocate and set the matrix
 
+!$omp critical (topmat_critical2)
    if (.not. associated(topmat(n,type)%A)) then
 
 ! allocations
@@ -3452,6 +3599,7 @@ do comp=1,ss
       endif
 
    endif ! first call for this type and size
+!$omp end critical (topmat_critical2)
 
    select case (type)
 
@@ -3470,17 +3618,22 @@ do comp=1,ss
 
       T = topmat(n,type)%A
 
+! apparently dgelss is not thread safe in the lapack library on CentOS 5.5
+! because I get sporatic instances of one of the threads getting stuck in it
+! unless I make the two places it is called under eq_resid_worker2_one critical
+!$omp critical (gelss_critical)
       if (my_real == kind(1.0)) then
-         call sgelss(n,n,nrhs,T,n,rhs(:,:,comp),n,S,1.0e-5_my_real,rank,rwork, &
+         call sgelss(n,n,nrhs,T,n,rhs(:,:,comp),n,S,1.0e-5,rank,rwork, &
                      lwork,info)
       elseif (my_real == kind(1.0d0)) then
-         call dgelss(n,n,nrhs,T,n,rhs(:,:,comp),n,S,1.0e-12_my_real,rank,rwork,&
+         call dgelss(n,n,nrhs,T,n,rhs(:,:,comp),n,S,1.0d-12,rank,rwork,&
                      lwork,info)
       else
          ierr = PHAML_INTERNAL_ERROR
          call fatal("my_real is neither single nor double precision. Can't call LAPACK routines in solve_topmat")
          stop
       endif
+!$omp end critical (gelss_critical)
       if (info /= 0) then
          ierr = PHAML_INTERNAL_ERROR
          call fatal("dgelss failed in solve_topmat")
@@ -3550,7 +3703,8 @@ integer, intent(out) :: num_patch_elements, patch_type(:)
 
 integer, parameter :: max_patch_elements = 50
 integer :: elements(max_patch_elements), edges(max_patch_elements+1),neigh(3)
-integer :: i, boundary_loc, bedge1, bedge2, comp
+integer :: i, boundary_loc, bedge1, bedge2, comp, astat, last_elem, this_vert, &
+           other_vert, this_edge, other_edge
 logical :: found_second_boundary, first_loop
 !----------------------------------------------------
 ! Begin executable code
@@ -3558,40 +3712,65 @@ logical :: found_second_boundary, first_loop
 ! initializations
 
 boundary_loc = -1 ! gives the position in elements of the first boundary element
+this_vert = vert
 
 ! start with the associated element
 
 num_patch_elements = 1
 elements(num_patch_elements) = grid%vertex(vert)%assoc_elem
+last_elem = elements(num_patch_elements)
+
+! if the associated element does not contain vert, see if it is periodic
+! and change to the matching vert which should be in the element
+
+if (.not. any(grid%element(last_elem)%vertex == this_vert)) then
+   this_vert = matching_periodic_vert(grid,this_vert)
+endif
 
 ! get the neighboring elements
 
-neigh = get_neighbors(elements(num_patch_elements),grid)
+neigh = get_neighbors(last_elem,grid)
 
 ! see if this element is on the boundary
 
 do i = 1,3
    if (neigh(i) == BOUNDARY) then
-      if (grid%edge(grid%element(elements(num_patch_elements))%edge(i))%vertex(1) == vert .or. &
-          grid%edge(grid%element(elements(num_patch_elements))%edge(i))%vertex(2) == vert) then
+      if (grid%edge(grid%element(last_elem)%edge(i))%vertex(1) == this_vert .or. &
+          grid%edge(grid%element(last_elem)%edge(i))%vertex(2) == this_vert) then
          boundary_loc = num_patch_elements
-         bedge1 = grid%element(elements(num_patch_elements))%edge(i)
+         bedge1 = grid%element(last_elem)%edge(i)
          exit
       endif
    endif
 end do
 
-! find a neighbor that contains vert
+! Find a neighbor that contains vert and shares an edge.
 
 do i=1,3
    if (neigh(i) == BOUNDARY) cycle
-   if (grid%element(neigh(i))%vertex(1) == vert .or. &
-       grid%element(neigh(i))%vertex(2) == vert .or. &
-       grid%element(neigh(i))%vertex(3) == vert) then
-      num_patch_elements = num_patch_elements + 1
-      elements(num_patch_elements) = neigh(i)
-      edges(num_patch_elements) = grid%element(elements(num_patch_elements-1))%edge(i)
-      exit
+   this_edge = grid%element(last_elem)%edge(i)
+   if (any(grid%element(neigh(i))%vertex == this_vert)) then
+      if (any(grid%element(neigh(i))%edge == this_edge)) then
+         num_patch_elements = num_patch_elements + 1
+         elements(num_patch_elements) = neigh(i)
+         edges(num_patch_elements) = this_edge
+         last_elem = elements(num_patch_elements)
+         exit
+      endif
+   endif
+   if (is_periodic()) then
+      other_vert = matching_periodic_vert(grid,this_vert)
+      if (any(grid%element(neigh(i))%vertex == other_vert)) then
+         other_edge = matching_periodic_edge(grid,this_edge)
+         if (any(grid%element(neigh(i))%edge == other_edge)) then
+            num_patch_elements = num_patch_elements + 1
+            elements(num_patch_elements) = neigh(i)
+            edges(num_patch_elements) = this_edge
+            last_elem = elements(num_patch_elements)
+            this_vert = other_vert
+            exit
+         endif
+      endif
    endif
 end do
 
@@ -3599,14 +3778,19 @@ end do
 ! on the same element
 
 if (num_patch_elements == 1) then
-   allocate(patch_element(1),patch_edge(2))
+   allocate(patch_element(1),patch_edge(2),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("allocation failed in build_patch")
+      stop
+   endif
    patch_element(1) = elements(1)
    patch_edge(1) = bedge1
    do i = 1,3
       if (neigh(i) == BOUNDARY .and. &
           grid%element(elements(1))%edge(i) /= bedge1) then
-         if (grid%edge(grid%element(elements(1))%edge(i))%vertex(1) == vert .or. &
-             grid%edge(grid%element(elements(1))%edge(i))%vertex(2) == vert) then
+         if (grid%edge(grid%element(elements(1))%edge(i))%vertex(1) == this_vert .or. &
+             grid%edge(grid%element(elements(1))%edge(i))%vertex(2) == this_vert) then
             patch_edge(2) = grid%element(elements(1))%edge(i)
             exit
          endif
@@ -3643,31 +3827,52 @@ do
 
    neigh = get_neighbors(elements(num_patch_elements),grid)
 
-! find one that contains vert and isn't the previous element
+! Find one that contains vert, shares an edge, and isn't the previous element.
 
    do i = 1,3
       if (neigh(i) == elements(num_patch_elements-1)) cycle
       if (neigh(i) == BOUNDARY) then
-         if (grid%edge(grid%element(elements(num_patch_elements))%edge(i))%vertex(1) == vert .or. &
-             grid%edge(grid%element(elements(num_patch_elements))%edge(i))%vertex(2) == vert) then
+         if (grid%edge(grid%element(last_elem)%edge(i))%vertex(1) == this_vert .or. &
+             grid%edge(grid%element(last_elem)%edge(i))%vertex(2) == this_vert) then
             boundary_loc = num_patch_elements
-            bedge1 = grid%element(elements(num_patch_elements))%edge(i)
+            bedge1 = grid%element(last_elem)%edge(i)
             exit
          endif
          cycle
       endif
-      if (grid%element(neigh(i))%vertex(1) == vert .or. &
-          grid%element(neigh(i))%vertex(2) == vert .or. &
-          grid%element(neigh(i))%vertex(3) == vert) then
-         num_patch_elements = num_patch_elements + 1
-         if (num_patch_elements > max_patch_elements) then
-            ierr = PHAML_INTERNAL_ERROR
-            call fatal("too many elements in patch in build_patch")
-            stop
+      this_edge = grid%element(last_elem)%edge(i)
+      if (any(grid%element(neigh(i))%vertex == this_vert)) then
+         if (any(grid%element(neigh(i))%edge == this_edge)) then
+            num_patch_elements = num_patch_elements + 1
+            if (num_patch_elements > max_patch_elements) then
+               ierr = PHAML_INTERNAL_ERROR
+               call fatal("too many elements in patch in build_patch")
+               stop
+            endif
+            elements(num_patch_elements) = neigh(i)
+            edges(num_patch_elements) = this_edge
+            last_elem = elements(num_patch_elements)
+            exit
          endif
-         elements(num_patch_elements) = neigh(i)
-         edges(num_patch_elements) = grid%element(elements(num_patch_elements-1))%edge(i)
-         exit
+      endif
+      if (is_periodic()) then
+         other_vert = matching_periodic_vert(grid,this_vert)
+         if (any(grid%element(neigh(i))%vertex == other_vert)) then
+            other_edge = matching_periodic_edge(grid,this_edge)
+            if (any(grid%element(neigh(i))%edge == other_edge)) then
+               num_patch_elements = num_patch_elements + 1
+               if (num_patch_elements > max_patch_elements) then
+                  ierr = PHAML_INTERNAL_ERROR
+                  call fatal("too many elements in patch in build_patch")
+                  stop
+               endif
+               elements(num_patch_elements) = neigh(i)
+               edges(num_patch_elements) = this_edge
+               last_elem = elements(num_patch_elements)
+               this_vert = other_vert
+               exit
+            endif
+         endif
       endif
    end do
 
@@ -3686,33 +3891,60 @@ if (boundary_loc /= -1) then
 
 ! get the neighboring elements of the first element
 
-      neigh = get_neighbors(elements(1),grid)
+      last_elem = elements(1)
+      this_vert = vert
+      if (.not. any(grid%element(last_elem)%vertex == this_vert)) then
+         this_vert = matching_periodic_vert(grid,this_vert)
+      endif
 
-! find one that contains vert and isn't the second element
+      neigh = get_neighbors(last_elem,grid)
+
+! find one that contains vert, shares an edge and isn't the second element
 
       do i = 1,3
          if (neigh(i) == elements(2)) cycle
          if (neigh(i) == BOUNDARY) then
-            if (grid%edge(grid%element(elements(1))%edge(i))%vertex(1) == vert .or. &
-                grid%edge(grid%element(elements(1))%edge(i))%vertex(2) == vert) then
+            if (grid%edge(grid%element(last_elem)%edge(i))%vertex(1) == this_vert .or. &
+                grid%edge(grid%element(last_elem)%edge(i))%vertex(2) == this_vert) then
                found_second_boundary = .true.
-               bedge2 = grid%element(elements(1))%edge(i)
+               bedge2 = grid%element(last_elem)%edge(i)
                exit
             endif
             cycle
          endif
-         if (grid%element(neigh(i))%vertex(1) == vert .or. &
-             grid%element(neigh(i))%vertex(2) == vert .or. &
-             grid%element(neigh(i))%vertex(3) == vert) then
-            num_patch_elements = num_patch_elements + 1
-            if (num_patch_elements > max_patch_elements) then
-               ierr = PHAML_INTERNAL_ERROR
-               call fatal("too many elements in patch in build_patch")
-               stop
+         this_edge = grid%element(last_elem)%edge(i)
+         if (any(grid%element(neigh(i))%vertex == this_vert)) then
+            if (any(grid%element(neigh(i))%edge == this_edge)) then
+               num_patch_elements = num_patch_elements + 1
+               if (num_patch_elements > max_patch_elements) then
+                  ierr = PHAML_INTERNAL_ERROR
+                  call fatal("too many elements in patch in build_patch")
+                  stop
+               endif
+               elements(num_patch_elements) = neigh(i)
+               edges(num_patch_elements) = this_edge
+               last_elem = elements(num_patch_elements)
+               exit
             endif
-            elements(num_patch_elements) = neigh(i)
-            edges(num_patch_elements) = grid%element(elements(1))%edge(i)
-            exit
+         endif
+         if (is_periodic()) then
+            other_vert = matching_periodic_vert(grid,this_vert)
+            if (any(grid%element(neigh(i))%vertex == other_vert)) then
+               other_edge = matching_periodic_edge(grid,this_edge)
+               if (any(grid%element(neigh(i))%edge == other_edge)) then
+                  num_patch_elements = num_patch_elements + 1
+                  if (num_patch_elements > max_patch_elements) then
+                     ierr = PHAML_INTERNAL_ERROR
+                     call fatal("too many elements in patch in build_patch")
+                     stop
+                  endif
+                  elements(num_patch_elements) = neigh(i)
+                  edges(num_patch_elements) = this_edge
+                  last_elem = elements(num_patch_elements)
+                  this_vert = other_vert
+                  exit
+               endif
+            endif
          endif
       end do
 
@@ -3729,7 +3961,7 @@ if (boundary_loc /= -1) then
 
       neigh = get_neighbors(elements(num_patch_elements),grid)
 
-! find one that contains vert and isn't the previous element
+! find one that contains vert, shares and edge,  and isn't the previous element
 
       do i = 1,3
          if (first_loop) then
@@ -3738,26 +3970,47 @@ if (boundary_loc /= -1) then
             if (neigh(i) == elements(num_patch_elements-1)) cycle
          endif
          if (neigh(i) == BOUNDARY) then
-            if (grid%edge(grid%element(elements(num_patch_elements))%edge(i))%vertex(1) == vert .or. &
-                grid%edge(grid%element(elements(num_patch_elements))%edge(i))%vertex(2) == vert) then
+            if (grid%edge(grid%element(last_elem)%edge(i))%vertex(1) == this_vert .or. &
+                grid%edge(grid%element(last_elem)%edge(i))%vertex(2) == this_vert) then
                found_second_boundary = .true.
-               bedge2 = grid%element(elements(num_patch_elements))%edge(i)
+               bedge2 = grid%element(last_elem)%edge(i)
                exit
             endif
             cycle
          endif
-         if (grid%element(neigh(i))%vertex(1) == vert .or. &
-             grid%element(neigh(i))%vertex(2) == vert .or. &
-             grid%element(neigh(i))%vertex(3) == vert) then
-            num_patch_elements = num_patch_elements + 1
-            if (num_patch_elements > max_patch_elements) then
-               ierr = PHAML_INTERNAL_ERROR
-               call fatal("too many elements in patch in build_patch")
-               stop
+         this_edge = grid%element(last_elem)%edge(i)
+         if (any(grid%element(neigh(i))%vertex == this_vert)) then
+            if (any(grid%element(neigh(i))%edge == this_edge)) then
+               num_patch_elements = num_patch_elements + 1
+               if (num_patch_elements > max_patch_elements) then
+                  ierr = PHAML_INTERNAL_ERROR
+                  call fatal("too many elements in patch in build_patch")
+                  stop
+               endif
+               elements(num_patch_elements) = neigh(i)
+               edges(num_patch_elements) = this_edge
+               last_elem = elements(num_patch_elements)
+               exit
             endif
-            elements(num_patch_elements) = neigh(i)
-            edges(num_patch_elements) = grid%element(elements(num_patch_elements-1))%edge(i)
-            exit
+         endif
+         if (is_periodic()) then
+            other_vert = matching_periodic_vert(grid,this_vert)
+            if (any(grid%element(neigh(i))%vertex == other_vert)) then
+               other_edge = matching_periodic_edge(grid,this_edge)
+               if (any(grid%element(neigh(i))%edge == other_edge)) then
+                  num_patch_elements = num_patch_elements + 1
+                  if (num_patch_elements > max_patch_elements) then
+                     ierr = PHAML_INTERNAL_ERROR
+                     call fatal("too many elements in patch in build_patch")
+                     stop
+                  endif
+                  elements(num_patch_elements) = neigh(i)
+                  edges(num_patch_elements) = this_edge
+                  last_elem = elements(num_patch_elements)
+                  this_vert = other_vert
+                  exit
+               endif
+            endif
          endif
       end do
       first_loop = .false.
@@ -3768,7 +4021,13 @@ endif
 
 ! copy the elements into patch_element
 
-allocate(patch_element(num_patch_elements),patch_edge(num_patch_elements+1))
+allocate(patch_element(num_patch_elements),patch_edge(num_patch_elements+1), &
+         stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("allocation failed in build_patch")
+   stop
+endif
 
 ! if there was a boundary, go from the boundary back to the beginning, and
 ! then after the boundary until the end
@@ -3813,6 +4072,22 @@ do comp=1,grid%system_size
       patch_type(comp) = NEUMANN_NEUMANN
    endif
 end do
+
+contains
+
+function is_periodic()
+logical :: is_periodic
+is_periodic = (any(grid%edge_type(this_edge,:) == PERIODIC_SLAVE) .or. &
+               any(grid%edge_type(this_edge,:) == PERIODIC_MASTER)) .and. &
+              (any(grid%vertex_type(this_vert,:) == PERIODIC_SLAVE) .or. &
+               any(grid%vertex_type(this_vert,:) == PERIODIC_MASTER) .or. &
+               any(grid%vertex_type(this_vert,:) == PERIODIC_SLAVE_DIR) .or. &
+               any(grid%vertex_type(this_vert,:) == PERIODIC_MASTER_DIR) .or. &
+               any(grid%vertex_type(this_vert,:) == PERIODIC_SLAVE_NAT) .or. &
+               any(grid%vertex_type(this_vert,:) == PERIODIC_MASTER_NAT) .or. &
+               any(grid%vertex_type(this_vert,:) == PERIODIC_SLAVE_MIX) .or. &
+               any(grid%vertex_type(this_vert,:) == PERIODIC_MASTER_MIX))
+end function is_periodic
 
 end subroutine build_patch
 
@@ -4044,32 +4319,28 @@ integer :: i, j, neigh(3), edge, Kprime, ss, nev, comp
 !----------------------------------------------------
 ! Begin executable code
 
+!$omp critical
 ss = grid%system_size
 nev = max(1,grid%num_eval)
 
 edge = grid%element(K)%edge(side)
 
-! evaluate the normal to this side, if needed
+! evaluate the normal to this side
 
-if (any(grid%edge_type(edge,:) == INTERIOR) .or. &
-    any(grid%edge_type(edge,:) == DIRICHLET)) then
-   call compute_normal(grid,K,side,normal)
-endif
+call compute_normal(grid,K,side,normal)
 
 ! evaluate the derivatives of the solution in K at the points, if needed
 
-if (any(grid%edge_type(edge,:) == INTERIOR) .or. &
-    any(grid%edge_type(edge,:) == DIRICHLET).or. &
-    any(grid%edge_type(edge,:) == MIXED)) then
-   call evaluate_soln_local(grid,x,y,K,(/(i,i=1,ss)/),(/(i,i=1,nev)/), &
-                            u=u_K,ux=ux_K,uy=uy_K)
-endif
+call evaluate_soln_local(grid,x,y,K,(/(i,i=1,ss)/),(/(i,i=1,nev)/), &
+                         u=u_K,ux=ux_K,uy=uy_K)
 
 ! determine the element, Kprime, that shares this side, and which side it
 ! is in the local index of Kprime, and evaluate the derivatives of the
 ! solution in Kprime at the points, if needed
 
-if (any(grid%edge_type(edge,:) == INTERIOR)) then
+if (any(grid%edge_type(edge,:) == INTERIOR) .or. &
+    any(grid%edge_type(edge,:) == PERIODIC_MASTER) .or. &
+    any(grid%edge_type(edge,:) == PERIODIC_SLAVE)) then
    neigh = get_neighbors(K,grid)
    Kprime = -1
    do i=1,3
@@ -4078,6 +4349,13 @@ if (any(grid%edge_type(edge,:) == INTERIOR)) then
          if (grid%element(neigh(i))%edge(j) == edge) then
             Kprime = neigh(i)
             exit
+         endif
+         if (any(grid%edge_type(edge,:) == PERIODIC_SLAVE) .or. &
+             any(grid%edge_type(edge,:) == PERIODIC_MASTER)) then
+            if (grid%element(neigh(i))%edge(j) == matching_periodic_edge(grid,edge)) then
+               Kprime = neigh(i)
+               exit
+            endif
          endif
       end do
    end do
@@ -4101,7 +4379,7 @@ do comp=1,ss
 
    select case(grid%edge_type(edge,comp))
 
-   case (INTERIOR)
+   case (INTERIOR, PERIODIC_MASTER, PERIODIC_SLAVE)
 
 ! compute the function
 
@@ -4134,10 +4412,12 @@ do comp=1,ss
    case default
       ierr = PHAML_INTERNAL_ERROR
       call fatal("unknown edge type in bracket_dudn")
+      stop
 
    end select
 
 end do ! comp
+!$omp end critical
 
 end subroutine bracket_dudn
 
@@ -4626,7 +4906,12 @@ alpha = alpha/side_length
 
 ! evaluate the basis functions at the given points
 
-allocate(basis(deg+2,size(x)))
+allocate(basis(deg+2,size(x)),stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("allocation failed in equil_resid_bconds")
+   stop
+endif
 call p_hier_basis_func(x,y,xvert,yvert,edegree,"a",basis)
 
 ! remove the basis of the opposite vertex

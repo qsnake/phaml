@@ -11,7 +11,7 @@
 ! the United States.                                                  !
 !                                                                     !
 !     William F. Mitchell                                             !
-!     Mathematical and Computational Sciences Division                !
+!     Applied and Computational Mathematics Division                  !
 !     National Institute of Standards and Technology                  !
 !     william.mitchell@nist.gov                                       !
 !     http://math.nist.gov/phaml                                      !
@@ -605,6 +605,7 @@ subroutine phaml_solve_pde_int(index, iterm, max_elem, max_vert, max_eq, &
    term_energy_err, term_Linf_err, term_L2_err, task,                         &
    print_grid_when, print_grid_who, print_error_when, print_error_who,        &
    print_error_what, print_errest_what, print_linsys_when, print_linsys_who,  &
+   print_solver_when, print_solver_who,                                       &
    print_time_when, print_time_who, print_eval_when, print_eval_who,          &
    print_header_who, print_trailer_who, print_warnings, clocks,draw_grid_when,&
    pause_after_draw, pause_after_phases, pause_at_start, pause_at_end,        &
@@ -633,8 +634,8 @@ subroutine phaml_solve_pde_int(index, iterm, max_elem, max_vert, max_eq, &
    hypre_GMRES_KDim, hypre_GMRES_Tol,hypre_GMRES_MaxIter,hypre_GMRES_Logging, &
    petsc_richardson_damping_factor, petsc_chebychev_emin,                     &
    petsc_chebychev_emax, petsc_gmres_max_steps, petsc_rtol, petsc_atol,       &
-   petsc_dtol, petsc_maxits, petsc_ilu_levels, petsc_icc_levels, petsc_ilu_dt,&
-   petsc_ilu_dtcol, petsc_ilu_maxrowcount, petsc_sor_omega, petsc_sor_its,    &
+   petsc_dtol, petsc_maxits, petsc_ilu_levels, petsc_icc_levels,              &
+   petsc_sor_omega, petsc_sor_its,                                            &
    petsc_sor_lits, petsc_eisenstat_nodiagscaling, petsc_eisenstat_omega,      &
    petsc_asm_overlap,coarse_size, coarse_method,                              &
    hypre_has_NumGridSweeps, hypre_has_GridRelaxType,                          &
@@ -649,6 +650,7 @@ logical, optional, intent(in) :: pause_after_draw, pause_at_start, &
 integer, optional, intent(in) :: max_elem, max_vert, max_eq, max_lev, max_deg, &
            print_grid_when, print_error_when, print_time_when, print_eval_when,&
            print_linsys_when, print_linsys_who, print_grid_who, &
+           print_solver_when, print_solver_who, &
            print_error_who, print_time_who, print_eval_who, print_header_who, &
            print_trailer_who, print_error_what, print_errest_what, &
            clocks, draw_grid_when, sequential_vert, errtype, mg_comm, &
@@ -689,11 +691,11 @@ real(my_real), optional, intent(in) :: hypre_BoomerAMG_RelaxWeight(:)
 
 real(my_real), optional, intent(in) :: petsc_richardson_damping_factor, &
    petsc_chebychev_emin, petsc_chebychev_emax, petsc_rtol, petsc_atol,  &
-   petsc_dtol, petsc_ilu_dt, petsc_ilu_dtcol, petsc_sor_omega,          &
+   petsc_dtol, petsc_sor_omega,          &
    petsc_eisenstat_omega
 
 integer, optional, intent(in) :: petsc_gmres_max_steps, petsc_maxits,    &
-   petsc_ilu_levels, petsc_icc_levels, petsc_ilu_maxrowcount, petsc_sor_its, &
+   petsc_ilu_levels, petsc_icc_levels, petsc_sor_its, &
    petsc_sor_lits, petsc_asm_overlap
 
 logical, optional, intent(in) :: petsc_eisenstat_nodiagscaling
@@ -708,6 +710,7 @@ call phaml_solve_pde(phaml_soluts(index), iterm, max_elem, max_vert, max_eq, &
    term_energy_err, term_Linf_err, term_L2_err, task,                         &
    print_grid_when, print_grid_who, print_error_when, print_error_who,        &
    print_error_what, print_errest_what, print_linsys_when, print_linsys_who,  &
+   print_solver_when, print_solver_who,                                       &
    print_time_when, print_time_who, print_eval_when, print_eval_who,          &
    print_header_who, print_trailer_who, print_warnings, clocks,draw_grid_when,&
    pause_after_draw, pause_after_phases, pause_at_start, pause_at_end,        &
@@ -736,8 +739,8 @@ call phaml_solve_pde(phaml_soluts(index), iterm, max_elem, max_vert, max_eq, &
    hypre_GMRES_KDim, hypre_GMRES_Tol,hypre_GMRES_MaxIter,hypre_GMRES_Logging, &
    petsc_richardson_damping_factor, petsc_chebychev_emin,                     &
    petsc_chebychev_emax, petsc_gmres_max_steps, petsc_rtol, petsc_atol,       &
-   petsc_dtol, petsc_maxits, petsc_ilu_levels, petsc_icc_levels, petsc_ilu_dt,&
-   petsc_ilu_dtcol, petsc_ilu_maxrowcount, petsc_sor_omega, petsc_sor_its,    &
+   petsc_dtol, petsc_maxits, petsc_ilu_levels, petsc_icc_levels,              &
+   petsc_sor_omega, petsc_sor_its,                                            &
    petsc_sor_lits, petsc_eisenstat_nodiagscaling, petsc_eisenstat_omega,      &
    petsc_asm_overlap,coarse_size, coarse_method,                              &
    hypre_has_NumGridSweeps, hypre_has_GridRelaxType,                          &

@@ -1,5 +1,5 @@
 ---------------------------------------------------------
-           PHAML   Version 1.8.0
+           PHAML   Version 1.9.1
 
 Output from the master process
   PDE id is     0
@@ -20,6 +20,7 @@ Subroutine phaml_solve_pde parameters:
   print_grid_when    FINAL
   print_grid_who     MASTER
   print_linsys_when  NEVER
+  print_solver_when  NEVER
   print_error_when   NEVER
   print_time_when    NEVER
   pause_after_draw   false
@@ -63,7 +64,7 @@ termination condition:
   maximum loops through phases achieved
 ---------------------------------------------------------
 ---------------------------------------------------------
-           PHAML   Version 1.8.0
+           PHAML   Version 1.9.1
 
 Output from the master process
   PDE id is     0
@@ -84,6 +85,7 @@ Subroutine phaml_solve_pde parameters:
   print_grid_when    PHASES
   print_grid_who     MASTER
   print_linsys_when  NEVER
+  print_solver_when  NEVER
   print_error_when   NEVER
   print_time_when    NEVER
   pause_after_draw   false
@@ -123,76 +125,55 @@ Total Grid:
    number of vertices      =          75
    number of leaf elements =         108
    number of levels        =           8
-   degrees of freedom      =         167
+   degrees of freedom      =         199
    min and max degree      =           1          2
 
 Total Grid:
    number of vertices      =          75
    number of leaf elements =         108
    number of levels        =           8
-   degrees of freedom      =         259
+   degrees of freedom      =         431
    min and max degree      =           1          3
 
 Total Grid:
    number of vertices      =          75
    number of leaf elements =         108
    number of levels        =           8
-   degrees of freedom      =         572
-   min and max degree      =           1          4
+   degrees of freedom      =         625
+   min and max degree      =           1          7
 
 Total Grid:
    number of vertices      =          75
    number of leaf elements =         108
    number of levels        =           8
-   degrees of freedom      =         905
-   min and max degree      =           2          4
+   degrees of freedom      =        1369
+   min and max degree      =           1          8
 
 Total Grid:
    number of vertices      =          75
    number of leaf elements =         108
    number of levels        =           8
-   degrees of freedom      =        1563
-   min and max degree      =           3          6
+   degrees of freedom      =        2829
+   min and max degree      =           1         11
 
 Total Grid:
    number of vertices      =          75
    number of leaf elements =         108
    number of levels        =           8
-   degrees of freedom      =        2249
-   min and max degree      =           4          9
+   degrees of freedom      =        5219
+   min and max degree      =           3         14
 
 Total Grid:
    number of vertices      =          75
    number of leaf elements =         108
    number of levels        =           8
-   degrees of freedom      =        4052
-   min and max degree      =           6         11
-
-Total Grid:
-   number of vertices      =          75
-   number of leaf elements =         108
-   number of levels        =           8
-   degrees of freedom      =        4837
-   min and max degree      =           7         12
-
-Total Grid:
-   number of vertices      =          75
-   number of leaf elements =         108
-   number of levels        =           8
-   degrees of freedom      =        5021
-   min and max degree      =           7         14
-
-Total Grid:
-   number of vertices      =          75
-   number of leaf elements =         108
-   number of levels        =           8
-   degrees of freedom      =        5021
-   min and max degree      =           7         14
+   degrees of freedom      =        5219
+   min and max degree      =           3         14
 
 ---------------------------------------------------------
 phaml_solve_pde complete
 
-number of loops through phases =           9
+number of loops through phases =           6
 termination condition:
   maximum equations achieved
 ---------------------------------------------------------

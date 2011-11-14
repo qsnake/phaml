@@ -11,7 +11,7 @@
 ! the United States.                                                  !
 !                                                                     !
 !     William F. Mitchell                                             !
-!     Mathematical and Computational Sciences Division                !
+!     Applied and Computational Mathematics Division                  !
 !     National Institute of Standards and Technology                  !
 !     william.mitchell@nist.gov                                       !
 !     http://math.nist.gov/phaml                                      !
@@ -39,11 +39,17 @@ public petsc_matrix_type, petsc_options, petsc_dummy
 ! the Fortran include statement, because the include files contain
 ! preprocessor directives.
 
+! At PETSc 3.1 petsc.h was changed to just include the other .h's, so we
+! no longer need the others (in fact, they causes duplicate declarations)
+
+#include "include/petscversion.h"
 #include "include/finclude/petsc.h"
+#if (PETSC_VERSION_MAJOR < 3 || (PETSC_VERSION_MAJOR == 3 && PETSC_VERSION_MINOR == 0))
 #include "include/finclude/petscvec.h"
 #include "include/finclude/petscmat.h"
 #include "include/finclude/petscksp.h"
 #include "include/finclude/petscpc.h"
+#endif
 
 !----------------------------------------------------
 
@@ -63,15 +69,12 @@ type petsc_options
    real(kind(0.0d0)) :: petsc_rtol
    real(kind(0.0d0)) :: petsc_atol
    real(kind(0.0d0)) :: petsc_dtol
-   real(kind(0.0d0)) :: petsc_ilu_dt
-   real(kind(0.0d0)) :: petsc_ilu_dtcol
    real(kind(0.0d0)) :: petsc_sor_omega
    real(kind(0.0d0)) :: petsc_eisenstat_omega
    integer :: petsc_gmres_max_steps
    integer :: petsc_maxits
    integer :: petsc_ilu_levels
    integer :: petsc_icc_levels
-   integer :: petsc_ilu_maxrowcount
    integer :: petsc_sor_its
    integer :: petsc_sor_lits
    integer :: petsc_asm_overlap
@@ -79,7 +82,6 @@ type petsc_options
 end type petsc_options
 
 type(petsc_options), parameter :: petsc_dummy = petsc_options(0.0d0, 0.0d0, &
-   0.0d0, 0.0d0, 0.0d0, 0.0d0, 0.0d0, 0.0d0, 0.0d0, 0.0d0, 0, 0, 0, 0, 0, 0, &
-   0, 0, .false.)
+   0.0d0, 0.0d0, 0.0d0, 0.0d0, 0.0d0, 0.0d0, 0, 0, 0, 0, 0, 0, 0, .false.)
 
 end module petsc_type_mod

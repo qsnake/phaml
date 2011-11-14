@@ -13,7 +13,7 @@ echo "# done by the U.S. Government, and is not subject to copyright in     !" 1
 echo "# the United States.                                                  !" 1>>$f
 echo "#                                                                     !" 1>>$f
 echo "#     William F. Mitchell                                             !" 1>>$f
-echo "#     Mathematical and Computational Sciences Division                !" 1>>$f
+echo "#     Applied and Computational Mathematics Division                  !" 1>>$f
 echo "#     National Institute of Standards and Technology                  !" 1>>$f
 echo "#     william.mitchell@nist.gov                                       !" 1>>$f
 echo "#     http://math.nist.gov/phaml                                      !" 1>>$f

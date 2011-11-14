@@ -39,18 +39,20 @@ patch.tar.gz     Aug  2 2001
 parpack96.tar.gz Oct  7 1997
 ppatch.tar.gz    Aug  2 2001
 
-Use ARmake.MPI-SUN4 as the template
+cp ARMAKES/ARmake.MPI-SUN4 ARmake.inc
 
 home = <top ARPACK source directory>
 PLAT    = LINUX
 If LAPACK and/or BLAS libraries are available, change DIRS as instructed.
 ARPACKLIB  = $(home)/libarpack.a
 PARPACKLIB = $(home)/libparapack.a
-FC      = mpif90
-FFLAGS  = -O -fno-second-underscore (g77, g95, gfortran, pathscale) -ff90 (g77)
-LAMHF77 = ifort
+FC      = mpif90  (mpif77 for LAM)
+FFLAGS  = -O -fno-second-underscore (g77, g95, pathscale) -ff90 (g77)
+LAMHF77=ifort (if using lam and desired compiler is not the default)
+OMPI_F77=ifort (if using OpenMPI and
+OMPI_FC=ifort   desired compiler is not the default)
 PFC     = mpif90
-PFFLAGS = -O -fno-second-underscore (g77, g95, gfortran, pathscale) -ff90 (g77)
+PFFLAGS = -O -fno-second-underscore (g77, g95, pathscale) -ff90 (g77)
 MAKE = /usr/bin/make
 
 Copy <mpi include directory>/mpif.h to
@@ -109,16 +111,19 @@ BLACS Version 1.1, patch level 3
 
 mpiblacs.tgz, mpiblacs-patch03.tgz from netlib.
 
-cp Bmake.MPI-LINUX Bmake.inc; make the following changes:
+cp BMAKES/Bmake.MPI-LINUX Bmake.inc; make the following changes:
 BTOPdir = <top BLACS source directory>
 add lib to the library names in BLACSFINIT, BLACSCINIT, BLACSLIB.  I also
   remove the library designations from the names
-MPIdir =
+MPIdir = /usr/lib64/lam
 MPILIB =
 INTFACE = -DAdd_
 TRANSCOMM = -DUseMpi2 (see MPI error #12 in errata.blacs)
-F77 = mpif90
-F77NO_OPTFLAGS = -fno-second-underscore (for g77, g95, gfortran, pathscale)
+F77 = mpif90 (mpif77 for LAM)
+F77NO_OPTFLAGS = -fno-second-underscore (for g77, g95, pathscale)
+LAMHF77=ifort (if using lam and desired compiler is not the default)
+OMPI_F77=ifort (if using OpenMPI and
+OMPI_FC=ifort   desired compiler is not the default)
 
 make mpi
 
@@ -201,9 +206,10 @@ make
 make install
 chmod o+r $HYPRE_HOME/lahey/lam/include/*
 
-hypre version 2.0.0
-              -----
+hypre version 2.0.0 and 2.6.0b
+              -----     ------
 
+in hypre/src
 ./configure --prefix=<hypre installation directory> CC=mpicc F77=mpif90 F90=mpif90
 
 In some cases I also needed --without-fei
@@ -266,6 +272,9 @@ posix_memalign() don't play together nicely.
 make linux-x86  (on 64 bit arch, use make linux-x86-64)
 make install
 
+on 64 bit machines, link lib64 to lib so I don't have to change the location
+of the Mesa/glut/f90gl libraries in all my makefiles
+
 MPICH
 -----
 
@@ -291,21 +300,36 @@ make install |& tee install.log
 MUMPS
 -----
 
-MUMPS 4.9
+MUMPS 4.9.2
 
-cp Make.inc/Makefile.PC.PAR Makefile.inc
-For a sequential version, use Makefile.PC.SEQ.
+For a parallel version:
+cp Make.inc/Makefile.INTEL.PAR Makefile.inc (or replace INTEL with appropiate)
 
 Changes to Makefile.inc
-FC = mpif90
-FL = mpif90
+FC = mpif90 (mpif77 for lam)
+FL = mpif90 (mpif77 for lam)
+LAMHF77=ifort (if using lam and desired compiler is not the default)
+OMPI_F77=ifort (if using OpenMPI and
+OMPI_FC=ifort   desired compiler is not the default)
 SCALAP = -L/local/apps/scalapack/nag/lam/lib -lscalapack -L/local/apps/blacs/nag/lam/lib -lblacs -lblacsF77init -lblacs -llapack
-INCPAR = -I<mpi include directory>
+INCPAR =
 LIBPAR = $(SCALAP)
 LIBBLAS = -lblas
 
-make
+For a sequential version:
+cp Make.inc/Makefile.INTEL.SEQ Makefile.inc (or replace INTEL with appropriate)
+
+FC = <compiler command>  if necessary
+FL = <compiler command>  if necessary
+LIBBLAS = -lblas
+
+make   (makes the double precision library)
+make z (if you also want to make the double complex library)
 move lib/* and copy include/ to the desired locations
+
+Versions 4.8.4 to 4.9.2 have a bug.  The workaround consists in inserting
+"        IF (N .LE. 1) RETURN"
+at the beginning of [SDCZ]MUMPS_181.
 
 For g77 related compilers, add -fno-second-underscore to OPTF
 
@@ -313,10 +337,11 @@ For the NAG compiler, need additional flags (add to OPTF)
 -kind=byte because they use KIND=8 explicitly
 -w=all because they have a lot of unused variables, extensions and obsolescent
 -mismatch_all because calls to MPI routines have different types
+-dcfuns because of nonstandard double complex intrinsics (for make z)
 
-With the NAG compiler I had to move the declaration of IW in subroutine
+In Version 4.9, With the NAG compiler I had to move the declaration of IW in subroutine
 DMUMPS_227 because it didn't like using LIW as the dimension before it was
-declared.
+declared. (fixed in 4.9.2, 8/19/10)
 
 With Absoft compiler, need -YNO_CDEC
 
@@ -423,13 +448,6 @@ Then copy (if not placed by make install)
       to the petsc include directory
    linux/lib/libBLOPEX.a to the petsc lib directory
 
-PVM
----
-
-PVM Version 3.4.3
-
-Build as directed.
-
 ScaLAPACK
 ---------
 
@@ -443,10 +461,13 @@ BLACSdir      = /local/apps/BLACS/lahey/lam/lib
 SMPLIB        =
 remove library designations from BLACSFINIT, BLACSCINIT, BLACSLIB (if you did
  that when making BLACS)
-F77           = mpif90
+F77           = mpif90 (mpif77 for LAM)
 CC            = mpicc
 NOOPT         = -fno-second-underscore (for g77, g95, gfortran, pathscale)
 F77FLAGS      = -O $(NOOPT)
+LAMHF77=ifort (if using lam and desired compiler is not the default)
+OMPI_F77=ifort (if using OpenMPI and
+OMPI_FC=ifort   desired compiler is not the default)
 CDEFS         = -DAdd_ -DNO_IEEE $(USEMPI)
 
 make
@@ -469,6 +490,9 @@ CFLAGS          = -O3
 NOOPTS          = -O0 $(IMPI)
 FORTRAN         = mpif90
 FFLAGS          = -O  [-fno-second-underscore for g77 type compilers]
+LAMHF77=ifort (if using lam and desired compiler is not the default)
+OMPI_F77=ifort (if using OpenMPI and
+OMPI_FC=ifort   desired compiler is not the default)
 LOADER          = mpif90
 LOADOPTS        =
 CDEFS           = -DAdd_

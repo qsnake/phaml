@@ -322,6 +322,7 @@ real(GLfloat), intent(in) :: buffer(:)
   type(DepthIndex), allocatable :: prims(:)
   integer :: nvertices, i
   real :: ydum(1)
+  integer :: astat
 
 !   Count how many primitives there are.
   nprimitives = 0
@@ -351,7 +352,12 @@ real(GLfloat), intent(in) :: buffer(:)
 !    entry per primitive.  This array is also where we keep the
 !    primitive's average depth.  There is one entry per
 !    primitive  in the feedback buffer.
-  allocate(prims(nprimitives))
+  allocate(prims(nprimitives),stat=astat)
+  if (astat /= 0) then
+    write(unit=*,fmt=*) "Allocation of prims failed in spewSortedFeedback"
+    write(unit=*,fmt=*) "Returning without output"
+    return
+  endif
 
   item = 1
   loc = 1
@@ -471,10 +477,15 @@ character(len=*), intent(in), optional :: filename
 
   real(GLfloat), allocatable :: feedbackBuffer(:)
   integer(GLint) :: returned, idum
-  integer :: file, iostat
+  integer :: file, iostat, astat
   logical :: opened
 
-  allocate(feedbackBuffer(bsize))
+  allocate(feedbackBuffer(bsize),stat=astat)
+  if (astat /= 0) then
+    write(unit=*,fmt=*) "Allocation of feedbackBuffer failed in outputEPS"
+    write(unit=*,fmt=*) "Returning without output"
+    return
+  endif
   call glFeedbackBuffer(bsize, GL_3D_COLOR, feedbackBuffer)
   idum = glRenderMode(GL_FEEDBACK)
   call glCallList(1_GLint)

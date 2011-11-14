@@ -11,7 +11,7 @@
 ! the United States.                                                  !
 !                                                                     !
 !     William F. Mitchell                                             !
-!     Mathematical and Computational Sciences Division                !
+!     Applied and Computational Mathematics Division                  !
 !     National Institute of Standards and Technology                  !
 !     william.mitchell@nist.gov                                       !
 !     http://math.nist.gov/phaml                                      !
@@ -48,6 +48,13 @@ public allocate_grid, &        ! not thread safe
        point_on_edge, &        ! thread safe
        level2_mate, &          ! thread safe
        get_edge_elements, &    ! thread safe
+       matching_periodic_vert,&! thread safe
+       matching_periodic_edge,&! thread safe
+       get_child_lid, &        ! thread safe
+       get_child_gid, &        ! thread safe
+       get_neighbors, &        ! thread safe
+       get_grid_info, &        ! not thread safe
+       get_vertices_and_solution, & ! thread safe
        extend_nlev, &          ! not thread safe
        more_verts, &           ! not thread safe
        more_edges, &           ! not thread safe
@@ -98,6 +105,20 @@ interface
    real(my_real), intent(out) :: start(:), finish(:)
    end subroutine boundary_param
 
+end interface
+
+!----------------------------------------------------
+! Generic procedures
+
+private get_child_lid_scalar, get_child_lid_array, &
+        get_child_gid_scalar, get_child_gid_array
+
+interface get_child_lid
+   module procedure get_child_lid_scalar, get_child_lid_array
+end interface
+
+interface get_child_gid
+   module procedure get_child_gid_scalar, get_child_gid_array
 end interface
 
 !----------------------------------------------------
@@ -539,17 +560,21 @@ do lev=1,grid%nlev
          if (degree > 0) then
             deg = degree
             if (grid%edge(edge)%degree > 0) then
-               grid%dof = grid%dof - (grid%edge(edge)%degree-1)*system_size
+               grid%dof = grid%dof - (grid%edge(edge)%degree-1) * &
+                                   count(grid%edge_type(edge,:)/=PERIODIC_SLAVE)
                if (grid%element(grid%edge(edge)%assoc_elem)%iown) then
                   grid%dof_own = grid%dof_own - &
-                                 (grid%edge(edge)%degree-1)*system_size
+                                 (grid%edge(edge)%degree-1) * &
+                                 count(grid%edge_type(edge,:)/=PERIODIC_SLAVE)
                endif
             endif
             grid%edge(edge)%degree = degree
-            grid%dof = grid%dof + (grid%edge(edge)%degree-1)*system_size
+            grid%dof = grid%dof + (grid%edge(edge)%degree-1) * &
+                                   count(grid%edge_type(edge,:)/=PERIODIC_SLAVE)
             if (grid%element(grid%edge(edge)%assoc_elem)%iown) then
                grid%dof_own = grid%dof_own + &
-                              (grid%edge(edge)%degree-1)*system_size
+                              (grid%edge(edge)%degree-1) * &
+                              count(grid%edge_type(edge,:)/=PERIODIC_SLAVE)
             endif
          else
             deg = grid%edge(edge)%degree
@@ -809,14 +834,19 @@ type(grid_type), intent(out) :: new_grid
 !----------------------------------------------------
 ! Local variables:
 
-integer :: i
+integer :: i, astat
 !----------------------------------------------------
 ! Begin executable code
 
 ! elements
 
 if (associated(old_grid%element)) then
-   allocate(new_grid%element(size(old_grid%element)))
+   allocate(new_grid%element(size(old_grid%element)),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("memory allocation failed in copy_grid")
+      return
+   endif
    do i=1,size(old_grid%element)
       new_grid%element(i)%gid = old_grid%element(i)%gid
       new_grid%element(i)%mate = old_grid%element(i)%mate
@@ -825,7 +855,12 @@ if (associated(old_grid%element)) then
          allocate(new_grid%element(i)%solution( &
                   size(old_grid%element(i)%solution,dim=1), &
                   size(old_grid%element(i)%solution,dim=2), &
-                  size(old_grid%element(i)%solution,dim=3)))
+                  size(old_grid%element(i)%solution,dim=3)),stat=astat)
+         if (astat /= 0) then
+            ierr = ALLOC_FAILED
+            call fatal("memory allocation failed in copy_grid")
+            return
+         endif
          new_grid%element(i)%solution = old_grid%element(i)%solution
       else
          nullify(new_grid%element(i)%solution)
@@ -834,7 +869,12 @@ if (associated(old_grid%element)) then
          allocate(new_grid%element(i)%exact( &
                   size(old_grid%element(i)%exact,dim=1), &
                   size(old_grid%element(i)%exact,dim=2), &
-                  size(old_grid%element(i)%exact,dim=3)))
+                  size(old_grid%element(i)%exact,dim=3)),stat=astat)
+         if (astat /= 0) then
+            ierr = ALLOC_FAILED
+            call fatal("memory allocation failed in copy_grid")
+            return
+         endif
          new_grid%element(i)%exact = old_grid%element(i)%exact
       else
          nullify(new_grid%element(i)%exact)
@@ -843,7 +883,12 @@ if (associated(old_grid%element)) then
          allocate(new_grid%element(i)%oldsoln( &
                   size(old_grid%element(i)%oldsoln,dim=1), &
                   size(old_grid%element(i)%oldsoln,dim=2), &
-                  size(old_grid%element(i)%oldsoln,dim=3)))
+                  size(old_grid%element(i)%oldsoln,dim=3)),stat=astat)
+         if (astat /= 0) then
+            ierr = ALLOC_FAILED
+            call fatal("memory allocation failed in copy_grid")
+            return
+         endif
          new_grid%element(i)%oldsoln = old_grid%element(i)%oldsoln
       else
          nullify(new_grid%element(i)%oldsoln)
@@ -872,7 +917,12 @@ endif
 ! edges
 
 if (associated(old_grid%edge)) then
-   allocate(new_grid%edge(size(old_grid%edge)))
+   allocate(new_grid%edge(size(old_grid%edge)),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("memory allocation failed in copy_grid")
+      return
+   endif
    do i=1,size(old_grid%edge)
       new_grid%edge(i)%gid = old_grid%edge(i)%gid
       new_grid%edge(i)%vertex = old_grid%edge(i)%vertex
@@ -883,7 +933,12 @@ if (associated(old_grid%edge)) then
          allocate(new_grid%edge(i)%solution( &
                   size(old_grid%edge(i)%solution,dim=1), &
                   size(old_grid%edge(i)%solution,dim=2), &
-                  size(old_grid%edge(i)%solution,dim=3)))
+                  size(old_grid%edge(i)%solution,dim=3)),stat=astat)
+         if (astat /= 0) then
+            ierr = ALLOC_FAILED
+            call fatal("memory allocation failed in copy_grid")
+            return
+         endif
          new_grid%edge(i)%solution = old_grid%edge(i)%solution
       else
          nullify(new_grid%edge(i)%solution)
@@ -892,7 +947,12 @@ if (associated(old_grid%edge)) then
          allocate(new_grid%edge(i)%exact( &
                   size(old_grid%edge(i)%exact,dim=1), &
                   size(old_grid%edge(i)%exact,dim=2), &
-                  size(old_grid%edge(i)%exact,dim=3)))
+                  size(old_grid%edge(i)%exact,dim=3)),stat=astat)
+         if (astat /= 0) then
+            ierr = ALLOC_FAILED
+            call fatal("memory allocation failed in copy_grid")
+            return
+         endif
          new_grid%edge(i)%exact = old_grid%edge(i)%exact
       else
          nullify(new_grid%edge(i)%exact)
@@ -901,8 +961,13 @@ if (associated(old_grid%edge)) then
          allocate(new_grid%edge(i)%oldsoln( &
                   size(old_grid%edge(i)%oldsoln,dim=1), &
                   size(old_grid%edge(i)%oldsoln,dim=2), &
-                  size(old_grid%edge(i)%oldsoln,dim=3)))
+                  size(old_grid%edge(i)%oldsoln,dim=3)),stat=astat)
          new_grid%edge(i)%oldsoln = old_grid%edge(i)%oldsoln
+         if (astat /= 0) then
+            ierr = ALLOC_FAILED
+            call fatal("memory allocation failed in copy_grid")
+            return
+         endif
       else
          nullify(new_grid%edge(i)%oldsoln)
       endif
@@ -915,7 +980,12 @@ endif
 ! vertices
 
 if (associated(old_grid%vertex)) then
-   allocate(new_grid%vertex(size(old_grid%vertex)))
+   allocate(new_grid%vertex(size(old_grid%vertex)),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("memory allocation failed in copy_grid")
+      return
+   endif
    do i=1,size(old_grid%vertex)
       new_grid%vertex(i)%gid = old_grid%vertex(i)%gid
       new_grid%vertex(i)%coord = old_grid%vertex(i)%coord
@@ -940,7 +1010,12 @@ if (associated(old_grid%vertex_solution)) then
    allocate(new_grid%vertex_solution( &
             size(old_grid%vertex_solution,dim=1), &
             size(old_grid%vertex_solution,dim=2), &
-            size(old_grid%vertex_solution,dim=3)))
+            size(old_grid%vertex_solution,dim=3)),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("memory allocation failed in copy_grid")
+      return
+   endif
    new_grid%vertex_solution = old_grid%vertex_solution
 else
    nullify(new_grid%vertex_solution)
@@ -949,7 +1024,12 @@ if (associated(old_grid%vertex_exact)) then
    allocate(new_grid%vertex_exact( &
             size(old_grid%vertex_exact,dim=1), &
             size(old_grid%vertex_exact,dim=2), &
-            size(old_grid%vertex_exact,dim=3)))
+            size(old_grid%vertex_exact,dim=3)),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("memory allocation failed in copy_grid")
+      return
+   endif
    new_grid%vertex_exact = old_grid%vertex_exact
 else
    nullify(new_grid%vertex_exact)
@@ -958,7 +1038,12 @@ if (associated(old_grid%vertex_oldsoln)) then
    allocate(new_grid%vertex_oldsoln( &
             size(old_grid%vertex_oldsoln,dim=1), &
             size(old_grid%vertex_oldsoln,dim=2), &
-            size(old_grid%vertex_oldsoln,dim=3)))
+            size(old_grid%vertex_oldsoln,dim=3)),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("memory allocation failed in copy_grid")
+      return
+   endif
    new_grid%vertex_oldsoln = old_grid%vertex_oldsoln
 else
    nullify(new_grid%vertex_oldsoln)
@@ -966,13 +1051,23 @@ endif
 if (associated(old_grid%element_errind)) then
    allocate(new_grid%element_errind( &
             size(old_grid%element_errind,dim=1), &
-            size(old_grid%element_errind,dim=2)))
+            size(old_grid%element_errind,dim=2)),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("memory allocation failed in copy_grid")
+      return
+   endif
    new_grid%element_errind = old_grid%element_errind
 else
    nullify(new_grid%element_errind)
 endif
 if (associated(old_grid%eigenvalue)) then
-   allocate(new_grid%eigenvalue(size(old_grid%eigenvalue)))
+   allocate(new_grid%eigenvalue(size(old_grid%eigenvalue)),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("memory allocation failed in copy_grid")
+      return
+   endif
    new_grid%eigenvalue = old_grid%eigenvalue
 else
    nullify(new_grid%eigenvalue)
@@ -980,51 +1075,90 @@ endif
 new_grid%eigen_linsys_max_l2_resid = old_grid%eigen_linsys_max_l2_resid
 new_grid%eigen_linsys_ave_l2_resid = old_grid%eigen_linsys_ave_l2_resid
 if (associated(old_grid%eigenprob_l2_resid)) then
-   allocate(new_grid%eigenprob_l2_resid(size(old_grid%eigenprob_l2_resid)))
+   allocate(new_grid%eigenprob_l2_resid(size(old_grid%eigenprob_l2_resid)),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("memory allocation failed in copy_grid")
+      return
+   endif
    new_grid%eigenprob_l2_resid = old_grid%eigenprob_l2_resid
 else
    nullify(new_grid%eigenprob_l2_resid)
 endif
 if (associated(old_grid%eigenprob_variance)) then
-   allocate(new_grid%eigenprob_variance(size(old_grid%eigenprob_variance)))
+   allocate(new_grid%eigenprob_variance(size(old_grid%eigenprob_variance)),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("memory allocation failed in copy_grid")
+      return
+   endif
    new_grid%eigenprob_variance = old_grid%eigenprob_variance
 else
    nullify(new_grid%eigenprob_variance)
 endif
 if (associated(old_grid%errest_energy)) then
-   allocate(new_grid%errest_energy(size(old_grid%errest_energy)))
+   allocate(new_grid%errest_energy(size(old_grid%errest_energy)),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("memory allocation failed in copy_grid")
+      return
+   endif
    new_grid%errest_energy = old_grid%errest_energy
 else
    nullify(new_grid%errest_energy)
 endif
 if (associated(old_grid%errest_Linf)) then
-   allocate(new_grid%errest_Linf(size(old_grid%errest_Linf)))
+   allocate(new_grid%errest_Linf(size(old_grid%errest_Linf)),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("memory allocation failed in copy_grid")
+      return
+   endif
    new_grid%errest_Linf = old_grid%errest_Linf
 else
    nullify(new_grid%errest_Linf)
 endif
 if (associated(old_grid%errest_L2)) then
-   allocate(new_grid%errest_L2(size(old_grid%errest_L2)))
+   allocate(new_grid%errest_L2(size(old_grid%errest_L2)),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("memory allocation failed in copy_grid")
+      return
+   endif
    new_grid%errest_L2 = old_grid%errest_L2
 else
    nullify(new_grid%errest_L2)
 endif
 if (associated(old_grid%errest_eigenvalue)) then
-   allocate(new_grid%errest_eigenvalue(size(old_grid%errest_eigenvalue)))
+   allocate(new_grid%errest_eigenvalue(size(old_grid%errest_eigenvalue)),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("memory allocation failed in copy_grid")
+      return
+   endif
    new_grid%errest_eigenvalue = old_grid%errest_eigenvalue
 else
    nullify(new_grid%errest_eigenvalue)
 endif
-new_grid%refsoln_errest = old_grid%refsoln_errest
 new_grid%max_blen = old_grid%max_blen
 if (associated(old_grid%bp_start)) then
-   allocate(new_grid%bp_start(size(old_grid%bp_start)))
+   allocate(new_grid%bp_start(size(old_grid%bp_start)),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("memory allocation failed in copy_grid")
+      return
+   endif
    new_grid%bp_start = old_grid%bp_start
 else
    nullify(new_grid%bp_start)
 endif
 if (associated(old_grid%bp_finish)) then
-   allocate(new_grid%bp_finish(size(old_grid%bp_finish)))
+   allocate(new_grid%bp_finish(size(old_grid%bp_finish)),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("memory allocation failed in copy_grid")
+      return
+   endif
    new_grid%bp_finish = old_grid%bp_finish
 else
    nullify(new_grid%bp_finish)
@@ -1032,7 +1166,12 @@ endif
 if (associated(old_grid%edge_type)) then
    allocate(new_grid%edge_type( &
             size(old_grid%edge_type,dim=1), &
-            size(old_grid%edge_type,dim=2)))
+            size(old_grid%edge_type,dim=2)),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("memory allocation failed in copy_grid")
+      return
+   endif
    new_grid%edge_type = old_grid%edge_type
 else
    nullify(new_grid%edge_type)
@@ -1040,7 +1179,12 @@ endif
 if (associated(old_grid%vertex_type)) then
    allocate(new_grid%vertex_type( &
             size(old_grid%vertex_type,dim=1), &
-            size(old_grid%vertex_type,dim=2)))
+            size(old_grid%vertex_type,dim=2)),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("memory allocation failed in copy_grid")
+      return
+   endif
    new_grid%vertex_type = old_grid%vertex_type
 else
    nullify(new_grid%vertex_type)
@@ -1048,19 +1192,34 @@ endif
 if (associated(old_grid%initial_neighbor)) then
    allocate(new_grid%initial_neighbor( &
             size(old_grid%initial_neighbor,dim=1), &
-            size(old_grid%initial_neighbor,dim=2)))
+            size(old_grid%initial_neighbor,dim=2)),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("memory allocation failed in copy_grid")
+      return
+   endif
    new_grid%initial_neighbor = old_grid%initial_neighbor
 else
    nullify(new_grid%initial_neighbor)
 endif
 if (associated(old_grid%head_level_elem)) then
-   allocate(new_grid%head_level_elem(size(old_grid%head_level_elem)))
+   allocate(new_grid%head_level_elem(size(old_grid%head_level_elem)),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("memory allocation failed in copy_grid")
+      return
+   endif
    new_grid%head_level_elem = old_grid%head_level_elem
 else
    nullify(new_grid%head_level_elem)
 endif
 if (associated(old_grid%head_level_vert)) then
-   allocate(new_grid%head_level_vert(size(old_grid%head_level_vert)))
+   allocate(new_grid%head_level_vert(size(old_grid%head_level_vert)),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("memory allocation failed in copy_grid")
+      return
+   endif
    new_grid%head_level_vert = old_grid%head_level_vert
 else
    nullify(new_grid%head_level_vert)
@@ -1506,11 +1665,11 @@ do i=1,nqp
 end do
 
 if (my_real == kind(1.0)) then
-   call sgemm("N","N",n,n,nqp,1.0_my_real,basis,nbasis,wbasis,nqp, &
-              0.0_my_real,afull,n)
+   call sgemm("N","N",n,n,nqp,1.0,basis,nbasis,wbasis,nqp, &
+              0.0,afull,n)
 elseif (my_real == kind(1.0d0)) then
-   call dgemm("N","N",n,n,nqp,1.0_my_real,basis,nbasis,wbasis,nqp, &
-              0.0_my_real,afull,n)
+   call dgemm("N","N",n,n,nqp,1.0d0,basis,nbasis,wbasis,nqp, &
+              0.0d0,afull,n)
 else
    ierr = PHAML_INTERNAL_ERROR
    call fatal("my_real is neither single nor double precision. Can't call GEMM")
@@ -1524,9 +1683,9 @@ do i=1,n
 end do
 
 if (my_real == kind(1.0)) then
-   call sgemm("T","N",n,nev,nqp,1.0_my_real,wbasis,nqp,true,nqp,0.0_my_real,b,n)
+   call sgemm("T","N",n,nev,nqp,1.0,wbasis,nqp,true,nqp,0.0,b,n)
 elseif (my_real == kind(1.0d0)) then
-   call dgemm("T","N",n,nev,nqp,1.0_my_real,wbasis,nqp,true,nqp,0.0_my_real,b,n)
+   call dgemm("T","N",n,nev,nqp,1.0d0,wbasis,nqp,true,nqp,0.0d0,b,n)
 endif
 
 ! solve the least squares system
@@ -1778,6 +1937,23 @@ do i=1,EDGES_PER_ELEMENT
    endif
 end do
 
+! if we didn't find it, perhaps it's a periodic edge on the other triangle
+! TEMP not sure how to handle two periodic sides on a triangle
+
+if (side == 0) then
+   do i=1,EDGES_PER_ELEMENT
+      if (any(grid%edge_type(grid%element(elem1)%edge(i),:) == PERIODIC_MASTER) .or. &
+          any(grid%edge_type(grid%element(elem1)%edge(i),:) == PERIODIC_SLAVE)) then
+         if (side /= 0) then
+            ierr = PHAML_INTERNAL_ERROR
+            call fatal("get_edge_elements: don't know how to handle two PERIODIC sides")
+            stop
+         endif
+         side = i
+      endif
+   end do
+endif
+
 if (side == 0) then
    ierr = PHAML_INTERNAL_ERROR
    call fatal("get_edge_elements: failed to find edge on associated element")
@@ -1794,6 +1970,643 @@ get_edge_elements(1) = elem1
 get_edge_elements(2) = neigh(side)
 
 end function get_edge_elements
+
+!        ----------------------
+function matching_periodic_vert(grid,vert)
+!        ----------------------
+
+!----------------------------------------------------
+! This routine returns the vertex that matches up with periodic boundary
+! vertex vert.
+! In the case of doubly periodic boundary vertices, if vert is slave then
+! the master is returned, and if vert is the master, the slave that preceeds
+! it in the linked list is returned.
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+
+type(grid_type), intent(in) :: grid
+integer, intent(in) :: vert
+integer :: matching_periodic_vert
+!----------------------------------------------------
+! Local variables:
+
+!----------------------------------------------------
+! Begin executable code
+
+matching_periodic_vert = -1
+
+! If vert is a periodic slave, then one or more nexts give the master.
+
+if (any(grid%vertex_type(vert,:) == PERIODIC_SLAVE) .or. &
+    any(grid%vertex_type(vert,:) == PERIODIC_SLAVE_DIR) .or. &
+    any(grid%vertex_type(vert,:) == PERIODIC_SLAVE_NAT) .or. &
+    any(grid%vertex_type(vert,:) == PERIODIC_SLAVE_MIX)) then
+   matching_periodic_vert = grid%vertex(vert)%next
+   do while (any(grid%vertex_type(matching_periodic_vert,:) == PERIODIC_SLAVE))
+      matching_periodic_vert = grid%vertex(matching_periodic_vert)%next
+   end do
+
+! Otherwise, previous gives a matching vertex
+
+elseif (any(grid%vertex_type(vert,:) == PERIODIC_MASTER) .or. &
+        any(grid%vertex_type(vert,:) == PERIODIC_MASTER_DIR) .or. &
+        any(grid%vertex_type(vert,:) == PERIODIC_MASTER_NAT) .or. &
+        any(grid%vertex_type(vert,:) == PERIODIC_MASTER_MIX)) then
+   matching_periodic_vert = grid%vertex(vert)%previous
+
+else
+   ierr = PHAML_INTERNAL_ERROR
+   call fatal("Non-periodic vertex passed into matching_periodic_vert")
+   stop
+
+endif
+
+end function matching_periodic_vert
+
+!        ----------------------
+function matching_periodic_edge(grid,edge)
+!        ----------------------
+
+!----------------------------------------------------
+! This routine returns the edge that matches up with periodic boundary
+! edge edge.  Element elem contains either edge or the matching edge.
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+
+type(grid_type), intent(in) :: grid
+integer, intent(in) :: edge
+integer :: matching_periodic_edge
+!----------------------------------------------------
+! Local variables:
+
+!----------------------------------------------------
+! Begin executable code
+
+matching_periodic_edge = -1
+
+! If edge is periodic then next gives the matching edge, for both a master
+! and a slave.
+
+if (any(grid%edge_type(edge,:) == PERIODIC_SLAVE) .or. &
+    any(grid%edge_type(edge,:) == PERIODIC_MASTER)) then
+   matching_periodic_edge = grid%edge(edge)%next
+
+else
+   ierr = PHAML_INTERNAL_ERROR
+   call fatal("Non-periodic edge passed into matching_periodic_edge")
+   stop
+
+endif
+
+end function matching_periodic_edge
+
+!        --------------------
+function get_child_gid_scalar(gid,child)
+!        --------------------
+
+!----------------------------------------------------
+! This function returns the global ID of child number child of
+! element number gid
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+
+type(hash_key), intent(in) :: gid
+integer, intent(in) :: child
+type(hash_key) :: get_child_gid_scalar
+
+!----------------------------------------------------
+! Local variables: 
+
+!----------------------------------------------------
+! Begin executable code
+
+get_child_gid_scalar = MAX_CHILD*gid+(child-1)
+
+end function get_child_gid_scalar
+
+!        -------------------
+function get_child_gid_array(gid,child)
+!        -------------------
+
+!----------------------------------------------------
+! This function returns the global ID of the children of element
+! number gid listed in child
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+
+type(hash_key), intent(in) :: gid
+integer, intent(in) :: child(:)
+type(hash_key) :: get_child_gid_array(size(child))
+
+!----------------------------------------------------
+! Local variables: 
+
+integer :: i
+
+!----------------------------------------------------
+! Begin executable code
+
+do i=1,size(child)
+   get_child_gid_array(i) = MAX_CHILD*gid+(child(i)-1)
+end do
+
+end function get_child_gid_array
+
+!        --------------------
+function get_child_lid_scalar(gid,child,table)
+!        --------------------
+
+!----------------------------------------------------
+! This function returns the local ID of child number child of
+! element number gid
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+
+type(hash_key), intent(in) :: gid
+integer, intent(in) :: child
+type(hash_table), intent(in) :: table
+integer :: get_child_lid_scalar
+
+!----------------------------------------------------
+! Local variables: 
+
+!----------------------------------------------------
+! Begin executable code
+
+if (hash_overflow(gid,MAX_CHILD,child-1)) then
+   get_child_lid_scalar = NO_CHILD
+else
+   get_child_lid_scalar = hash_decode_key(MAX_CHILD*gid+(child-1),table)
+   if (get_child_lid_scalar == HASH_NOT_FOUND) then
+      get_child_lid_scalar = NO_CHILD
+   endif
+endif
+
+end function get_child_lid_scalar
+
+!        -------------------
+function get_child_lid_array(gid,child,table)
+!        -------------------
+
+!----------------------------------------------------
+! This function returns the local ID of the children of element
+! number gid listed in child
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+
+type(hash_key), intent(in) :: gid
+integer, intent(in) :: child(:)
+type(hash_table), intent(in) :: table
+integer :: get_child_lid_array(size(child))
+
+!----------------------------------------------------
+! Local variables: 
+
+integer :: i
+
+!----------------------------------------------------
+! Begin executable code
+
+do i=1,size(child)
+   if (hash_overflow(gid,MAX_CHILD,child(i)-1)) then
+      get_child_lid_array(i) = NO_CHILD
+   else
+      get_child_lid_array(i)=hash_decode_key(MAX_CHILD*gid+(child(i)-1), &
+                                             table)
+      if (get_child_lid_array(i) == HASH_NOT_FOUND) then
+         get_child_lid_array(i) = NO_CHILD
+      endif
+   endif
+end do
+
+end function get_child_lid_array
+
+!        -------------
+function get_neighbors(lid,grid)
+!        -------------
+
+!----------------------------------------------------
+! This function returns the local IDs of the neighbors of element lid.
+! Order is (sibling,child of parent's mate,mate) i.e. opposite vert 1,2,3.
+! On level 1, the order is the same as in initial_neighbor.
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+
+integer, intent(in) :: lid
+type(grid_type), intent(in) :: grid
+integer :: get_neighbors(EDGES_PER_ELEMENT)
+
+!----------------------------------------------------
+! Local variables: 
+
+integer :: parent_lid, mate_lid, child_lid(2)
+type(hash_key) :: gid, parent, child1, parent_mate_gid, gid_neighbor
+type(hash_key) :: children(MAX_CHILD)
+integer :: allc(MAX_CHILD)
+integer :: i, j, k, vert, other_vert(1), edge, other_edge(3)
+
+!----------------------------------------------------
+! Begin executable code
+
+! In the case of periodic boundary conditions, identify the matching edges
+! and vertex
+
+do i=1,3
+   edge = grid%element(lid)%edge(i)
+   if (any(grid%edge_type(edge,:) == PERIODIC_SLAVE) .or. &
+       any(grid%edge_type(edge,:) == PERIODIC_MASTER)) then
+      other_edge(i) = matching_periodic_edge(grid,edge)
+   else
+      other_edge(i) = edge
+   endif
+end do
+vert = grid%element(lid)%vertex(1)
+if (any(grid%vertex_type(vert,:) == PERIODIC_SLAVE) .or. &
+    any(grid%vertex_type(vert,:) == PERIODIC_MASTER) .or. &
+    any(grid%vertex_type(vert,:) == PERIODIC_SLAVE_DIR) .or. &
+    any(grid%vertex_type(vert,:) == PERIODIC_MASTER_DIR) .or. &
+    any(grid%vertex_type(vert,:) == PERIODIC_SLAVE_NAT) .or. &
+    any(grid%vertex_type(vert,:) == PERIODIC_MASTER_NAT) .or. &
+    any(grid%vertex_type(vert,:) == PERIODIC_SLAVE_MIX) .or. &
+    any(grid%vertex_type(vert,:) == PERIODIC_MASTER_MIX)) then
+   other_vert(1) = matching_periodic_vert(grid,vert)
+else
+   other_vert(1) = vert
+endif
+
+! Neighbors of a level 1 element.
+
+if (grid%element(lid)%level == 1) then
+
+! Start with the neighbors on level 1.
+
+   get_neighbors = grid%initial_neighbor(:,lid)
+
+! For each neighbor ...
+
+   do i=1,EDGES_PER_ELEMENT
+
+! If the initial neighbor was refined, get the child that shares an edge.
+
+      if (get_neighbors(i) /= BOUNDARY) then
+         gid_neighbor = grid%element(get_neighbors(i))%gid
+         if (hash_overflow(gid_neighbor,2,1)) then
+            child_lid = HASH_NOT_FOUND
+         else
+            allc = ALL_CHILDREN
+            children = get_child_gid(gid_neighbor,allc)
+            child_lid(1) = hash_decode_key(children(1),grid%elem_hash)
+            child_lid(2) = hash_decode_key(children(2),grid%elem_hash)
+         endif
+         if (child_lid(1) /= HASH_NOT_FOUND) then
+            do j=1,3
+               do k=1,2
+                  if (any(grid%element(child_lid(k))%edge == &
+                          grid%element(lid)%edge(j)) .or. &
+                      any(grid%element(child_lid(k))%edge == other_edge(j))) then
+                     get_neighbors(i) = child_lid(k)
+                     exit
+                  endif
+               end do
+            end do
+         endif
+      endif
+   end do
+
+! Elements that are not level 1
+
+else
+
+   gid = grid%element(lid)%gid
+
+! Identify the parent and the first child of the parent
+
+   parent = gid/2
+   parent_lid = hash_decode_key(parent,grid%elem_hash)
+   child1 = 2*parent
+
+! The sibling is the child of the parent that is not this element
+
+   if (child1 == gid) then
+      gid_neighbor = child1+1
+   else
+      gid_neighbor = child1
+   endif
+
+! If the sibling was refined, get the child whose vertex 1 is my vertex 2
+
+   if (hash_overflow(gid_neighbor,2,1)) then
+      child_lid = HASH_NOT_FOUND
+   else
+      allc = ALL_CHILDREN
+      children = get_child_gid(gid_neighbor,allc)
+      child_lid(1) = hash_decode_key(children(1),grid%elem_hash)
+   endif
+   if (child_lid(1) /= HASH_NOT_FOUND) then
+      if (grid%element(child_lid(1))%vertex(1) == &
+          grid%element(lid)%vertex(2)) then
+         get_neighbors(1) = child_lid(1)
+         gid_neighbor = BOUNDARY ! so I don't hash decode it later
+      else
+         gid_neighbor = children(2)
+      endif
+   endif
+   if (.not. gid_neighbor == BOUNDARY) then
+      get_neighbors(1) = hash_decode_key(gid_neighbor,grid%elem_hash)
+   endif
+
+! Get the neighboring child of the parent's mate
+
+   parent_mate_gid = grid%element(parent_lid)%mate
+   if (parent_mate_gid == BOUNDARY) then
+      get_neighbors(2) = BOUNDARY
+      gid_neighbor = BOUNDARY
+   else
+      if (child1 == gid) then
+         gid_neighbor = 2*parent_mate_gid
+      else
+         gid_neighbor = 2*parent_mate_gid+1
+      endif
+
+! If the neighbor was refined, get the child whose vertex 1 is my vertex 1.
+
+      if (hash_overflow(gid_neighbor,2,1)) then
+         child_lid(1) = HASH_NOT_FOUND
+      else
+         allc = ALL_CHILDREN
+         children = get_child_gid(gid_neighbor,allc)
+         child_lid(1) = hash_decode_key(children(1),grid%elem_hash)
+      endif
+      if (child_lid(1) /= HASH_NOT_FOUND) then
+         if (grid%element(child_lid(1))%vertex(1)==grid%element(lid)%vertex(1).or.&
+             grid%element(child_lid(1))%vertex(1)==other_vert(1)) then
+            get_neighbors(2) = child_lid(1)
+            gid_neighbor = BOUNDARY
+         else
+            gid_neighbor = children(2)
+         endif
+      endif
+   endif
+   if (.not. gid_neighbor == BOUNDARY) then
+      get_neighbors(2) = hash_decode_key(gid_neighbor,grid%elem_hash)
+   endif
+
+! Get the mate
+
+   if (grid%element(lid)%mate == BOUNDARY) then
+      get_neighbors(3) = BOUNDARY
+   else
+      mate_lid = hash_decode_key(grid%element(lid)%mate,grid%elem_hash)
+      if (mate_lid == HASH_NOT_FOUND) then
+         get_neighbors(3)=hash_decode_key(grid%element(lid)%mate/2,grid%elem_hash)
+      else
+         get_neighbors(3) = mate_lid
+      endif
+   endif
+endif
+
+end function get_neighbors
+
+!          -------------
+subroutine get_grid_info(grid,procs,still_sequential,tag,nelem,nlev,nvert, &
+                         nvert_own,nelem_own,nelem_leaf,nelem_leaf_own,     &
+                         dof,dof_own,total_nvert,total_nelem_leaf,total_dof, &
+                         max_nlev,mindeg,maxdeg,no_master)
+!          -------------
+
+!----------------------------------------------------
+! This routine returns information about the grid
+!----------------------------------------------------
+
+implicit none
+
+!----------------------------------------------------
+! Dummy arguments
+
+type (grid_type), intent(in) :: grid
+type (proc_info), intent(in) :: procs
+logical, intent(in) :: still_sequential
+integer, intent(in) :: tag
+integer, intent(out), optional :: nelem,nlev,nvert,nvert_own, &
+                                  nelem_own,nelem_leaf,nelem_leaf_own, &
+                                  dof,dof_own,total_nvert,total_nelem_leaf, &
+                                  total_dof,max_nlev,mindeg,maxdeg
+logical, intent(in), optional :: no_master
+!----------------------------------------------------
+
+integer :: proc,ni,nr,astat,lev,elem,min_mindeg,max_maxdeg
+integer, pointer :: recv_int(:)
+real(my_real), pointer :: recv_real(:)
+real(my_real) :: no_reals(1)
+logical :: send_to_master
+
+!----------------------------------------------------
+! Begin executable code
+
+if (present(no_master)) then
+   if (no_master) then
+      send_to_master = .false.
+   else
+      send_to_master = .true.
+   endif
+else
+   send_to_master = .true.
+endif
+
+if (my_proc(procs)==MASTER) then
+
+   if (present(nelem)) nelem = 0
+   if (present(nlev)) nlev = 0
+   if (present(nvert)) nvert = 0
+   if (present(nvert_own)) nvert_own = 0
+   if (present(nelem_own)) nelem_own = 0
+   if (present(nelem_leaf)) nelem_leaf = 0
+   if (present(nelem_leaf_own)) nelem_leaf_own = 0
+   if (present(dof)) dof = 0
+   if (present(dof_own)) dof_own = 0
+   if (present(total_nvert)) then
+      call phaml_recv(procs,proc,recv_int,ni,recv_real,nr,10*tag+4)
+      total_nvert = recv_int(1)
+      deallocate(recv_int,stat=astat)
+   end if
+   if (present(total_nelem_leaf)) then
+      call phaml_recv(procs,proc,recv_int,ni,recv_real,nr,10*tag+6)
+      total_nelem_leaf = recv_int(1)
+      deallocate(recv_int,stat=astat)
+   end if
+   if (present(total_dof)) then
+      call phaml_recv(procs,proc,recv_int,ni,recv_real,nr,10*tag+9)
+      total_dof = recv_int(1)
+      deallocate(recv_int,stat=astat)
+   end if
+   if (present(max_nlev)) then
+      call phaml_recv(procs,proc,recv_int,ni,recv_real,nr,10*tag+8)
+      max_nlev = recv_int(1)
+      deallocate(recv_int,stat=astat)
+   end if
+   if (present(mindeg)) then
+      call phaml_recv(procs,proc,recv_int,ni,recv_real,nr,10*tag+11)
+      mindeg = recv_int(1)
+      deallocate(recv_int,stat=astat)
+   end if
+   if (present(maxdeg)) then
+      call phaml_recv(procs,proc,recv_int,ni,recv_real,nr,10*tag+13)
+      maxdeg = recv_int(1)
+      deallocate(recv_int,stat=astat)
+   end if
+
+else ! not processor 0
+
+   if (present(nelem)) nelem = grid%nelem
+   if (present(nlev)) nlev = grid%nlev
+   if (present(nvert)) nvert = grid%nvert
+   if (present(nvert_own)) nvert_own = grid%nvert_own
+   if (present(nelem_own)) nelem_own = 0 ! was grid%nelem_own
+   if (present(nelem_leaf)) nelem_leaf = grid%nelem_leaf
+   if (present(nelem_leaf_own)) nelem_leaf_own = grid%nelem_leaf_own
+   if (present(dof)) dof = grid%dof
+   if (present(dof_own)) dof_own = grid%dof_own
+
+   if (present(total_nvert)) then
+      if (still_sequential) then
+         total_nvert = grid%nvert_own
+      else
+         total_nvert = phaml_global_sum(procs,grid%nvert_own,10*tag+1)
+      endif
+      if (my_proc(procs)==1 .and. send_to_master) then
+         call phaml_send(procs,MASTER,(/total_nvert/),1,no_reals,0,10*tag+4)
+      endif
+   end if
+   if (present(total_nelem_leaf)) then
+      if (still_sequential) then
+         total_nelem_leaf = grid%nelem_leaf_own
+      else
+         total_nelem_leaf = phaml_global_sum(procs,grid%nelem_leaf_own,10*tag+3)
+      endif
+      if (my_proc(procs)==1 .and. send_to_master) then
+         call phaml_send(procs,MASTER,(/total_nelem_leaf/),1,no_reals,0,10*tag+6)
+      endif
+   end if
+   if (present(total_dof)) then
+      if (still_sequential) then
+         total_dof = grid%dof_own
+      else
+         total_dof = phaml_global_sum(procs,grid%dof_own,10*tag+2)
+      endif
+      if (my_proc(procs)==1 .and. send_to_master) then
+         call phaml_send(procs,MASTER,(/total_dof/),1,no_reals,0,10*tag+9)
+      endif
+   end if
+   if (present(max_nlev)) then
+      if (still_sequential) then
+         max_nlev = grid%nlev
+      else
+         max_nlev = phaml_global_max(procs,grid%nlev,10*tag+7)
+      endif
+      if (my_proc(procs)==1 .and. send_to_master) then
+         call phaml_send(procs,MASTER,(/max_nlev/),1,no_reals,0,10*tag+8)
+      endif
+   endif
+   if (present(mindeg) .or. present(maxdeg)) then
+      if (present(mindeg)) mindeg = huge(0)
+      if (present(maxdeg)) maxdeg = 0
+      do lev=1,grid%nlev
+         elem = grid%head_level_elem(lev)
+         do while (elem /= END_OF_LIST)
+            if (grid%element(elem)%iown .and. grid%element(elem)%isleaf) then
+               if (present(mindeg)) mindeg=min(mindeg,grid%element(elem)%degree)
+               if (present(maxdeg)) maxdeg=max(maxdeg,grid%element(elem)%degree)
+            endif
+            elem = grid%element(elem)%next
+         end do
+      end do
+      if (send_to_master) then
+         if (present(mindeg)) then
+            min_mindeg = phaml_global_min(procs,mindeg,10*tag+10)
+            if (my_proc(procs)==1) then
+               call phaml_send(procs,MASTER,(/min_mindeg/),1,no_reals,0,10*tag+11)
+            endif
+         endif
+         if (present(maxdeg)) then
+            max_maxdeg = phaml_global_max(procs,maxdeg,10*tag+12)
+            if (my_proc(procs)==1) then
+               call phaml_send(procs,MASTER,(/max_maxdeg/),1,no_reals,0,10*tag+13)
+            endif
+         endif
+      endif
+   endif
+
+endif
+
+end subroutine get_grid_info
+
+!          -------------------------
+subroutine get_vertices_and_solution(grid,x,y,u,comp,eigen)
+!          -------------------------
+
+!----------------------------------------------------
+! This routine returns the coordinates of the vertices owned by this processor
+! and the (comp,eigen) solution at them.
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+
+type(grid_type), intent(in) :: grid
+real(my_real), pointer :: x(:), y(:), u(:)
+integer, intent(in) :: comp, eigen
+!----------------------------------------------------
+! Local variables:
+
+integer :: i, lev, vert, astat
+!----------------------------------------------------
+! Begin executable code
+
+allocate(x(grid%nvert_own),y(grid%nvert_own),u(grid%nvert_own),stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("allocation failed in get_vertices_and_solution")
+   stop
+endif
+
+i = 0
+do lev=1,grid%nlev
+   vert = grid%head_level_vert(lev)
+   do while (vert /= END_OF_LIST)
+      if (grid%element(grid%vertex(vert)%assoc_elem)%iown) then
+         i = i+1
+         if (i > grid%nvert_own) then
+            ierr = PHAML_INTERNAL_ERROR
+            call fatal("insufficient space in get_vertices_and_solution")
+            stop
+         endif
+         x(i) = grid%vertex(vert)%coord%x
+         y(i) = grid%vertex(vert)%coord%y
+         u(i) = grid%vertex_solution(vert,comp,eigen)
+      endif
+      vert = grid%vertex(vert)%next
+   end do
+end do
+
+if (i /= grid%nvert_own) then
+   call warning("number of vertices mismatch in get_verticies_and_solution")
+endif
+
+end subroutine get_vertices_and_solution
 
 !          -----------
 subroutine extend_nlev(grid)
@@ -1846,7 +2659,8 @@ deallocate(old_array,stat=dstat)
 end subroutine extend_nlev
 
 !          -------------
-subroutine more_elements(grid,errcode,elist,reftype,numhref,numpref)
+subroutine more_elements(grid,errcode,elist,reftype,new_p,numhref,numpref, &
+                         desired_level,desired_degree,elem_list)
 !          -------------
 
 !----------------------------------------------------
@@ -1860,14 +2674,15 @@ type(grid_type), intent(inout) :: grid
 integer, intent(out) :: errcode
 type(errind_list), optional, intent(inout) :: elist
 character(len=*), optional, pointer :: reftype(:)
-integer, optional, pointer :: numhref(:), numpref(:)
+integer, optional, pointer :: numhref(:), numpref(:), new_p(:,:), &
+                              desired_level(:), desired_degree(:), elem_list(:)
 !----------------------------------------------------
 ! Local variables:
 
 type(element_t), pointer :: temp_elem(:)
 integer, pointer :: temp_eprev(:), temp_enext(:)
 character(len=1), pointer :: temp_reftype(:)
-integer, pointer :: temp_numref(:)
+integer, pointer :: temp_numref(:), temp_new_p(:,:), temp_desired(:)
 real(my_real), pointer :: temp_errind(:,:)
 integer :: allocstat, oldsize, newsize, i
 !----------------------------------------------------
@@ -1934,6 +2749,20 @@ if (present(reftype)) then
    deallocate(temp_reftype,stat=allocstat)
 endif
 
+if (present(new_p)) then
+   temp_new_p => new_p
+   nullify(new_p)
+   allocate(new_p(2,newsize),stat=allocstat)
+   if (allocstat /= 0) then
+      errcode = 1
+      call fatal("increased allocation failed")
+      stop
+   endif
+   new_p(:,1:oldsize) = temp_new_p
+   new_p(:,oldsize+1:newsize) = 0
+   deallocate(temp_new_p,stat=allocstat)
+endif
+
 if (present(numhref)) then
    temp_numref => numhref
    nullify(numhref)
@@ -1976,6 +2805,48 @@ grid%next_free_elem = oldsize+1
 grid%element(oldsize+1:newsize)%previous = (/ (i,i=oldsize,newsize-1) /)
 grid%element(oldsize+1:newsize-1)%next = (/ (i,i=oldsize+2,newsize) /)
 grid%element(newsize)%next = END_OF_LIST
+
+if (present(desired_level)) then
+   temp_desired => desired_level
+   nullify(desired_level)
+   allocate(desired_level(newsize),stat=allocstat)
+   if (allocstat /= 0) then
+      errcode = 1
+      call fatal("increased allocation failed")
+      stop
+   endif
+   desired_level(1:oldsize) = temp_desired
+   desired_level(oldsize+1:newsize) = 0
+   deallocate(temp_desired,stat=allocstat)
+endif
+
+if (present(desired_degree)) then
+   temp_desired => desired_degree
+   nullify(desired_degree)
+   allocate(desired_degree(newsize),stat=allocstat)
+   if (allocstat /= 0) then
+      errcode = 1
+      call fatal("increased allocation failed")
+      stop
+   endif
+   desired_degree(1:oldsize) = temp_desired
+   desired_degree(oldsize+1:newsize) = 0
+   deallocate(temp_desired,stat=allocstat)
+endif
+
+if (present(elem_list)) then
+   temp_desired => elem_list
+   nullify(elem_list)
+   allocate(elem_list(newsize),stat=allocstat)
+   if (allocstat /= 0) then
+      errcode = 1
+      call fatal("increased allocation failed")
+      stop
+   endif
+   elem_list(1:oldsize) = temp_desired
+   elem_list(oldsize+1:newsize) = 0
+   deallocate(temp_desired,stat=allocstat)
+endif
 
 !call count_grid_memory(grid)
 
@@ -2824,12 +3695,24 @@ integer :: nred1, nblack1, nbasis1, nred2, nblack2, nbasis2, nred4, nblack4, &
            nbasis4, astat, i, j, k, rsub, bsub, ind
 logical :: red
 real(my_real) :: xvert5, yvert5, rdeg, w1, w2, w3
-real(my_real) :: s(size(solution,dim=1),size(solution,dim=1)), &
-                 prod(size(solution,dim=1),size(solution,dim=2))
+real(my_real), allocatable :: s(:,:),prod(:,:)
 real(my_real), allocatable :: xnode(:), ynode(:), basis(:,:)
 integer, allocatable :: ind_black(:), ind_red(:)
 !----------------------------------------------------
 ! Begin executable code
+
+! Allocate memory.  These used to be automatic arrays, but
+! ifort (IFORT) 11.1 20100414 with OpenMP got a seg fault on s=0 when I used
+! coef_decay with examples/parabolic and the degree hit 16 while computing
+! the h-coarsen error indicator. (8/05/10)
+
+allocate(s(size(solution,dim=1),size(solution,dim=1)), &
+         prod(size(solution,dim=1),size(solution,dim=2)),stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("memory allocation failed in nodal2hhier")
+   return
+endif
 
 ! some useful constants
 
@@ -3147,10 +4030,10 @@ endif ! xvert(4) /= huge
 ! convert values in solution to h-hierarchical
 
 if (my_real == kind(1.0)) then
-   call sgemm("N","N",nbasis4,size(solution,dim=2),nbasis4,1.0_my_real, &
+   call sgemm("N","N",nbasis4,size(solution,dim=2),nbasis4,1.0, &
               s,nbasis4,solution,nbasis4,0.0,prod,nbasis4)
 elseif (my_real == kind(1.0d0)) then
-   call dgemm("N","N",nbasis4,size(solution,dim=2),nbasis4,1.0_my_real, &
+   call dgemm("N","N",nbasis4,size(solution,dim=2),nbasis4,1.0d0, &
               s,nbasis4,solution,nbasis4,0.0d0,prod,nbasis4)
 else
    ierr = PHAML_INTERNAL_ERROR
@@ -3163,6 +4046,7 @@ endif
 solution = prod
 
 deallocate(xnode,ynode,basis,ind_black,ind_red)
+deallocate(s,prod)
 
 end subroutine nodal2hhier
 
@@ -3209,14 +4093,23 @@ element_diameter = max(element_diameter, &
 end function element_diameter
 
 !          -------------
-subroutine list_elements(grid,list,nelem,level,own,leaf)
+subroutine list_elements(grid,list,nelem,level,own,leaf,unowned_neigh, &
+                         bound_vert,owned_neigh)
 !          -------------
 
 !----------------------------------------------------
 ! This routine creates a list of elements in the beginning of list.
-! nelem is the number of returned elements.  level is the h-refinement
-! level to use; if level=0, all levels are used.  If own is true, only
-! owned elements are listed.  If leaf is true, only leaves are listed.
+! nelem is the number of returned elements.
+! If level is present, it is the h-refinement level to use; otherwise all levels
+! If own is present and true, only owned elements are listed.
+! If leaf is present and true, only leaves are listed.
+! If unowned_neigh is present and true, only elements with an unowned neighbor
+! are listed.
+! If bound_vert is present and true, only elements that have a vertex that
+! touches the partition boundary are listed.  Currently this requires
+! own=leaf=true and unowned_neigh=owned_neigh=false.
+! If owned_neigh is present and true, unowned elements that have an owned
+! neighbor are included (despite own being true).
 ! list must be large enough to hold the list.
 !----------------------------------------------------
 
@@ -3225,35 +4118,169 @@ subroutine list_elements(grid,list,nelem,level,own,leaf)
 
 type(grid_type), intent(in) :: grid
 integer, intent(out) :: list(:), nelem
-integer, intent(in) :: level
-logical, intent(in) :: own, leaf
+integer, intent(in), optional :: level
+logical, intent(in), optional :: own, leaf, unowned_neigh, bound_vert, &
+                                 owned_neigh
 !----------------------------------------------------
 ! Local variables:
 
-integer :: lolim, hilim, lev, elem
+integer :: lolim, hilim, lev, elem, next_elem
+integer :: loc_level, i, neigh(3), astat
+logical :: loc_own, loc_leaf, loc_unowned_neigh, unowned_neigh_satisfied, &
+           loc_bound_vert, loc_owned_neigh, owned_neigh_satisfied
 !----------------------------------------------------
 ! Begin executable code
 
-if (level == 0) then
-   lolim = 1
-   hilim = grid%nlev
+if (present(own)) then
+   loc_own = own
 else
+   loc_own = .false.
+endif
+
+if (present(leaf)) then
+   loc_leaf = leaf
+else
+   loc_leaf = .false.
+endif
+
+if (present(unowned_neigh)) then
+   loc_unowned_neigh = unowned_neigh
+else
+   loc_unowned_neigh = .false.
+endif
+
+if (present(bound_vert)) then
+   loc_bound_vert = bound_vert
+else
+   loc_bound_vert = .false.
+endif
+
+if (present(owned_neigh)) then
+   loc_owned_neigh = owned_neigh
+else
+   loc_owned_neigh = .false.
+endif
+
+if (present(level)) then
    lolim = level
    hilim = level
+else
+   lolim = 1
+   hilim = grid%nlev
 endif
+
+! I had a hard enough time getting the logic right before I added the bound_vert
+! option, so for now I'm just going to handle that one separately.
+
+if (loc_bound_vert) then
+   call bound_vert_list
+   return
+endif
+
+nelem = 0
+do lev=lolim,hilim
+   next_elem = grid%head_level_elem(lev)
+   do while (next_elem /= END_OF_LIST)
+      elem = next_elem
+      next_elem = grid%element(elem)%next
+      if (loc_leaf .and. .not. grid%element(elem)%isleaf) cycle
+      if (loc_own .and. .not. grid%element(elem)%iown .and. &
+          (.not. loc_owned_neigh)) cycle
+      if (loc_unowned_neigh .or. loc_owned_neigh) then
+         neigh = get_neighbors(elem,grid)
+      endif
+      if (loc_unowned_neigh) then
+         unowned_neigh_satisfied = .false.
+         do i=1,EDGES_PER_ELEMENT
+            if (neigh(i) /= BOUNDARY) then
+               if (.not. grid%element(neigh(i))%iown) then
+                  unowned_neigh_satisfied = .true.
+               endif
+            endif
+         end do
+      else
+         unowned_neigh_satisfied = .false.
+      endif
+      if (loc_owned_neigh) then
+         owned_neigh_satisfied = .false.
+         do i=1,EDGES_PER_ELEMENT
+            if (neigh(i) /= BOUNDARY) then
+               if ((.not. grid%element(elem)%iown) .and. &
+                   grid%element(neigh(i))%iown) then
+                  owned_neigh_satisfied = .true.
+               endif
+            endif
+         end do
+      else
+         owned_neigh_satisfied = .false.
+      endif
+      if (loc_unowned_neigh .and. .not. unowned_neigh_satisfied) cycle
+      if (loc_own .and. .not. grid%element(elem)%iown .and. &
+          loc_owned_neigh .and. .not. owned_neigh_satisfied) cycle
+      nelem = nelem + 1
+      list(nelem) = elem
+   end do
+end do
+
+contains
+
+subroutine bound_vert_list
+logical, allocatable :: isboundary(:)
+
+if (.not. loc_own .or. .not. loc_leaf .or. loc_unowned_neigh .or. loc_owned_neigh) then
+   ierr = PHAML_INTERNAL_ERROR
+   call fatal("list_elements: bound_vert=T requires own=T, leaf=T, unowned_neigh=T, owned_neigh=T")
+   stop
+endif
+
+! mark each vertex as being on the partition boundary or not by going through
+! the elements and marking each vertex as being on the boundary if I own the
+! element or vertex but not the other
+
+allocate(isboundary(size(grid%vertex)),stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("memory allocation failed in list_elements")
+   return
+endif
+isboundary = .false.
+
+do lev=1,grid%nlev
+   elem = grid%head_level_elem(lev)
+   do while (elem /= END_OF_LIST)
+      do i=1,VERTICES_PER_ELEMENT
+         if (grid%element(elem)%iown .neqv. &
+             grid%element(grid%vertex(grid%element(elem)%vertex(i))%assoc_elem)%iown) then
+            isboundary(grid%element(elem)%vertex(i)) = .true.
+         endif
+      end do
+      elem = grid%element(elem)%next
+   end do
+end do
+
+! make a list of owned leaves that touch the partition boundary by going
+! through the elements and finding those that have a marked vertex.
 
 nelem = 0
 do lev=lolim,hilim
    elem = grid%head_level_elem(lev)
    do while (elem /= END_OF_LIST)
-      if (((.not. own) .or. grid%element(elem)%iown) .and. &
-          ((.not. leaf) .or. grid%element(elem)%isleaf)) then
-         nelem = nelem + 1
-         list(nelem) = elem
+      if (grid%element(elem)%iown .and. grid%element(elem)%isleaf) then
+         do i=1,VERTICES_PER_ELEMENT
+            if (isboundary(grid%element(elem)%vertex(i))) then
+               nelem = nelem + 1
+               list(nelem) = elem
+               exit
+            endif
+         end do
       endif
       elem = grid%element(elem)%next
    end do
 end do
+
+deallocate(isboundary)
+
+end subroutine bound_vert_list
 
 end subroutine list_elements
 
@@ -3415,7 +4442,7 @@ endif
 end function count_dof
 
 !        -------------------------
-function compute_global_max_errind(grid,procs)
+function compute_global_max_errind(grid,procs,still_sequential)
 !        -------------------------
 
 !----------------------------------------------------
@@ -3427,6 +4454,7 @@ function compute_global_max_errind(grid,procs)
 
 type(grid_type), intent(in) :: grid
 type(proc_info), intent(in) :: procs
+logical, intent(in) :: still_sequential
 real(my_real) :: compute_global_max_errind
 !----------------------------------------------------
 ! Local variables:
@@ -3447,8 +4475,10 @@ do lev=1,grid%nlev
    end do
 end do
 
-compute_global_max_errind = phaml_global_max(procs,compute_global_max_errind, &
-                                             3540)
+if (.not. still_sequential) then
+   compute_global_max_errind = phaml_global_max(procs, &
+                                                compute_global_max_errind,3540)
+endif
 
 end function compute_global_max_errind
 

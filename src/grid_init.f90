@@ -11,7 +11,7 @@
 ! the United States.                                                  !
 !                                                                     !
 !     William F. Mitchell                                             !
-!     Mathematical and Computational Sciences Division                !
+!     Applied and Computational Mathematics Division                  !
 !     National Institute of Standards and Technology                  !
 !     william.mitchell@nist.gov                                       !
 !     http://math.nist.gov/phaml                                      !
@@ -112,7 +112,8 @@ logical, intent(in) :: set_iown
 
 type(triangle_data) :: td
 integer :: i, j, k, neigh, stat, nedge, edge, v1s, v2s, v1m, v2m, neighbmark, &
-           igid
+           igid, justone, ndoubly, doubly(10), itemp, other_vert
+logical :: setit
 integer, allocatable :: mate(:)
 integer :: elemedge_bmark(EDGES_PER_ELEMENT,size(grid%element))
 integer :: bctype(grid%system_size)
@@ -157,14 +158,17 @@ if (my_proc(procs) == MASTER) then
 endif
 
 ! space for PERIODIC_MASTER vertex for PERIODIC_SLAVEs
+! include space for the vertices created by refinement to create the initial
+! grid.  3*td%nvert should be sufficient; use 4 to be sure.
 
-allocate(td%vert_master(td%nvert),stat=stat)
+allocate(td%vert_master(4*td%nvert),td%vert_master2(4*td%nvert),stat=stat)
 if (stat /= 0) then
    call fatal("allocation failed for mates in init_grid")
    stop
 endif
 
 td%vert_master = NO_MATE
+td%vert_master2 = NO_MATE
 
 ! match up sides with periodic boundary conditions
 
@@ -184,41 +188,42 @@ call pair_triangles(td,mate,NO_MATE)
 ! Refine the starting grid by bisecting paired triangles and trisecting others.
 ! This defines these components of grid: vertex%coord, element%gid, &
 ! element%mate, element%vertex, nelem, nvert, initial_neighbor
-! It also sets vertex%assoc_elem to be the master vertex for vertices that
-! are PERIODIC_SLAVE (negative bmark) or endpoints of a PERIODIC SLAVE side,
-! and NO_MATE for all other vertices. This is just a convenient component to
-! use for temporary storage.
 
 call refine_start(grid,td,mate,elemedge_bmark,NO_MATE)
 
-! Set the vertex linked list.  Need to do vertices on sides that have
-! periodic boundary conditions first so that
-! next(PERIODIC_SLAVE) = PERIODIC_MASTER.  And need to have nonpeaks before
-! peaks so that ancestors of level 2 equations come before parents in the
-! numbering of equations (see make_linear_system).  Since the linked list is
-! built from the tail to the head, the order of building it is
+! Set the vertex linked list.
+! Need to do vertices on sides that have periodic boundary conditions first so
+! that next(PERIODIC_SLAVE) = PERIODIC_MASTER.
+! The first of those should be the doubly periodic vertices where we have a
+! sequence of periodic slaves followed by the master for them.
+! Also need to have nonpeaks before peaks so that ancestors of level 2
+! equations come before parents in the numbering of equations (see
+! make_linear_system).  Note a peak cannot be doubly periodic since none of
+! the pre-grid vertices are peaks.
+! Since the linked list is built from the tail to the head, the order of
+! building it is
 !   peak, periodic
 !   peak, nonperiodic
+!   nonpeak, doubly periodic
 !   nonpeak, periodic
 !   nonpeak, nonperiodic
-! assoc_elem was used as a place to store the master associated with a slave.
 ! Also set vertex type to a form of PERIODIC or INTERIOR as an initialization.
 
 grid%head_level_vert(1) = END_OF_LIST
 do i=td%nvert+1,grid%nvert
-   if (grid%vertex(i)%assoc_elem /= NO_MATE .and. &
-       grid%vertex(i)%assoc_elem /= NO_MATE-1) then
-      grid%vertex(grid%vertex(i)%assoc_elem)%next = grid%head_level_vert(1)
-      grid%vertex(i)%next = grid%vertex(i)%assoc_elem
+   if (td%vert_master(i) /= NO_MATE .and. &
+       td%vert_master(i) /= NO_MATE-1) then
+      grid%vertex(td%vert_master(i))%next = grid%head_level_vert(1)
+      grid%vertex(i)%next = td%vert_master(i)
       grid%head_level_vert(1) = i
       grid%vertex_type(i,:) = PERIODIC_SLAVE
-      grid%vertex_type(grid%vertex(i)%assoc_elem,:) = PERIODIC_MASTER
-      grid%vertex(grid%vertex(i)%assoc_elem)%assoc_elem = NO_MATE-1
+      grid%vertex_type(td%vert_master(i),:) = PERIODIC_MASTER
+      td%vert_master(td%vert_master(i)) = NO_MATE-1
    endif
 end do
 
 do i=td%nvert+1,grid%nvert
-   if (grid%vertex(i)%assoc_elem == NO_MATE) then
+   if (td%vert_master(i) == NO_MATE) then
       grid%vertex(i)%next = grid%head_level_vert(1)
       grid%head_level_vert(1) = i
       grid%vertex_type(i,:) = INTERIOR
@@ -226,19 +231,67 @@ do i=td%nvert+1,grid%nvert
 end do
 
 do i=1,td%nvert
-   if (grid%vertex(i)%assoc_elem /= NO_MATE .and. &
-       grid%vertex(i)%assoc_elem /= NO_MATE-1) then
-      grid%vertex(grid%vertex(i)%assoc_elem)%next = grid%head_level_vert(1)
-      grid%vertex(i)%next = grid%vertex(i)%assoc_elem
-      grid%head_level_vert(1) = i
-      grid%vertex_type(i,:) = PERIODIC_SLAVE
-      grid%vertex_type(grid%vertex(i)%assoc_elem,:) = PERIODIC_MASTER
-      grid%vertex(grid%vertex(i)%assoc_elem)%assoc_elem = NO_MATE-1
+   if (td%vert_master2(i) /= NO_MATE .and. &
+       td%vert_master2(i) /= NO_MATE-1) then
+! make a list of the related doubly periodic points
+      ndoubly = 3
+      doubly(1) = i
+      doubly(2) = td%vert_master(i)
+      doubly(3) = td%vert_master2(i)
+      j=2
+      do while (j <= ndoubly)
+         if (td%vert_master(doubly(j)) /= NO_MATE .and. &
+             td%vert_master(doubly(j)) /= NO_MATE-1) then
+            if (.not. any(doubly(1:ndoubly) == td%vert_master(doubly(j)))) then
+               ndoubly = ndoubly + 1
+               doubly(ndoubly) = td%vert_master(doubly(j))
+            endif
+         endif
+         if (td%vert_master2(doubly(j)) /= NO_MATE .and. &
+             td%vert_master2(doubly(j)) /= NO_MATE-1) then
+            if (.not. any(doubly(1:ndoubly) == td%vert_master2(doubly(j)))) then
+               ndoubly = ndoubly + 1
+               doubly(ndoubly) = td%vert_master2(doubly(j))
+            endif
+         endif
+         j = j+1
+      end do
+! pick a master as any one that has has no slave and make it last
+      do j=1,ndoubly
+         if (td%vert_master(doubly(j)) == NO_MATE) then
+            itemp = doubly(ndoubly)
+            doubly(ndoubly) = doubly(j)
+            doubly(j) = itemp
+            exit
+         endif
+      end do
+! insert them in the list
+      grid%vertex(doubly(ndoubly))%next = grid%head_level_vert(1)
+      grid%vertex_type(doubly(ndoubly),:) = PERIODIC_MASTER
+      td%vert_master(doubly(j)) = NO_MATE-1
+      do j=ndoubly-1,1,-1
+         grid%vertex(doubly(j))%next = doubly(j+1)
+         grid%vertex_type(doubly(j),:) = PERIODIC_SLAVE
+         td%vert_master(doubly(j)) = NO_MATE-1
+      end do
+      grid%head_level_vert(1) = doubly(1)
    endif
 end do
 
 do i=1,td%nvert
-   if (grid%vertex(i)%assoc_elem == NO_MATE) then
+   if (td%vert_master(i) /= NO_MATE .and. &
+       td%vert_master(i) /= NO_MATE-1) then
+      grid%vertex(td%vert_master(i))%next = grid%head_level_vert(1)
+      grid%vertex(i)%next = td%vert_master(i)
+      grid%head_level_vert(1) = i
+      grid%vertex_type(i,:) = PERIODIC_SLAVE
+      grid%vertex_type(td%vert_master(i),:) = PERIODIC_MASTER
+      td%vert_master(td%vert_master(i)) = NO_MATE-1
+   endif
+end do
+
+do i=1,td%nvert
+   if (td%vert_master(i) == NO_MATE) then
       grid%vertex(i)%next = grid%head_level_vert(1)
       grid%head_level_vert(1) = i
       grid%vertex_type(i,:) = INTERIOR
@@ -514,13 +567,23 @@ if (set_iown) then
 else
    grid%nedge_own = 0
 endif
-grid%dof = grid%nvert*grid%system_size
-if (degree >= 2) grid%dof = grid%dof + nedge*(degree-1)*grid%system_size
+grid%dof = grid%nvert*grid%system_size - &
+           count(grid%vertex_type(1:grid%nvert,:)==PERIODIC_SLAVE .or. &
+                 grid%vertex_type(1:grid%nvert,:)==PERIODIC_SLAVE_DIR .or. &
+                 grid%vertex_type(1:grid%nvert,:)==PERIODIC_SLAVE_NAT .or. &
+                 grid%vertex_type(1:grid%nvert,:)==PERIODIC_SLAVE_MIX)
+if (degree >= 2) grid%dof = grid%dof + nedge*(degree-1)*grid%system_size - &
+                (degree-1)*count(grid%edge_type(1:nedge,:)==PERIODIC_SLAVE)
 if (degree >= 3) grid%dof = grid%dof + &
                     grid%nelem*(((degree-2)*(degree-1))/2)*grid%system_size
 grid%dof_own = grid%dof
 
 ! find the master edge for PERIODIC_SLAVE edges
+! Very slight chance this will fail.  Would have to have an element in the
+! pre-grid with two periodic boundary sides and the peak for forming the
+! initial grid chosen to not be the vertex between them, which is a slave
+! vertex.  And there would have to be another slave vertex in the linked
+! list between this vertex and the master vertex.
 
 do i=1,grid%nelem
    do j=1,EDGES_PER_ELEMENT
@@ -529,15 +592,41 @@ do i=1,grid%nelem
          neigh = grid%initial_neighbor(j,i)
          v1s = grid%edge(edge)%vertex(1)
          v2s = grid%edge(edge)%vertex(2)
+         setit = .false.
+         justone = -1
          do k=1,EDGES_PER_ELEMENT
-            v1m = grid%edge(grid%element(neigh)%edge(k))%vertex(1)
-            v2m = grid%edge(grid%element(neigh)%edge(k))%vertex(2)
-            if ((v1m == grid%vertex(v1s)%next .and. v2m == grid%vertex(v2s)%next) .or. &
-                (v2m == grid%vertex(v1s)%next .and. v1m == grid%vertex(v2s)%next)) then
-               grid%edge(edge)%next = grid%element(neigh)%edge(k)
-               exit
+            if (any(grid%edge_type(grid%element(neigh)%edge(k),:) == PERIODIC_MASTER)) then
+               if (justone == -1) then
+                  justone = grid%element(neigh)%edge(k)
+               else
+                  justone = -1
+                  exit
+               endif
             endif
          end do
+         if (justone /= -1) then
+            grid%edge(edge)%next = justone
+            grid%edge(justone)%next = edge
+            setit = .true.
+         endif
+         if (.not. setit) then
+            do k=1,EDGES_PER_ELEMENT
+               v1m = grid%edge(grid%element(neigh)%edge(k))%vertex(1)
+               v2m = grid%edge(grid%element(neigh)%edge(k))%vertex(2)
+               if ((v1m == grid%vertex(v1s)%next .and. v2m == grid%vertex(v2s)%next) .or. &
+                   (v2m == grid%vertex(v1s)%next .and. v1m == grid%vertex(v2s)%next)) then
+                  grid%edge(edge)%next = grid%element(neigh)%edge(k)
+                  grid%edge(grid%element(neigh)%edge(k))%next = edge
+                  setit = .true.
+                  exit
+               endif
+            end do
+         endif
+         if (.not. setit) then
+            ierr = PHAML_INTERNAL_ERROR
+            call fatal("failed to find slave periodic edge")
+            stop
+         endif
       endif
    end do
 end do
@@ -545,6 +634,27 @@ end do
 grid%partition = partition
 grid%nlev = 1
 grid%errind_up2date = .false.
+
+! set periodic slave assoc_elem to be that of the master
+
+do i=1,grid%nvert
+
+   if (is_periodic_master(i)) then
+      other_vert = grid%vertex(i)%previous
+      do while (is_periodic_slave(other_vert))
+         grid%vertex(other_vert)%assoc_elem = grid%vertex(i)%assoc_elem
+         other_vert = grid%vertex(other_vert)%previous
+      end do
+   endif
+
+end do
+
+do i=1,grid%nedge
+
+   if (any(grid%edge_type(i,:) == PERIODIC_MASTER)) then
+      grid%edge(grid%edge(i)%next)%assoc_elem = grid%edge(i)%assoc_elem
+   endif
+end do
 
 ! smooth the triangle shapes
 
@@ -587,7 +697,28 @@ call init_path(grid)
 
 deallocate(td%vert_coord,td%tri_edge,td%tri_vert,td%tri_neigh,td%edge_tri, &
            td%edge_vert,td%vert_tri,td%vert_edge,td%vert_bmark, &
-           td%vert_bparam,td%edge_bmark,td%vert_master,stat=stat)
+           td%vert_bparam,td%edge_bmark,td%vert_master,td%vert_master2, &
+           stat=stat)
+
+contains
+
+function is_periodic_slave(test_vert)
+integer, intent(in) :: test_vert
+logical :: is_periodic_slave
+is_periodic_slave = any(grid%vertex_type(test_vert,:)==PERIODIC_SLAVE) .or. &
+                    any(grid%vertex_type(test_vert,:)==PERIODIC_SLAVE_DIR) .or.&
+                    any(grid%vertex_type(test_vert,:)==PERIODIC_SLAVE_NAT) .or.&
+                    any(grid%vertex_type(test_vert,:)==PERIODIC_SLAVE_MIX)
+end function is_periodic_slave
+
+function is_periodic_master(test_vert)
+integer, intent(in) :: test_vert
+logical :: is_periodic_master
+is_periodic_master=any(grid%vertex_type(test_vert,:)==PERIODIC_MASTER) .or. &
+                   any(grid%vertex_type(test_vert,:)==PERIODIC_MASTER_DIR) .or.&
+                   any(grid%vertex_type(test_vert,:)==PERIODIC_MASTER_NAT) .or.&
+                   any(grid%vertex_type(test_vert,:)==PERIODIC_MASTER_MIX)
+end function is_periodic_master
 
 end subroutine init_grid
 
@@ -1777,8 +1908,20 @@ outer: do
    else
       vert2 = td%edge_vert(1,edge2)
    endif
-   if (td%edge_bmark(edge1) < 0) td%vert_master(vert1) = vert2
-   if (td%edge_bmark(edge2) < 0) td%vert_master(vert2) = vert1
+   if (td%edge_bmark(edge1) < 0) then
+      if (td%vert_master(vert1) == NO_MATE) then
+         td%vert_master(vert1) = vert2
+      else
+         td%vert_master2(vert1) = vert2
+      endif
+   endif
+   if (td%edge_bmark(edge2) < 0) then
+      if (td%vert_master(vert2) == NO_MATE) then
+         td%vert_master(vert2) = vert1
+      else
+         td%vert_master2(vert2) = vert1
+      endif
+   endif
 
    do
       if (edge1 == END_OF_LIST) then
@@ -1822,8 +1965,20 @@ outer: do
       else
          vert2 = td%edge_vert(2,edge2)
       endif
-      if (td%edge_bmark(edge1) < 0) td%vert_master(vert1) = vert2
-      if (td%edge_bmark(edge2) < 0) td%vert_master(vert2) = vert1
+      if (td%edge_bmark(edge1) < 0) then
+         if (td%vert_master(vert1) == NO_MATE) then
+            td%vert_master(vert1) = vert2
+         else
+            td%vert_master2(vert1) = vert2
+         endif
+      endif
+      if (td%edge_bmark(edge2) < 0) then
+         if (td%vert_master(vert2) == NO_MATE) then
+            td%vert_master(vert2) = vert1
+         else
+            td%vert_master2(vert2) = vert1
+         endif
+      endif
 
       edge1 = next_edge(edge1)
       edge2 = next_edge(edge2)
@@ -2035,9 +2190,11 @@ integer :: i, new_nvert, new_ntri, new_nedge, oppvert, astat, vert, last, j, &
            lastneigh, lastloc
 real(my_real) :: f
 type(point), pointer :: new_vert_coord(:)
-integer, pointer :: new_tri_edge(:,:), new_tri_vert(:,:), new_tri_neigh(:,:), new_edge_tri(:,:), new_edge_vert(:,:), &
-                    new_vert_tri(:,:), new_vert_edge(:,:), new_vert_bmark(:), new_edge_bmark(:), new_next(:), &
-                    new_prev(:), new_assoc(:), new_vert_master(:)
+integer, pointer :: new_tri_edge(:,:), new_tri_vert(:,:), new_tri_neigh(:,:), &
+                    new_edge_tri(:,:), new_edge_vert(:,:), &
+                    new_vert_tri(:,:), new_vert_edge(:,:), new_vert_bmark(:), &
+                    new_edge_bmark(:), new_next(:), new_prev(:), new_assoc(:), &
+                    new_vert_master(:), new_vert_master2(:)
 real(my_real), pointer :: new_vert_bparam(:)
 logical, pointer :: new_swap(:)
 real(my_real) :: xtemp, ytemp
@@ -2057,7 +2214,8 @@ allocate(new_vert_coord(new_nvert), new_tri_edge(3,new_ntri), &
          new_vert_edge(MAX_TD_VERT_NEIGH,new_nvert), &
          new_vert_bparam(new_nvert), new_edge_bmark(new_nedge), &
          new_next(new_nedge), new_prev(new_nedge), new_assoc(new_nedge), &
-         new_swap(new_nedge), new_vert_master(new_nvert),stat=astat)
+         new_swap(new_nedge), new_vert_master(4*new_nvert), &
+         new_vert_master2(4*new_nvert),stat=astat)
 if (astat /= 0) then
    ierr = ALLOC_FAILED
    call fatal("allocation failed in break_edge")
@@ -2080,8 +2238,10 @@ new_edge_bmark(1:td%nedge) = td%edge_bmark
 new_next(1:td%nedge) = next_edge
 new_prev(1:td%nedge) = prev_edge
 new_assoc(1:td%nedge) = assoc_tri
-new_vert_master(1:td%nvert) = td%vert_master
-new_vert_master(td%nvert+1:new_nvert) = NO_MATE
+new_vert_master(1:4*td%nvert) = td%vert_master
+new_vert_master(4*td%nvert+1:4*new_nvert) = NO_MATE
+new_vert_master2(1:4*td%nvert) = td%vert_master2
+new_vert_master2(4*td%nvert+1:4*new_nvert) = NO_MATE
 new_swap(1:td%nedge) = swap
 
 ! free old memory
@@ -2089,7 +2249,7 @@ new_swap(1:td%nedge) = swap
 deallocate(td%vert_coord,td%tri_edge,td%tri_vert,td%tri_neigh,td%edge_tri, &
            td%edge_vert,td%vert_tri,td%vert_edge,td%vert_bmark, &
            td%vert_bparam,td%edge_bmark,next_edge,prev_edge,assoc_tri, &
-           td%vert_master,swap,stat=astat)
+           td%vert_master,td%vert_master2,swap,stat=astat)
 if (astat/=0) then
    call warning("deallocation failed in break_edge")
 endif
@@ -2111,6 +2271,7 @@ next_edge => new_next
 prev_edge => new_prev
 assoc_tri => new_assoc
 td%vert_master => new_vert_master
+td%vert_master2 => new_vert_master2
 swap => new_swap
 
 ! find the opposite vertex in the associated triangle
@@ -2343,17 +2504,13 @@ subroutine refine_start(grid,td,mate,elemedge_bmark,NO_MATE)
 ! creates the following components of grid:
 ! vertex%coord, element%gid, element%mate, element%vertex, nelem, nvert,
 ! initial_neighbor
-! It also sets vertex%assoc_elem to be the master vertex for vertices that
-! are PERIODIC_SLAVE (negative bmark) or the endpoint of a PERIODIC_SLAVE
-! side, and NO_MATE for all other vertices. This is just a convenient component
-! to use for temporary storage.
 !----------------------------------------------------
 
 !----------------------------------------------------
 ! Dummy arguments
 
 type(grid_type), intent(inout) :: grid
-type(triangle_data), intent(in) :: td
+type(triangle_data), intent(inout) :: td
 integer, intent(inout) :: mate(:)
 integer, intent(in) :: NO_MATE
 integer, intent(out) :: elemedge_bmark(:,:)
@@ -2419,14 +2576,12 @@ endif
 
 next_gid = grid%nelem
 
-! copy vertex coordinates, boundary markers, and masters for PERIODIC_SLAVEs
-! to grid data structure.  assoc_elem is used as temporary storage for masters.
+! copy vertex coordinates and boundary markers to grid data structure.
 
 do i=1,td%nvert
    grid%vertex(i)%coord = td%vert_coord(i)
    grid%vertex(i)%bmark = td%vert_bmark(i)
    grid%vertex(i)%bparam = td%vert_bparam(i)
-   grid%vertex(i)%assoc_elem = td%vert_master(i)
 end do
 next_vert = td%nvert+1
 
@@ -2463,7 +2618,6 @@ do tri=1,td%ntri
       grid%vertex(next_vert)%coord%x = sum(td%vert_coord(td%tri_vert(:,tri))%x)/3
       grid%vertex(next_vert)%coord%y = sum(td%vert_coord(td%tri_vert(:,tri))%y)/3
       grid%vertex(next_vert)%bmark = 0
-      grid%vertex(next_vert)%assoc_elem = NO_MATE
 
       grid%element(next_elem  )%vertex(1) = td%tri_vert(2,tri)
       grid%element(next_elem  )%vertex(2) = td%tri_vert(3,tri)
@@ -2525,7 +2679,7 @@ do tri=1,td%ntri
 
          my_neigh = find_neigh(refined_to(:,neigh), &
                                grid%element(next_elem+j-1)%vertex, &
-                               grid%element,grid%vertex)
+                               grid%element,td)
          grid%initial_neighbor(3,next_elem+j-1) = my_neigh
          grid%element(next_elem+j-1)%mate = grid%element(my_neigh)%gid
          grid%initial_neighbor(3,my_neigh) = next_elem+j-1
@@ -2574,7 +2728,6 @@ do tri=1,td%ntri
                          grid%vertex(next_vert)%coord%y, &
                          grid%vertex(next_vert)%bparam)
       grid%vertex(next_vert)%bmark = td%edge_bmark(edge)
-      grid%vertex(next_vert)%assoc_elem = NO_MATE
 
       grid%element(next_elem  )%vertex(1) = td%tri_vert(peak,tri)
       grid%element(next_elem  )%vertex(2) = td%tri_vert(old1,tri)
@@ -2632,7 +2785,7 @@ do tri=1,td%ntri
 
          my_neigh = find_neigh(refined_to(:,neigh), &
                                grid%element(next_elem+j-1)%vertex, &
-                               grid%element,grid%vertex)
+                               grid%element,td)
          grid%initial_neighbor(3,next_elem+j-1) = my_neigh
          grid%element(next_elem+j-1)%mate = grid%element(my_neigh)%gid
          grid%initial_neighbor(3,my_neigh) = next_elem+j-1
@@ -2690,23 +2843,49 @@ do tri=1,td%ntri
       old1m = -1
       old2m = -1
       do j=1,3
-         if (td%edge_bmark(refedge) < 0 .and. &
-             td%vert_master(td%tri_vert(old1,tri)) /= NO_MATE) then
-            if (td%tri_vert(j,my_mate) == td%vert_master(td%tri_vert(old1,tri))) old1m = j
-         elseif (td%edge_bmark(refedgem) < 0 .and. &
-                 td%vert_master(td%tri_vert(j,my_mate)) /= NO_MATE) then
-            if (td%vert_master(td%tri_vert(j,my_mate)) == td%tri_vert(old1,tri)) old1m = j
+         if (td%tri_vert(j,my_mate) == td%tri_vert(old1,tri)) then
+            old1m = j
          else
-            if (td%tri_vert(j,my_mate) == td%tri_vert(old1,tri)) old1m = j
+            if (td%vert_master(td%tri_vert(old1,tri)) /= NO_MATE .and. &
+                td%tri_vert(j,my_mate) == td%vert_master(td%tri_vert(old1,tri)) .and. &
+                td%edge_bmark(refedge) < 0) then
+               old1m = j
+            elseif (td%vert_master(td%tri_vert(j,my_mate)) /= NO_MATE .and. &
+                    td%vert_master(td%tri_vert(j,my_mate)) == td%tri_vert(old1,tri) .and. &
+                    td%edge_bmark(refedgem) < 0) then
+               old1m = j
+            endif
+            if (td%vert_master2(td%tri_vert(old1,tri)) /= NO_MATE .and. &
+                td%tri_vert(j,my_mate) == td%vert_master2(td%tri_vert(old1,tri)) .and. &
+                td%edge_bmark(refedge) < 0) then
+               old1m = j
+            elseif (td%vert_master2(td%tri_vert(j,my_mate)) /= NO_MATE .and. &
+                    td%vert_master2(td%tri_vert(j,my_mate)) == td%tri_vert(old1,tri) .and. &
+                    td%edge_bmark(refedgem) < 0) then
+               old1m = j
+            endif
          endif
-         if (td%edge_bmark(refedge) < 0 .and. &
-             td%vert_master(td%tri_vert(old2,tri)) /= NO_MATE) then
-            if (td%tri_vert(j,my_mate) == td%vert_master(td%tri_vert(old2,tri))) old2m = j
-         elseif (td%edge_bmark(refedgem) < 0 .and. &
-                 td%vert_master(td%tri_vert(j,my_mate)) /= NO_MATE) then
-            if (td%vert_master(td%tri_vert(j,my_mate)) == td%tri_vert(old2,tri)) old2m = j
+         if (td%tri_vert(j,my_mate) == td%tri_vert(old2,tri)) then
+            old2m = j
          else
-            if (td%tri_vert(j,my_mate) == td%tri_vert(old2,tri)) old2m = j
+            if (td%vert_master(td%tri_vert(old2,tri)) /= NO_MATE .and. &
+                td%tri_vert(j,my_mate) == td%vert_master(td%tri_vert(old2,tri)) .and. &
+                td%edge_bmark(refedge) < 0) then
+               old2m = j
+            elseif (td%vert_master(td%tri_vert(j,my_mate)) /= NO_MATE .and. &
+                    td%vert_master(td%tri_vert(j,my_mate)) == td%tri_vert(old2,tri) .and. &
+                    td%edge_bmark(refedgem) < 0) then
+               old2m = j
+            endif
+            if (td%vert_master2(td%tri_vert(old2,tri)) /= NO_MATE .and. &
+                td%tri_vert(j,my_mate) == td%vert_master2(td%tri_vert(old2,tri)) .and. &
+                td%edge_bmark(refedge) < 0) then
+               old2m = j
+            elseif (td%vert_master2(td%tri_vert(j,my_mate)) /= NO_MATE .and. &
+                    td%vert_master2(td%tri_vert(j,my_mate)) == td%tri_vert(old2,tri) .and. &
+                    td%edge_bmark(refedgem) < 0) then
+               old2m = j
+            endif
          endif
       end do
       if (old1m == -1 .or. old2m == -1) then
@@ -2731,7 +2910,6 @@ do tri=1,td%ntri
                          grid%vertex(next_vert)%coord%y, &
                          grid%vertex(next_vert)%bparam)
       grid%vertex(next_vert)%bmark = td%edge_bmark(refedge)
-      grid%vertex(next_vert)%assoc_elem = NO_MATE
 
       grid%element(next_elem  )%vertex(1) = td%tri_vert(peak,tri)
       grid%element(next_elem  )%vertex(2) = td%tri_vert(old1,tri)
@@ -2761,11 +2939,10 @@ do tri=1,td%ntri
                             grid%vertex(next_vert)%coord%y, &
                             grid%vertex(next_vert)%bparam)
          grid%vertex(next_vert)%bmark = td%edge_bmark(refedgem)
-         grid%vertex(next_vert)%assoc_elem = NO_MATE
          if (td%edge_bmark(refedge) < 0) then
-            grid%vertex(next_vert-1)%assoc_elem = next_vert
+            td%vert_master(next_vert-1) = next_vert
          elseif (td%edge_bmark(refedgem) < 0) then
-            grid%vertex(next_vert)%assoc_elem = next_vert-1
+            td%vert_master(next_vert) = next_vert-1
          endif
       endif
 
@@ -2846,7 +3023,7 @@ do tri=1,td%ntri
 
          my_neigh = find_neigh(refined_to(:,neigh), &
                                grid%element(next_elem+j-1)%vertex, &
-                               grid%element,grid%vertex)
+                               grid%element,td)
          grid%initial_neighbor(3,next_elem+j-1) = my_neigh
          grid%element(next_elem+j-1)%mate = grid%element(my_neigh)%gid
          grid%initial_neighbor(3,my_neigh) = next_elem+j-1
@@ -2864,7 +3041,7 @@ end do
 end subroutine refine_start
 
 !        ----------
-function find_neigh(search_in,search_for,elements,vertices)
+function find_neigh(search_in,search_for,elements,td)
 !        ----------
 
 !----------------------------------------------------
@@ -2877,7 +3054,7 @@ function find_neigh(search_in,search_for,elements,vertices)
 
 integer, intent(in) :: search_in(3),search_for(:)
 type(element_t), intent(in) :: elements(:)
-type(vertex_t), intent(in) :: vertices(:)
+type(triangle_data), intent(in) :: td
 integer :: find_neigh
 !----------------------------------------------------
 ! Local variables:
@@ -2897,21 +3074,33 @@ do j=1,3
       find_neigh = search_in(j)
       return
    endif
-   if ((search_for(1) == vertices(elements(search_in(j))%vertex(1))%assoc_elem .or. &
-        search_for(1) == vertices(elements(search_in(j))%vertex(2))%assoc_elem .or. &
-        search_for(1) == vertices(elements(search_in(j))%vertex(3))%assoc_elem) .and. &
-       (search_for(2) == vertices(elements(search_in(j))%vertex(1))%assoc_elem .or. &
-        search_for(2) == vertices(elements(search_in(j))%vertex(2))%assoc_elem .or. &
-        search_for(2) == vertices(elements(search_in(j))%vertex(3))%assoc_elem)) then
+   if ((search_for(1) == td%vert_master(elements(search_in(j))%vertex(1)) .or. &
+        search_for(1) == td%vert_master(elements(search_in(j))%vertex(2)) .or. &
+        search_for(1) == td%vert_master(elements(search_in(j))%vertex(3)) .or. &
+        search_for(1) == td%vert_master2(elements(search_in(j))%vertex(1)).or. &
+        search_for(1) == td%vert_master2(elements(search_in(j))%vertex(2)).or. &
+        search_for(1) == td%vert_master2(elements(search_in(j))%vertex(3))) .and. &
+       (search_for(2) == td%vert_master(elements(search_in(j))%vertex(1)) .or. &
+        search_for(2) == td%vert_master(elements(search_in(j))%vertex(2)) .or. &
+        search_for(2) == td%vert_master(elements(search_in(j))%vertex(3)) .or. &
+        search_for(2) == td%vert_master2(elements(search_in(j))%vertex(1)).or. &
+        search_for(2) == td%vert_master2(elements(search_in(j))%vertex(2)).or. &
+        search_for(2) == td%vert_master2(elements(search_in(j))%vertex(3)))) then
       find_neigh = search_in(j)
       return
    endif
-   if ((vertices(search_for(1))%assoc_elem == elements(search_in(j))%vertex(1) .or. &
-        vertices(search_for(1))%assoc_elem == elements(search_in(j))%vertex(2) .or. &
-        vertices(search_for(1))%assoc_elem == elements(search_in(j))%vertex(3)) .and. &
-       (vertices(search_for(2))%assoc_elem == elements(search_in(j))%vertex(1) .or. &
-        vertices(search_for(2))%assoc_elem == elements(search_in(j))%vertex(2) .or. &
-        vertices(search_for(2))%assoc_elem == elements(search_in(j))%vertex(3))) then
+   if ((td%vert_master(search_for(1)) == elements(search_in(j))%vertex(1) .or. &
+        td%vert_master(search_for(1)) == elements(search_in(j))%vertex(2) .or. &
+        td%vert_master(search_for(1)) == elements(search_in(j))%vertex(3) .or. &
+        td%vert_master2(search_for(1)) == elements(search_in(j))%vertex(1).or. &
+        td%vert_master2(search_for(1)) == elements(search_in(j))%vertex(2).or. &
+        td%vert_master2(search_for(1)) == elements(search_in(j))%vertex(3)) .and. &
+       (td%vert_master(search_for(2)) == elements(search_in(j))%vertex(1) .or. &
+        td%vert_master(search_for(2)) == elements(search_in(j))%vertex(2) .or. &
+        td%vert_master(search_for(2)) == elements(search_in(j))%vertex(3) .or. &
+        td%vert_master2(search_for(2)) == elements(search_in(j))%vertex(1).or. &
+        td%vert_master2(search_for(2)) == elements(search_in(j))%vertex(2).or. &
+        td%vert_master2(search_for(2)) == elements(search_in(j))%vertex(3))) then
       find_neigh = search_in(j)
       return
    endif

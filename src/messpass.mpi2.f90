@@ -11,7 +11,7 @@
 ! the United States.                                                  !
 !                                                                     !
 !     William F. Mitchell                                             !
-!     Mathematical and Computational Sciences Division                !
+!     Applied and Computational Mathematics Division                  !
 !     National Institute of Standards and Technology                  !
 !     william.mitchell@nist.gov                                       !
 !     http://math.nist.gov/phaml                                      !
@@ -1028,7 +1028,12 @@ procs%hostname = recv_name
 ! print host names from master
 
 if (my_type == MASTER) then
-   allocate(from_hostname(procs%nproc+ngraph))
+   allocate(from_hostname(procs%nproc+ngraph),stat=allocstat)
+   if (allocstat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("allocation failed in init_comm")
+      return
+   endif
    do i=1,procs%nproc
       call phaml_recv(procs,from_proc,int_hostname,ni,rrecv,nr,20)
       from_hostname(from_proc) = " "
@@ -3063,30 +3068,3 @@ integer, intent(in) :: ni, nr
 end subroutine sequential_recv
 
 end module message_passing
-
-!----------------------------------------------------
-! Dummy PVM routines to satisfy external references to PVM in the hash module
-
-subroutine pvmfpack(type,ints,nint,tag,info)
-use message_passing
-integer, intent(in) :: type,ints(:),nint,tag
-integer, intent(out) :: info
-! assignments just to shut up picky compilers
-call warning("Dummy pvmfpack routine called")
-info = type
-info = ints(1)
-info = nint
-info = tag
-info = 1
-end subroutine pvmfpack
-
-subroutine pvmfunpack(type,ints,nint,tag,info)
-use message_passing
-integer, intent(in) :: type,tag
-integer, intent(out) :: ints(:),nint,info
-call warning("Dummy pvmfpack routine called")
-! assignments just to shut up picky compilers
-ints = type
-nint = tag
-info = 1
-end subroutine pvmfunpack

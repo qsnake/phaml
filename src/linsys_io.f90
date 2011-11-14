@@ -11,7 +11,7 @@
 ! the United States.                                                  !
 !                                                                     !
 !     William F. Mitchell                                             !
-!     Mathematical and Computational Sciences Division                !
+!     Applied and Computational Mathematics Division                  !
 !     National Institute of Standards and Technology                  !
 !     william.mitchell@nist.gov                                       !
 !     http://math.nist.gov/phaml                                      !
@@ -35,6 +35,7 @@ use message_passing
 use stopwatch
 use hash_eq_mod
 use gridtype_mod
+use grid_util
 use linsystype_mod
 use linsys_util
 use make_linsys
@@ -47,8 +48,8 @@ use sysdep
 
 implicit none
 private
-public print_linear_system, print_linsys_info, print_error_info, norm_error, &
-       norm_solution, norm_true, store_matrix
+public print_linear_system, print_linsys_info, print_solver_info, &
+       print_error_info, norm_error, norm_solution, norm_true, store_matrix
 
 !----------------------------------------------------
 ! Non-module procedures used are:
@@ -529,7 +530,12 @@ if (who /= SLAVES) then
          ints(2) = huge(0)
          ints(3) = 0
          ints(4) = 0
-         allocate(times(4,1))
+         allocate(times(4,1),stat=allocstat)
+         if (allocstat /= 0) then
+            ierr = ALLOC_FAILED
+            call fatal("allocation failed in print_error_info",procs=procs)
+            return
+         endif
          times = 0
          do i=1,np
             call phaml_recv(procs,proc,recv_int,ni,recv_real,nr,tag+1)
@@ -562,7 +568,7 @@ if (who /= SLAVES) then
          new_energy_errest = inew_energy_errest(1,:)
          old_energy_errest = iold_energy_errest(1,:)
          normte = inormte(1,:)
-         normse = inormte(1,:)
+         normse = inormse(1,:)
       else
          new_L2_error = sqrt(sum(inew_L2_error**2,dim=1))
          old_L2_error = sqrt(sum(iold_L2_error**2,dim=1))
@@ -1085,6 +1091,81 @@ call end_pause_watch(all_watches)
 
 end subroutine print_linsys_info
 
+!          -----------------
+subroutine print_solver_info(linsys,procs,io_control,still_sequential, &
+                             this_time,tag)
+!          -----------------
+
+!----------------------------------------------------
+! This routine prints information about the performance of the solver
+!----------------------------------------------------
+ 
+implicit none
+ 
+!----------------------------------------------------
+! Dummy arguments
+ 
+type (linsys_type), intent(inout) :: linsys
+type (proc_info), intent(in) :: procs
+type (io_options), intent(in) :: io_control
+logical, intent(in) :: still_sequential
+integer, intent(in) :: this_time(:),tag
+!----------------------------------------------------
+ 
+!----------------------------------------------------
+! Local variables:
+ 
+integer :: who,when
+ 
+!----------------------------------------------------
+ 
+!----------------------------------------------------
+! Begin executable code
+ 
+! If this is not the right time to print, return
+
+who = io_control%print_solver_who
+when = io_control%print_solver_when
+
+if (.not. any(this_time == when) .or. who == NO_ONE) return
+
+! If I'm the master and only slaves print, return
+
+if (my_proc(procs) == MASTER .and. who == SLAVES) return
+
+! stop the clocks
+
+call pause_watch(all_watches)
+
+! If the residual is not stored, compute it
+
+if (linsys%relresid == -huge(0.0_my_real)) then
+   call linsys_residual(linsys,procs,still_sequential,0,tag, &
+                        .false.,.false.,relresid=linsys%relresid)
+endif
+
+! print the info, if requested
+
+if (my_proc(procs) /= MASTER) then
+ if (who == SLAVES .or. who == EVERYONE) then
+   write(outunit,"(A)")
+   write(outunit,"(A)") 'Solver information:'
+   write(outunit,"(A,I11)") '   number of iterations = ',linsys%solver_niter
+   write(outunit,"(A,SS,1P,E18.10E2)") '   relative residual = ',linsys%relresid
+ endif
+else
+ if (who == MASTER .or. who == EVERYONE .or. who == MASTER_ALL) then
+   write(outunit,"(A)")
+   write(outunit,"(A)") 'Solver information:'
+   write(outunit,"(A,I11)") '   number of iterations = ',linsys%solver_niter
+   write(outunit,"(A,SS,1P,E18.10E2)") '   relative residual = ',linsys%relresid
+ endif
+endif
+
+call end_pause_watch(all_watches)
+
+end subroutine print_solver_info
+
 !----------------------------------------------------------------
 ! CODE FOR COMPUTING ERRORS
 !----------------------------------------------------------------
@@ -1153,8 +1234,8 @@ if (present(my_energy_norm) .or. present(energy_norm)) then
          endif
          xc = grid%vertex(grid%element(elem)%vertex)%coord%x
          yc = grid%vertex(grid%element(elem)%vertex)%coord%y
-! quadrature order determined experimentally with u=x**10+y**10 on uniform grid
-         call quadrature_rule_tri(6,xc,yc,nqp,qw,xq,yq,i,stay_in=.true.)
+         call quadrature_rule_tri(min(MAX_QUAD_ORDER_TRI,max(8,2*grid%element(elem)%degree)), &
+                                  xc,yc,nqp,qw,xq,yq,i,stay_in=.true.)
          allocate(u(ss,1,nqp),ux(ss,1,nqp),uy(ss,1,nqp), &
                   stat=astat)
          if (astat /= 0) then
@@ -1343,8 +1424,8 @@ if (present(discrete_energy)) then
    solver_cntl%lambda0 = -huge(0.0_my_real)
    solver_cntl%ignore_quad_err = .true.
    solver_cntl%inc_quad_order = 0
-   io_cntl = io_options(NEVER,NO_ONE,NEVER,NO_ONE,TOO_MUCH,NO_ONE,NEVER,NEVER, &
-                        NEVER,NO_ONE,PHASES,.false.)
+   io_cntl = io_options(NEVER,NO_ONE,NEVER,NO_ONE,NEVER,NO_ONE,TOO_MUCH, &
+                        NO_ONE,NEVER,NEVER,NEVER,NO_ONE,PHASES,.false.)
    call create_linear_system(linear_system,grid,procs,solver_cntl,io_cntl, &
                              still_sequential,notime=.true.)
    linear_system%end_row => linear_system%end_row_face
@@ -1367,7 +1448,12 @@ if (present(discrete_energy)) then
       end do
    endif
    x => linear_system%solution(1:)
-   allocate(y(linear_system%neq))
+   allocate(y(linear_system%neq),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("allocation failed in norm_solution",procs=procs)
+      return
+   endif
    call matrix_times_vector(x,y,linear_system,procs,still_sequential, &
                             1310,1311,1312,1313,1314,1315,natural=.true., &
                             notime=.true.,nocomm2=.true.)
@@ -1396,8 +1482,8 @@ if (present(energy)) then
          endif
          xc = grid%vertex(grid%element(elem)%vertex)%coord%x
          yc = grid%vertex(grid%element(elem)%vertex)%coord%y
-! quadrature order determined experimentally with u=x**10+y**10 on uniform grid
-         call quadrature_rule_tri(6,xc,yc,nqp,qw,xq,yq,i,stay_in=.true.)
+         call quadrature_rule_tri(min(MAX_QUAD_ORDER_TRI,max(8,2*grid%element(elem)%degree)), &
+                                  xc,yc,nqp,qw,xq,yq,i,stay_in=.true.)
          allocate(u(ss,1,nqp),ux(ss,1,nqp),uy(ss,1,nqp), &
                   stat=astat)
          if (astat /= 0) then
@@ -1549,8 +1635,8 @@ if (present(energy)) then
          endif
          xc = grid%vertex(grid%element(elem)%vertex)%coord%x
          yc = grid%vertex(grid%element(elem)%vertex)%coord%y
-! quadrature order determined experimentally with u=x**10+y**10 on uniform grid
-         call quadrature_rule_tri(6,xc,yc,nqp,qw,xq,yq,i,stay_in=.true.)
+         call quadrature_rule_tri(min(MAX_QUAD_ORDER_TRI,max(8,2*grid%element(elem)%degree)), &
+                                  xc,yc,nqp,qw,xq,yq,i,stay_in=.true.)
          allocate(u(ss,1,nqp),ux(ss,1,nqp),uy(ss,1,nqp),stat=astat)
          if (astat /= 0) then
             ierr = ALLOC_FAILED
@@ -1785,7 +1871,12 @@ if (PARALLEL == SEQUENTIAL) then
             else
                do col=linsys%begin_row(eq),linsys%end_row(eq)
                   if (linsys%column_index(col) == NO_ENTRY) cycle
-                  if (whichmat == 1) then
+                  if (linsys%equation_type(linsys%column_index(col)) == &
+                      DIRICHLET) then
+                     write(iounit,"(2I11,SS,1P,E18.10E2)") eq, &
+                                                   linsys%column_index(col), &
+                                                   0.0_my_real
+                  elseif (whichmat == 1) then
                      write(iounit,"(2I11,SS,1P,E18.10E2)") eq, &
                                                    linsys%column_index(col), &
                                                    linsys%stiffness(col)
@@ -1992,10 +2083,20 @@ else ! slave
 ! same value for nlev=1 and nlev+2
 
    if (linsys%nlev /= nlev) then
-      allocate(hold_begin(linsys%nlev+3))
+      allocate(hold_begin(linsys%nlev+3),stat=astat)
+      if (astat /= 0) then
+         ierr = ALLOC_FAILED
+         call fatal("allocation failed in store_matrix",procs=procs)
+         return
+      endif
       hold_begin = linsys%begin_level
       deallocate(linsys%begin_level)
-      allocate(linsys%begin_level(nlev+3))
+      allocate(linsys%begin_level(nlev+3),stat=astat)
+      if (astat /= 0) then
+         ierr = ALLOC_FAILED
+         call fatal("allocation failed in store_matrix",procs=procs)
+         return
+      endif
       linsys%begin_level(1:linsys%nlev+3) = hold_begin
       deallocate(hold_begin)
       linsys%begin_level(nlev+3) = linsys%begin_level(linsys%nlev+3)
@@ -2254,6 +2355,8 @@ else ! slave
                      else
                         rsend(counter+1) = linsys%mass(col)
                      endif
+                     if (linsys%equation_type(linsys%column_index(col)) == &
+                         DIRICHLET) rsend(counter+1) = 0.0_my_real
                      counter = counter + 1
                   endif
                end do

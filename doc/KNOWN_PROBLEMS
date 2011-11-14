@@ -10,7 +10,7 @@ discretization error, so the method does provide an adequate solution.  But
 in some cases the test for termination of multigrid iterations based on the
 size of the residual is never satisfied, so you should (for now) put a limit
 on the number of iterations via the mg_cycles parameter to phaml_solve_pde,
-e.g. mg_cycles=5, if running in parallel.
+e.g. mg_cycles=50, if running in parallel.
 
 *) For systems of equations, the L1 sum and L2 sum of the components in the
 graphics is wrong if using high order elements and subelement resolution.
@@ -23,13 +23,13 @@ is not used (because stdin doesn't get through it) and openmpi requires it.
 
 *) the test suite is not available for SPMD model
 
-*) the test suite does not support PVM
-
 *) BLOPEX can have problems with agressively optimized versions of LAPACK,
 because the optimization can break an invariance property that BLOPEX assumes.
 If you find that "make test what=blopexp" gives results that are significantly
 different from the comparison files, try using "BLAS source LAPACK source"
 when you run mkmkfile.sh.
+
+*) BLOPEX sometimes returns an error code when computing interior eigenvalues.
 
 *) the explicit and equilibrated residual error estimators do not get
 the optimal convergence rate when the cross derivative term cxy is nonzero.
@@ -38,3 +38,9 @@ Use one of the other error estimators.
 *) the color key does not get resized when the graphics window is resized.
 You have to toggle the key off and back on again to resize it, or better yet,
 resize the window with the key off and then toggle it on.
+
+*) LAM and OpenMP do not work together, because LAM is not thread safe.  Try
+using Open MPI instead of LAM.
+
+*) The interface to SuperLU is way out of date (version 2.0).  Since 2.0 was
+not thread safe, it cannot be used with OpenMP.

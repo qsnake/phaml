@@ -11,7 +11,7 @@
 * the United States.                                                  !
 *                                                                     !
 *     William F. Mitchell                                             !
-*     Mathematical and Computational Sciences Division                !
+*     Applied and Computational Mathematics Division                  !
 *     National Institute of Standards and Technology                  !
 *     william.mitchell@nist.gov                                       !
 *     http://math.nist.gov/phaml                                      !
@@ -1135,11 +1135,13 @@
 *
             RESID = APPROXRES( I, WORK2( 1,I+H-1 ), WORK( 1,S ),
      $                         WORK2( 1,GIV ), LDW2 ) / BNRM2
-            IF ( RESID.LE.TOL ) THEN
-               CALL UPDATE(I, N, X, WORK2( 1,H ), LDW2, 
-     $                     WORK(1,Y), WORK(1,S), WORK( 1,V ), LDW)
-               GO TO 200
-            ENDIF
+! TEMP100929 this computation of the residual seems to be much smaller
+!            than STOPTEST2 and what I compute afterwards, so don't use it
+!            IF ( RESID.LE.TOL ) THEN
+!               CALL UPDATE(I, N, X, WORK2( 1,H ), LDW2, 
+!     $                     WORK(1,Y), WORK(1,S), WORK( 1,V ), LDW)
+!               GO TO 200
+!            ENDIF
 * WFM 5/25/07 RLBL .eq. 4 and RLBL .eq. 5 jump into this DO loop, which
 *             Fortran does not allow.  Replace the DO loop with a GOTO loop.
 *             The original statement was:

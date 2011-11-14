@@ -6,7 +6,7 @@ real(my_real) :: err1, err2
 call phaml_create(soln,nproc=4,system_size=2)
 call phaml_solve_pde(soln,                   &
                      max_vert=300,           &
-                     mg_cycles=2,            &
+                     mg_cycles=5,            &
                      print_grid_when=PHASES, &
                      print_grid_who=MASTER  ,&
                      print_error_when=PHASES    , &

@@ -7,7 +7,7 @@ call phaml_solve_pde(soln,print_grid_when=PHASES,print_grid_who=MASTER, &
                      print_error_when=PHASES,print_error_who=MASTER, &
                      print_error_what=ENERGY_LINF_L2_ERR, &
                      print_errest_what=ENERGY_LINF_L2_ERREST, &
-                     max_eq=500, mg_cycles=2, &
+                     max_eq=500, mg_cycles=5, &
                      error_estimator=LOCAL_PROBLEM_P)
 call phaml_destroy(soln)
 end program phaml_master

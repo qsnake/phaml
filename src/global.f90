@@ -11,7 +11,7 @@
 ! the United States.                                                  !
 !                                                                     !
 !     William F. Mitchell                                             !
-!     Mathematical and Computational Sciences Division                !
+!     Applied and Computational Mathematics Division                  !
 !     National Institute of Standards and Technology                  !
 !     william.mitchell@nist.gov                                       !
 !     http://math.nist.gov/phaml                                      !
@@ -69,7 +69,7 @@ character(len=5), parameter :: scratch = "/tmp/"
 
 ! version number
 
-character(len=5), parameter :: version_number = "1.8.0"
+character(len=5), parameter :: version_number = "1.9.1"
 
 ! termination codes
 
@@ -166,8 +166,7 @@ integer, parameter :: HIERARCHICAL_COEFFICIENT = 1, &
                       LOCAL_PROBLEM_P          = 5, &
                       INITIAL_CONDITION        = 6, &
                       EXPLICIT_ERRIND          = 7, &
-                      EQUILIBRATED_RESIDUAL    = 8, &
-                      REFSOLN_ERREST           = 9
+                      EQUILIBRATED_RESIDUAL    = 8
 
 ! selection of refinement method
 
@@ -192,7 +191,8 @@ integer, parameter :: HP_BIGGER_ERRIND  =  1, &
                       HP_NEXT3P         = 11, &
                       HP_REFSOLN_EDGE   = 12, &
                       HP_REFSOLN_ELEM   = 13, &
-                      HP_NLP            = 14
+                      HP_NLP            = 14, &
+                      HP_STEEPEST_SLOPE = 15
 
 ! selection of rule for edge degree
 
@@ -324,9 +324,8 @@ integer, parameter :: BALANCE_REFINE_SOLVE = 1, &
 ! forms of parallelism
 
 integer, parameter :: SEQUENTIAL = 1, &
-                      PVM        = 2, &
-                      MPI1       = 3, &
-                      MPI2       = 4
+                      MPI1       = 2, &
+                      MPI2       = 3
 
 ! choices for scaling eigenvectors
 
@@ -355,6 +354,7 @@ integer, parameter :: ERR_TAG = 16000
 type io_options
    integer :: print_grid_when,   print_grid_who,  &
               print_linsys_when, print_linsys_who,&
+              print_solver_when, print_solver_who, &
               print_error_when,  print_error_who, &
               print_error_what,  print_errest_what, &
               print_time_when,   print_time_who,  &

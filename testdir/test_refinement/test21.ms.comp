@@ -1,5 +1,5 @@
 ---------------------------------------------------------
-           PHAML   Version 1.8.0
+           PHAML   Version 1.9.1
 
 Output from the master process
   PDE id is     0
@@ -20,6 +20,7 @@ Subroutine phaml_solve_pde parameters:
   print_grid_when    PHASES
   print_grid_who     MASTER
   print_linsys_when  NEVER
+  print_solver_when  NEVER
   print_error_when   NEVER
   print_time_when    NEVER
   pause_after_draw   false
@@ -39,7 +40,7 @@ Subroutine phaml_solve_pde parameters:
   prebalance         BALANCE_ELEMENTS
   ignore_quad_err    false
   solver             MG_SOLVER
-  mg_cycles                   2
+  mg_cycles                   5
   mg_tol             MG_ERREST_TOL
   mg_prerelax                 1
   mg_postrelax                2
@@ -56,10 +57,10 @@ Total Grid:
    min and max degree      =           1          1
 
 Total Grid:
-   number of vertices      =          27
-   number of leaf elements =          38
-   number of levels        =           4
-   degrees of freedom      =          27
+   number of vertices      =          29
+   number of leaf elements =          40
+   number of levels        =           5
+   degrees of freedom      =          29
    min and max degree      =           1          1
 
 Total Grid:
@@ -77,31 +78,31 @@ Total Grid:
    min and max degree      =           1          1
 
 Total Grid:
-   number of vertices      =         171
-   number of leaf elements =         294
+   number of vertices      =         170
+   number of leaf elements =         290
    number of levels        =           9
-   degrees of freedom      =         171
+   degrees of freedom      =         170
    min and max degree      =           1          1
 
 Total Grid:
-   number of vertices      =         308
-   number of leaf elements =         537
-   number of levels        =          11
-   degrees of freedom      =         308
+   number of vertices      =         291
+   number of leaf elements =         504
+   number of levels        =          10
+   degrees of freedom      =         291
    min and max degree      =           1          1
 
 Total Grid:
-   number of vertices      =         611
-   number of leaf elements =        1106
-   number of levels        =          11
-   degrees of freedom      =         611
+   number of vertices      =         524
+   number of leaf elements =         958
+   number of levels        =          12
+   degrees of freedom      =         524
    min and max degree      =           1          1
 
 Total Grid:
-   number of vertices      =         611
-   number of leaf elements =        1106
-   number of levels        =          11
-   degrees of freedom      =         611
+   number of vertices      =         524
+   number of leaf elements =         958
+   number of levels        =          12
+   degrees of freedom      =         524
    min and max degree      =           1          1
 
 ---------------------------------------------------------
@@ -112,7 +113,7 @@ termination condition:
   maximum equations achieved
 ---------------------------------------------------------
 ---------------------------------------------------------
-           PHAML   Version 1.8.0
+           PHAML   Version 1.9.1
 
 Output from the master process
   PDE id is     0
@@ -133,6 +134,7 @@ Subroutine phaml_solve_pde parameters:
   print_grid_when    PHASES
   print_grid_who     MASTER
   print_linsys_when  NEVER
+  print_solver_when  NEVER
   print_error_when   NEVER
   print_time_when    NEVER
   pause_after_draw   false
@@ -153,7 +155,7 @@ Subroutine phaml_solve_pde parameters:
   prebalance         BALANCE_ELEMENTS
   ignore_quad_err    false
   solver             MG_SOLVER
-  mg_cycles                   2
+  mg_cycles                   5
   mg_tol             MG_ERREST_TOL
   mg_prerelax                 1
   mg_postrelax                2
@@ -163,24 +165,24 @@ Subroutine phaml_solve_pde parameters:
 ---------------------------------------------------------
 
 Total Grid:
-   number of vertices      =         611
-   number of leaf elements =        1106
-   number of levels        =          11
-   degrees of freedom      =         611
+   number of vertices      =         524
+   number of leaf elements =         958
+   number of levels        =          12
+   degrees of freedom      =         524
    min and max degree      =           1          1
 
 Total Grid:
-   number of vertices      =        1376
-   number of leaf elements =        2596
-   number of levels        =          12
-   degrees of freedom      =        1376
+   number of vertices      =        1253
+   number of leaf elements =        2350
+   number of levels        =          13
+   degrees of freedom      =        1253
    min and max degree      =           1          1
 
 Total Grid:
-   number of vertices      =        1376
-   number of leaf elements =        2596
-   number of levels        =          12
-   degrees of freedom      =        1376
+   number of vertices      =        1253
+   number of leaf elements =        2350
+   number of levels        =          13
+   degrees of freedom      =        1253
    min and max degree      =           1          1
 
 ---------------------------------------------------------

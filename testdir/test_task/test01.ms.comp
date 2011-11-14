@@ -1,5 +1,5 @@
 ---------------------------------------------------------
-           PHAML   Version 1.8.0
+           PHAML   Version 1.9.1
 
 Output from the master process
   PDE id is     0
@@ -20,6 +20,7 @@ Subroutine phaml_solve_pde parameters:
   print_grid_when    PHASES
   print_grid_who     MASTER_ALL
   print_linsys_when  NEVER
+  print_solver_when  NEVER
   print_error_when   PHASES
   print_error_who    MASTER
   print_error_what   ENERGY_LINF_L2_ERR
@@ -130,31 +131,31 @@ Norms of error:
       reduced by              4.2794787070E-01
 
 Individual Grids:
-   number of vertices       =          84         84         84         84
-   number of vertices I own =          84         84         84         84
-   number of elements       =         276        276        276        276
-   number of leaf elements  =         142        142        142        142
-   leaf elements I own      =         142        142        142        142
+   number of vertices       =          75         75         75         75
+   number of vertices I own =          75         75         75         75
+   number of elements       =         240        240        240        240
+   number of leaf elements  =         124        124        124        124
+   leaf elements I own      =         124        124        124        124
    number of levels         =           6          6          6          6
-   degrees of freedom       =          84         84         84         84
-   degrees of freedom I own =          84         84         84         84
+   degrees of freedom       =          75         75         75         75
+   degrees of freedom I own =          75         75         75         75
    min degree               =           1          1          1          1
    max degree               =           1          1          1          1
 
 Total Grid:
-   number of vertices      =          84
-   number of leaf elements =         142
+   number of vertices      =          75
+   number of leaf elements =         124
    number of levels        =           6
-   degrees of freedom      =          84
+   degrees of freedom      =          75
    min and max degree      =           1          1
 
 Norms of error:
-   energy norm of error       2.4230177508E-01
-      reduced by              6.6373097724E-01
+   energy norm of error       2.5472706346E-01
+      reduced by              6.9776724790E-01
    Linf norm of error         3.2443839180E-02
       reduced by              5.1531197541E-01
-   L2 norm of error           1.1597109086E-02
-      reduced by              5.1794971890E-01
+   L2 norm of error           1.3168500622E-02
+      reduced by              5.8813115792E-01
 
 Individual Grids:
    number of vertices       =         165        165        165        165
@@ -177,11 +178,11 @@ Total Grid:
 
 Norms of error:
    energy norm of error       1.6491252071E-01
-      reduced by              6.8060797596E-01
+      reduced by              6.4740871452E-01
    Linf norm of error         1.3337263994E-02
       reduced by              4.1108772362E-01
    L2 norm of error           5.1676967719E-03
-      reduced by              4.4560215252E-01
+      reduced by              3.9242863864E-01
 
 Individual Grids:
    number of vertices       =         165        165        165        165
@@ -215,7 +216,7 @@ termination condition:
   maximum vertices achieved
 ---------------------------------------------------------
 ---------------------------------------------------------
-           PHAML   Version 1.8.0
+           PHAML   Version 1.9.1
 
 Output from the master process
   PDE id is     0
@@ -236,6 +237,7 @@ Subroutine phaml_solve_pde parameters:
   print_grid_when    FINAL
   print_grid_who     MASTER_ALL
   print_linsys_when  NEVER
+  print_solver_when  NEVER
   print_error_when   NEVER
   print_time_when    NEVER
   pause_after_draw   false
@@ -291,7 +293,7 @@ termination condition:
   one trip load balance
 ---------------------------------------------------------
 ---------------------------------------------------------
-           PHAML   Version 1.8.0
+           PHAML   Version 1.9.1
 
 Output from the master process
   PDE id is     0
@@ -312,6 +314,7 @@ Subroutine phaml_solve_pde parameters:
   print_grid_when    PHASES
   print_grid_who     MASTER_ALL
   print_linsys_when  NEVER
+  print_solver_when  NEVER
   print_error_when   PHASES
   print_error_who    MASTER
   print_error_what   ENERGY_LINF_L2_ERR
@@ -363,55 +366,55 @@ Total Grid:
    min and max degree      =           1          1
 
 Individual Grids:
-   number of vertices       =         147        191        174        149
-   number of vertices I own =          92         94         88         92
-   number of elements       =         524        702        638        532
-   number of leaf elements  =         266        355        323        270
-   leaf elements I own      =         153        199        152        173
-   number of levels         =           9          9          9          8
-   degrees of freedom       =         147        191        174        149
-   degrees of freedom I own =          92         94         88         92
+   number of vertices       =         155        172        172        155
+   number of vertices I own =         104         72         88         95
+   number of elements       =         554        628        628        554
+   number of leaf elements  =         281        318        318        281
+   leaf elements I own      =         176        155        153        178
+   number of levels         =           8          9          9          8
+   degrees of freedom       =         155        172        172        155
+   degrees of freedom I own =         104         72         88         95
    min degree               =           1          1          1          1
    max degree               =           1          1          1          1
 
 Total Grid:
-   number of vertices      =         366
-   number of leaf elements =         677
+   number of vertices      =         359
+   number of leaf elements =         662
    number of levels        =           9
-   degrees of freedom      =         366
+   degrees of freedom      =         359
    min and max degree      =           1          1
 
 Norms of error:
-   energy norm of error       1.0923169244E-01
-      reduced by              3.3118071316E-01
-   Linf norm of error         9.5215152862E-03
-      reduced by              7.1390318813E-01
-   L2 norm of error           3.2850488414E-03
-      reduced by              3.1784458206E-01
+   energy norm of error       1.0753164227E-01
+      reduced by              3.2602631323E-01
+   Linf norm of error         6.6158737902E-03
+      reduced by              4.9604430064E-01
+   L2 norm of error           3.2255156645E-03
+      reduced by              3.1208445530E-01
 
 Individual Grids:
-   number of vertices       =         147        191        174        149
-   number of vertices I own =          92         94         88         92
-   number of elements       =         524        702        638        532
-   number of leaf elements  =         266        355        323        270
-   leaf elements I own      =         153        199        152        173
-   number of levels         =           9          9          9          8
-   degrees of freedom       =         147        191        174        149
-   degrees of freedom I own =          92         94         88         92
+   number of vertices       =         155        172        172        155
+   number of vertices I own =         104         72         88         95
+   number of elements       =         554        628        628        554
+   number of leaf elements  =         281        318        318        281
+   leaf elements I own      =         176        155        153        178
+   number of levels         =           8          9          9          8
+   degrees of freedom       =         155        172        172        155
+   degrees of freedom I own =         104         72         88         95
    min degree               =           1          1          1          1
    max degree               =           1          1          1          1
 
 Total Grid:
-   number of vertices      =         366
-   number of leaf elements =         677
+   number of vertices      =         359
+   number of leaf elements =         662
    number of levels        =           9
-   degrees of freedom      =         366
+   degrees of freedom      =         359
    min and max degree      =           1          1
 
 Norms of error:
-   energy norm of error       1.0923169244E-01
-   Linf norm of error         9.5215152862E-03
-   L2 norm of error           3.2850488414E-03
+   energy norm of error       1.0753164227E-01
+   Linf norm of error         6.6158737902E-03
+   L2 norm of error           3.2255156645E-03
 
 ---------------------------------------------------------
 phaml_solve_pde complete
@@ -421,7 +424,7 @@ termination condition:
   one trip refinement
 ---------------------------------------------------------
 ---------------------------------------------------------
-           PHAML   Version 1.8.0
+           PHAML   Version 1.9.1
 
 Output from the master process
   PDE id is     0
@@ -442,6 +445,7 @@ Subroutine phaml_solve_pde parameters:
   print_grid_when    PHASES
   print_grid_who     MASTER
   print_linsys_when  NEVER
+  print_solver_when  NEVER
   print_error_when   FINAL
   print_error_who    MASTER
   print_error_what   ENERGY_LINF_L2_ERR
@@ -474,30 +478,30 @@ Subroutine phaml_solve_pde parameters:
 ---------------------------------------------------------
 
 Total Grid:
-   number of vertices      =         366
-   number of leaf elements =         677
+   number of vertices      =         359
+   number of leaf elements =         662
    number of levels        =           9
-   degrees of freedom      =         366
+   degrees of freedom      =         359
    min and max degree      =           1          1
 
 Total Grid:
-   number of vertices      =         366
-   number of leaf elements =         677
+   number of vertices      =         359
+   number of leaf elements =         662
    number of levels        =           9
-   degrees of freedom      =         366
+   degrees of freedom      =         359
    min and max degree      =           1          1
 
 Total Grid:
-   number of vertices      =         366
-   number of leaf elements =         677
+   number of vertices      =         359
+   number of leaf elements =         662
    number of levels        =           9
-   degrees of freedom      =         366
+   degrees of freedom      =         359
    min and max degree      =           1          1
 
 Norms of error:
-   energy norm of error       1.0457054535E-01
-   Linf norm of error         9.6857228497E-03
-   L2 norm of error           3.1684149965E-03
+   energy norm of error       1.0336069149E-01
+   Linf norm of error         6.5527472783E-03
+   L2 norm of error           2.8004979215E-03
 
 ---------------------------------------------------------
 phaml_solve_pde complete

@@ -1,5 +1,5 @@
 ---------------------------------------------------------
-           PHAML   Version 1.8.0
+           PHAML   Version 1.9.1
 
 Output from the master process
   PDE id is     0
@@ -20,6 +20,7 @@ Subroutine phaml_solve_pde parameters:
   print_grid_when    FINAL
   print_grid_who     MASTER
   print_linsys_when  NEVER
+  print_solver_when  NEVER
   print_error_when   NEVER
   print_time_when    NEVER
   pause_after_draw   false
@@ -63,7 +64,7 @@ termination condition:
   maximum loops through phases achieved
 ---------------------------------------------------------
 ---------------------------------------------------------
-           PHAML   Version 1.8.0
+           PHAML   Version 1.9.1
 
 Output from the master process
   PDE id is     0
@@ -84,6 +85,7 @@ Subroutine phaml_solve_pde parameters:
   print_grid_when    PHASES
   print_grid_who     MASTER
   print_linsys_when  NEVER
+  print_solver_when  NEVER
   print_error_when   NEVER
   print_time_when    NEVER
   pause_after_draw   false
@@ -123,48 +125,41 @@ Total Grid:
    number of vertices      =          75
    number of leaf elements =         108
    number of levels        =           8
-   degrees of freedom      =         191
+   degrees of freedom      =         205
    min and max degree      =           1          2
 
 Total Grid:
    number of vertices      =          75
    number of leaf elements =         108
    number of levels        =           8
-   degrees of freedom      =         250
-   min and max degree      =           1          3
-
-Total Grid:
-   number of vertices      =          75
-   number of leaf elements =         108
-   number of levels        =           8
-   degrees of freedom      =         613
+   degrees of freedom      =         404
    min and max degree      =           1          4
 
 Total Grid:
    number of vertices      =          75
    number of leaf elements =         108
    number of levels        =           8
-   degrees of freedom      =         937
-   min and max degree      =           2          5
+   degrees of freedom      =         810
+   min and max degree      =           1          6
 
 Total Grid:
    number of vertices      =          75
    number of leaf elements =         108
    number of levels        =           8
-   degrees of freedom      =        1018
-   min and max degree      =           2          5
+   degrees of freedom      =        1096
+   min and max degree      =           2          6
 
 Total Grid:
    number of vertices      =          75
    number of leaf elements =         108
    number of levels        =           8
-   degrees of freedom      =        1018
-   min and max degree      =           2          5
+   degrees of freedom      =        1096
+   min and max degree      =           2          6
 
 ---------------------------------------------------------
 phaml_solve_pde complete
 
-number of loops through phases =           5
+number of loops through phases =           4
 termination condition:
   maximum equations achieved
 ---------------------------------------------------------
