@@ -1,5 +1,5 @@
 ---------------------------------------------------------
-           PHAML   Version 1.8.0
+           PHAML   Version 1.9.1
 
 Output from slave number     1
   PDE id is     0
@@ -20,6 +20,7 @@ Subroutine phaml_solve_pde parameters:
   print_grid_when    PHASES
   print_grid_who     SLAVES
   print_linsys_when  NEVER
+  print_solver_when  NEVER
   print_error_when   NEVER
   print_time_when    NEVER
   pause_after_draw   false
@@ -61,15 +62,26 @@ My Grid:
    min and max degree       =           1          1
 
 My Grid:
+   number of vertices       =          12
+   number of vertices I own =          12
+   number of elements       =          16
+   number of leaf elements  =          12
+   leaf elements I own      =          12
+   number of levels         =           3
+   degrees of freedom       =          18
+   degrees of freedom I own =          18
+   min and max degree       =           1          3
+
+My Grid:
    number of vertices       =          15
    number of vertices I own =          15
    number of elements       =          24
    number of leaf elements  =          16
    leaf elements I own      =          16
    number of levels         =           5
-   degrees of freedom       =          19
-   degrees of freedom I own =          19
-   min and max degree       =           1          2
+   degrees of freedom       =          47
+   degrees of freedom I own =          47
+   min and max degree       =           1          6
 
 My Grid:
    number of vertices       =          18
@@ -78,9 +90,20 @@ My Grid:
    number of leaf elements  =          20
    leaf elements I own      =          20
    number of levels         =           7
-   degrees of freedom       =          37
-   degrees of freedom I own =          37
-   min and max degree       =           1          3
+   degrees of freedom       =         104
+   degrees of freedom I own =         104
+   min and max degree       =           1          7
+
+My Grid:
+   number of vertices       =          18
+   number of vertices I own =          18
+   number of elements       =          32
+   number of leaf elements  =          20
+   leaf elements I own      =          20
+   number of levels         =           7
+   degrees of freedom       =         179
+   degrees of freedom I own =         179
+   min and max degree       =           1          7
 
 My Grid:
    number of vertices       =          21
@@ -89,31 +112,20 @@ My Grid:
    number of leaf elements  =          24
    leaf elements I own      =          24
    number of levels         =           9
-   degrees of freedom       =          80
-   degrees of freedom I own =          80
-   min and max degree       =           1          4
+   degrees of freedom       =         292
+   degrees of freedom I own =         292
+   min and max degree       =           1          7
 
 My Grid:
-   number of vertices       =          24
-   number of vertices I own =          24
-   number of elements       =          48
-   number of leaf elements  =          28
-   leaf elements I own      =          28
-   number of levels         =          11
-   degrees of freedom       =         156
-   degrees of freedom I own =         156
-   min and max degree       =           1          6
-
-My Grid:
-   number of vertices       =          28
-   number of vertices I own =          28
-   number of elements       =          60
-   number of leaf elements  =          34
-   leaf elements I own      =          34
-   number of levels         =          14
-   degrees of freedom       =         328
-   degrees of freedom I own =         328
-   min and max degree       =           1          9
+   number of vertices       =          25
+   number of vertices I own =          25
+   number of elements       =          52
+   number of leaf elements  =          30
+   leaf elements I own      =          30
+   number of levels         =          12
+   degrees of freedom       =         610
+   degrees of freedom I own =         610
+   min and max degree       =           1         11
 
 My Grid:
    number of vertices       =          33
@@ -122,42 +134,31 @@ My Grid:
    number of leaf elements  =          40
    leaf elements I own      =          40
    number of levels         =          17
-   degrees of freedom       =         578
-   degrees of freedom I own =         578
-   min and max degree       =           1         11
+   degrees of freedom       =        1202
+   degrees of freedom I own =        1202
+   min and max degree       =           1         14
 
 My Grid:
-   number of vertices       =          39
-   number of vertices I own =          39
-   number of elements       =          88
-   number of leaf elements  =          48
-   leaf elements I own      =          48
-   number of levels         =          21
-   degrees of freedom       =         712
-   degrees of freedom I own =         712
-   min and max degree       =           1         11
+   number of vertices       =          43
+   number of vertices I own =          43
+   number of elements       =         100
+   number of leaf elements  =          54
+   leaf elements I own      =          54
+   number of levels         =          24
+   degrees of freedom       =        2058
+   degrees of freedom I own =        2058
+   min and max degree       =           1         15
 
 My Grid:
-   number of vertices       =          47
-   number of vertices I own =          47
-   number of elements       =         112
-   number of leaf elements  =          60
-   leaf elements I own      =          60
-   number of levels         =          25
-   degrees of freedom       =        2092
-   degrees of freedom I own =        2092
-   min and max degree       =           1         22
-
-My Grid:
-   number of vertices       =          47
-   number of vertices I own =          47
-   number of elements       =         112
-   number of leaf elements  =          60
-   leaf elements I own      =          60
-   number of levels         =          25
-   degrees of freedom       =        2092
-   degrees of freedom I own =        2092
-   min and max degree       =           1         22
+   number of vertices       =          43
+   number of vertices I own =          43
+   number of elements       =         100
+   number of leaf elements  =          54
+   leaf elements I own      =          54
+   number of levels         =          24
+   degrees of freedom       =        2058
+   degrees of freedom I own =        2058
+   min and max degree       =           1         15
 
 ---------------------------------------------------------
 phaml_solve_pde complete

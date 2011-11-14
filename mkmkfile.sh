@@ -56,7 +56,7 @@ DEFAULT_PHAML_HASHSIZE=1
 # Parallelism: messpass_spawn messpass_nospawn openmp hybrid_spawn hybrid_nospawn sequential
 DEFAULT_PHAML_PARALLEL=messpass_spawn
 
-# Parallel library: lam mpi mpich mpich2 myrinet openmpi pvm none
+# Parallel library: lam mpi mpich mpich2 myrinet openmpi none
 # (mpi is used for native MPI libraries, as opposed to lam or mpich)
 DEFAULT_PHAML_PARLIB=lam
 
@@ -108,7 +108,7 @@ DEFAULT_PHAML_NEMESIS=no
 # DRUM: no yes
 DEFAULT_PHAML_DRUM=no
 
-# Specific system: none looney raritan speedy suns
+# Specific system: none looney pepe raritan speedy suns
 DEFAULT_PHAML_SYSTEM=none
 
 # end of Step 1; proceed to Step 2 below
@@ -230,7 +230,7 @@ do
       echo "  C cc gcc ($PHAML_C)"
       echo "  HASHSIZE 1 2 ($PHAML_HASHSIZE)"
       echo "  PARALLEL messpass_spawn messpass_nospawn openmp hybrid_spawn hybrid_nospawn sequential ($PHAML_PARALLEL)"
-      echo "  PARLIB lam mpi mpich mpich2 myrinet openmpi pvm none ($PHAML_PARLIB)"
+      echo "  PARLIB lam mpi mpich mpich2 myrinet openmpi none ($PHAML_PARLIB)"
       echo "  GRAPHICS metro mesa none opengl ($PHAML_GRAPHICS)"
       echo "  BLAS atlas compiler goto source standard vendor ($PHAML_BLAS)"
       echo "  LAPACK atlas compiler source standard vendor ($PHAML_LAPACK)"
@@ -247,7 +247,7 @@ do
       echo "  PARKWAY no yes ($PHAML_PARKWAY)"
       echo "  NEMESIS no yes ($PHAML_NEMESIS)"
       echo "  DRUM no yes ($PHAML_DRUM)"
-      echo "  SYSTEM none looney raritan speedy suns ($PHAML_SYSTEM)"
+      echo "  SYSTEM none looney pepe raritan speedy suns ($PHAML_SYSTEM)"
       exit 0
    fi
    if [ $# -eq 1 ]
@@ -328,13 +328,13 @@ esac
 case "$PHAML_PARALLEL" in
    messpass_spawn|messpass_nospawn|openmp|hybrid_spawn|hybrid_nospawn|sequential) ;;
    *) echo "mkmkfile.sh: $PHAML_PARALLEL is not a valid value for PHAML_PARALLEL"
-      echo "             use one of messpass_spawn messpass_nospawn sequential"
+      echo "             use one of messpass_spawn messpass_nospawn openmp hybrid_spawn hybrid_nospawn sequential"
       exit 1 ;;
 esac
 case "$PHAML_PARLIB" in
-   lam|mpi|mpich|mpich2|myrinet|openmpi|pvm|none) ;;
+   lam|mpi|mpich|mpich2|myrinet|openmpi|none) ;;
    *) echo "mkmkfile.sh: $PHAML_PARLIB is not a valid value for PHAML_PARLIB"
-      echo "             use one of lam mpi mpich mpich2 myrinet openmpi pvm none"
+      echo "             use one of lam mpi mpich mpich2 myrinet openmpi none"
       exit 1 ;;
 esac
 case "$PHAML_GRAPHICS" in
@@ -434,9 +434,9 @@ case "$PHAML_DRUM" in
       exit 1 ;;
 esac
 case "$PHAML_SYSTEM" in
-   none|looney|raritan|speedy|suns) ;;
+   none|looney|pepe|raritan|speedy|suns) ;;
    *) echo "mkmkfile.sh: $PHAML_SYSTEM is not a valid value for PHAML_SYSTEM"
-      echo "             use one of none looney raritan speedy suns"
+      echo "             use one of none looney pepe raritan speedy suns"
       exit 1 ;;
 esac
 
@@ -454,6 +454,18 @@ then
    exit 1
 fi
 
+if [ $PHAML_PARALLEL == "hybrid_spawn" -a $PHAML_PARLIB == "lam" ]
+then
+   echo "mkmkfile.sh: LAM and OpenMP do not work together"
+   exit 1
+fi
+
+if [ $PHAML_PARALLEL == "hybrid_nospawn" -a $PHAML_PARLIB == "lam" ]
+then
+   echo "mkmkfile.sh: LAM and OpenMP do not work together"
+   exit 1
+fi
+
 if [ $PHAML_PARALLEL != "sequential" -a $PHAML_PARALLEL != "openmp" -a $PHAML_PARLIB == "none" ]
 then
    echo "mkmkfile.sh: if PARALLEL is not sequential or openmp then PARLIB cannot be none"
@@ -463,12 +475,6 @@ fi
 if [ $PHAML_PARLIB == "mpich" -a $PHAML_PARALLEL != "messpass_nospawn" ]
 then
    echo "mkmkfile.sh: PARLIB==mpich requires PARALLEL==messpass_nospawn"
-   exit 1
-fi
-
-if [ $PHAML_MUMPS != "no" -a $PHAML_PARLIB == "pvm" ]
-then
-   echo "mkmkfile.sh: MUMPS does not work with PVM"
    exit 1
 fi
 
@@ -646,8 +652,7 @@ case "$PHAML_F90" in
 
    intel)
       F90=ifort
-# as of 11.1 don't need to disable remark, but some of my systems are older
-      FFLAGS="-O -w -diag-disable remark"
+      FFLAGS="-O -w"
       LINKER=$F90
       LINKFLAGS=
       case "$PHAML_PARALLEL" in
@@ -893,14 +898,6 @@ case "$PHAML_PARLIB" in
       LINKER="mpif90"
       CC=mpicc ;;
 
-# PVM 3.4.5
-
-   pvm)
-      RUNMPI=""
-      MESSPASSINC='-I$(PVM_ROOT)/include'
-      MESSPASSLIBS='-L$(PVM_ROOT)/lib/$(PVM_ARCH) -lfpvm3 -lpvm3'
-      MESSPASSPACK='pvmpack1.o pvmpack2.o' ;;
-
 # no message passing library
 
    none)
@@ -993,11 +990,8 @@ case "$PHAML_ARPACK" in
 
 # ARPACK no version number
 
-# Since ARPACK does not support PVM, if PHAML_PARLIB is PVM, leave off the
-# parallel library (and the program should specify nproc=1).
-
    yes)
-      if [ $PHAML_PARALLEL = "sequential" -o $PHAML_PARALLEL = "openmp" -o $PHAML_PARLIB = "pvm" ]
+      if [ $PHAML_PARALLEL = "sequential" -o $PHAML_PARALLEL = "openmp" ]
       then
          ARPACKLIBS='-L$(ARPACK_HOME)/'"$PHAML_F90/$PHAML_PARLIB/lib -larpack"
       else
@@ -1032,6 +1026,13 @@ case "$PHAML_BLOPEX" in
 # and $PETSC_DIR/src/contrib/blopex/petsc-interface.  The BLOPEX library is
 # also under blopex_abstract somewhere.  I relocate these to the PETSc
 # include and lib directories.
+
+# NOTE: BLOPEX version 1.1 required some major changes to src/blopex_c.petsc.c.
+#       You should make blopex_c.petsc.c be a symbolic link to either
+#       blopex_c.petsc.1.0.c or blopex_c.petsc.1.1.c depending on your version
+#       of BLOPEX.  If your PETSc is newer than version 3.1 then you probably
+#       have BLOPEX 1.1.  In any case, you will get a compilation error if you
+#       use the wrong one.
 
    withpetsc)
       BLOPEXINC='-I$(PETSC_HOME)/'"$PHAML_F90/$PHAML_PARLIB"'/include'
@@ -1070,7 +1071,7 @@ case "$PHAML_BLAS" in
          lahey)
             BLASLIBS='-L$(LAHEY_HOME)/lib -lblasmt' ;;
          intel)
-            BLASLIBS='-L$(MKL_HOME) -lmkl_intel -lmkl_intel_thread -lmkl_core -liomp5' ;;
+            BLASLIBS='-L$(MKL_HOME) -lmkl_intel -lmkl_intel_thread -lmkl_core -liomp5 -lpthread' ;;
          *)
             BLASLIBS='-L/usr/lib -lblas' ;;
       esac ;;
@@ -1096,11 +1097,11 @@ case "$PHAML_BLAS" in
 # MKL 11.1.046 supports intel and gfortran; otherwise use source
             if [ $PHAML_F90 = "intel" ]
             then
-               BLASLIBS='-L$(MKL_HOME) -lmkl_intel -lmkl_intel_thread -lmkl_core -liomp5'
+               BLASLIBS='-L$(MKL_HOME) -lmkl_intel -lmkl_intel_thread -lmkl_core -liomp5 -lpthread'
             else
                if [ $PHAML_F90 = "gfortran" ]
                then
-                  BLASLIBS='-L$(MKL_HOME) -lmkl_gf -lmkl_gnu_thread -lmkl_core -liomp5'
+                  BLASLIBS='-L$(MKL_HOME) -lmkl_gf -lmkl_gnu_thread -lmkl_core -liomp5 -lpthread'
                else
                   BLASLIBS=
                fi
@@ -1137,12 +1138,13 @@ case "$PHAML_LAPACK" in
          lahey)
             LAPACKLIBS='-L$(LAHEY_HOME)/lib -llapackmt' ;;
          intel)
-# Don't need them if BLAS already put them in
+# Don't need them if BLAS already put them in, but need something so it
+# doesn't compile lapack.f
             if [ $PHAML_BLAS = "compiler" -o $PHAML_BLAS = "vendor" ]
             then
-               LAPACKLIBS=
+               LAPACKLIBS='-lpthread'
             else
-               LAPACKLIBS='-L$(MKL_HOME) -lmkl_intel -lmkl_intel_thread -lmkl_core -liomp5'
+               LAPACKLIBS='-L$(MKL_HOME) -lmkl_intel -lmkl_intel_thread -lmkl_core -liomp5 -lpthread'
             fi ;;
          *)
             LAPACKLIBS='-L/usr/lib -llapack' ;;
@@ -1165,15 +1167,15 @@ case "$PHAML_LAPACK" in
          x86)
             if [ $PHAML_BLAS = "compiler" -o $PHAML_BLAS = "vendor" ]
             then
-               LAPACKLIBS=
+               LAPACKLIBS='-lpthread'
             else
                if [ $PHAML_F90 = "intel" ]
                then
-                  LAPACKLIBS='-L$(MKL_HOME) -lmkl_intel -lmkl_intel_thread -lmkl_core -liomp5'
+                  LAPACKLIBS='-L$(MKL_HOME) -lmkl_intel -lmkl_intel_thread -lmkl_core -liomp5 -lpthread'
                else
                   if [ $PHAML_F90 = "gfortran" ]
                   then
-                     LAPACKLIBS='-L$(MKL_HOME) -lmkl_gf -lmkl_gnu_thread -lmkl_core -liomp5'
+                     LAPACKLIBS='-L$(MKL_HOME) -lmkl_gf -lmkl_gnu_thread -lmkl_core -liomp5 -lpthread'
                   else
                      LAPACKLIBS=
                   fi
@@ -1204,8 +1206,12 @@ case "$PHAML_PETSC" in
 # PETSc versions before 2.3.1
 #      PETSCLIBS='-L$(PETSC_HOME)/'"$PHAML_F90/$PHAML_PARLIB"'/lib/$(PETSC_ARCH) -lpetscfortran -lpetscksp -lpetscts -lpetscsnes -lpetscdm -lpetscmat -lpetscvec -lpetsc'
 
-# PETSc version 2.3.1 and later
-      PETSCLIBS='-L$(PETSC_HOME)/'"$PHAML_F90/$PHAML_PARLIB"'/lib -lpetscksp -lpetscts -lpetscsnes -lpetscdm -lpetscmat -lpetscvec -lpetsc'
+# PETSc version 2.3.1 through 3.0
+#      PETSCLIBS='-L$(PETSC_HOME)/'"$PHAML_F90/$PHAML_PARLIB"'/lib -lpetscksp -lpetscts -lpetscsnes -lpetscdm -lpetscmat -lpetscvec -lpetsc'
+
+# PETSc version 3.1 and later allow compiling a single library.  If you did
+# that, then you'll want this version
+      PETSCLIBS='-L$(PETSC_HOME)/'"$PHAML_F90/$PHAML_PARLIB"'/lib -lpetsc'
 
 # PETSc version 3.0.0 and later only need the first include directory, but
 # I still have some older versions on some machines
@@ -1220,13 +1226,13 @@ case "$PHAML_PETSC" in
 
 esac
 
-# hypre 2.0.0
+# hypre 2.6.0b
 
 case "$PHAML_HYPRE" in
 
    yes)
 
-# use this for hypre version 2.0.0
+# use this for hypre version 2.0.0 and 2.6.0b
       HYPRELIBS='-L$(HYPRE_HOME)/'"$PHAML_F90/$PHAML_PARLIB/lib -lHYPRE" ;;
 
 # use this for hypre version 1.9.0b
@@ -1252,7 +1258,7 @@ BLACSLIB='-L$(BLACS_HOME)/'"$PHAML_F90/$PHAML_PARLIB/lib -lblacs -lblacsF77init 
 
 SCALAPACKLIB='-L$(SCALAPACK_HOME)/'"$PHAML_F90/$PHAML_PARLIB/lib -lscalapack"
 
-# MUMPS 4.9
+# MUMPS 4.9.2
 
 case "$PHAML_MUMPS" in
 
@@ -1260,8 +1266,8 @@ case "$PHAML_MUMPS" in
 
 # sometime between versions 4.7.3 and 4.9 they added libmumps_common.  Pick
 # the right form.
-      MUMPSLIB='-L$(MUMPS_HOME)/'"$PHAML_F90/$PHAML_PARLIB/lib -ldmumps -lpord"
-#      MUMPSLIB='-L$(MUMPS_HOME)/'"$PHAML_F90/$PHAML_PARLIB/lib -ldmumps -lmumps_common -lpord"
+#      MUMPSLIB='-L$(MUMPS_HOME)/'"$PHAML_F90/$PHAML_PARLIB/lib -ldmumps -lpord"
+      MUMPSLIB='-L$(MUMPS_HOME)/'"$PHAML_F90/$PHAML_PARLIB/lib -ldmumps -lmumps_common -lpord"
 # the sequential version of MUMPS does not need BLACS and SCALAPACK, but
 # does need MUMPS sequential replacement for MPI and pthread
       if [ $PHAML_PARALLEL = "sequential" -o $PHAML_PARALLEL = "openmp" ]
@@ -1334,11 +1340,11 @@ case "$PHAML_SYSTEM" in
          XLIBS="-L/usr/X11R6/lib64 -lXaw -lXt -lXmu -lXi -lX11 -lXext -lm"
          if [ $PHAML_BLAS = "standard" ]
          then
-            BLASLIBS='/usr/lib64/libblas.a'
+            BLASLIBS='/usr/lib64/libblas.so.3'
          fi
          if [ $PHAML_LAPACK = "standard" ]
          then
-            LAPACKLIBS='/usr/lib64/liblapack.a'
+            LAPACKLIBS='/usr/lib64/liblapack.so.3'
          fi
          if [ $PHAML_BLAS = "standard" -o $PHAML_LAPACK = "standard" ]
          then
@@ -1356,19 +1362,6 @@ case "$PHAML_SYSTEM" in
       if [ $PHAML_ARPACK = "yes" ]
       then
          OTHERLIBS="$OTHERLIBS -L/usr/lib/gcc/i386-redhat-linux/3.4.6 -lg2c"
-      fi
-
-# using MUMPS 4.9 that needs mumps_common
-
-      if [ $PHAML_MUMPS = "yes" ]
-      then
-         MUMPSLIB='-L$(MUMPS_HOME)/'"$PHAML_F90/$PHAML_PARLIB/lib -ldmumps -lmumps_common -lpord"
-         if [ $PHAML_PARALLEL = "sequential" -o $PHAML_PARALLEL = "openmp" ]
-         then
-            MUMPSLIBS="$MUMPSLIB -lmpiseq -lpthread"
-         else
-            MUMPSLIBS="$MUMPSLIB $SCALAPACKLIB $BLACSLIB"
-         fi
       fi
 
 # The Intel ifort compilation of PETSc on speedy requires _gfortran_getarg_i4
@@ -1390,6 +1383,18 @@ case "$PHAML_SYSTEM" in
       fi ;;
 
 ########
+# pepe is a 64 bit quad core Linux laptop
+
+   pepe)
+
+# ARPACK needs etime, which can be obtained from libg2c
+
+      if [ $PHAML_ARPACK = "yes" ]
+      then
+         OTHERLIBS="$OTHERLIBS -L/usr/lib/gcc/x86_64-redhat-linux/3.4.6 -lg2c"
+      fi;;
+
+########
 # looney is a 64 bit Linux PC
 
    looney)
@@ -1407,23 +1412,6 @@ case "$PHAML_SYSTEM" in
          if [ $PHAML_BLAS = "standard" -o $PHAML_LAPACK = "standard" ]
          then
             OTHERLIBS="$OTHERLIBS -lgfortran"
-         fi
-      fi
-
-# using MUMPS 4.9 that needs mumps_common, unless it's the NAG compiler and
-# either LAM or OPENMPI where it's an older version because of a SIGSEGV
-
-      if [ $PHAML_MUMPS = "yes" ]
-      then
-         if [[ $PHAML_F90 != "nag" || ( $PHAML_PARLIB != "lam" && $PHAML_PARLIB != "openmpi" && $PHAML_PARLIB != "none" ) ]]
-         then
-            MUMPSLIB='-L$(MUMPS_HOME)/'"$PHAML_F90/$PHAML_PARLIB/lib -ldmumps -lmumps_common -lpord"
-            if [ $PHAML_PARALLEL = "sequential" -o $PHAML_PARALLEL = "openmp" ]
-            then
-               MUMPSLIBS="$MUMPSLIB -lmpiseq -lpthread"
-            else
-               MUMPSLIBS="$MUMPSLIB $SCALAPACKLIB $BLACSLIB"
-            fi
          fi
       fi ;;
 
@@ -1602,7 +1590,7 @@ echo "# done by the U.S. Government, and is not subject to copyright in     !" 1
 echo "# the United States.                                                  !" 1>>$f
 echo "#                                                                     !" 1>>$f
 echo "#     William F. Mitchell                                             !" 1>>$f
-echo "#     Mathematical and Computational Sciences Division                !" 1>>$f
+echo "#     Applied and Computational Mathematics Division                  !" 1>>$f
 echo "#     National Institute of Standards and Technology                  !" 1>>$f
 echo "#     william.mitchell@nist.gov                                       !" 1>>$f
 echo "#     http://math.nist.gov/phaml                                      !" 1>>$f

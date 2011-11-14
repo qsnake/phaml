@@ -11,7 +11,7 @@
 ! the United States.                                                  !
 !                                                                     !
 !     William F. Mitchell                                             !
-!     Mathematical and Computational Sciences Division                !
+!     Applied and Computational Mathematics Division                  !
 !     National Institute of Standards and Technology                  !
 !     william.mitchell@nist.gov                                       !
 !     http://math.nist.gov/phaml                                      !
@@ -542,7 +542,12 @@ superlu_matrix%my_neq = my_neq
 
 ! determine how many equations are owned by each processor
 
-allocate(neq_all(nproc))
+allocate(neq_all(nproc),stat=allocstat)
+if (allocstat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("allocation failed in make_superlu_matrix",procs=procs)
+   return
+endif
 neq_all = 0
 neq_all(my_processor) = my_neq
 if (.not. still_sequential) then

@@ -1,15 +1,15 @@
 
 Total Grid:
-   number of vertices      =         730
-   number of leaf elements =        1314
+   number of vertices      =         734
+   number of leaf elements =        1322
    number of levels        =          12
-   degrees of freedom      =         730
+   degrees of freedom      =         734
    min and max degree      =           1          1
 
 Norms of error:
-   energy norm of error       4.6561440088E-01
-   energy error estimate      1.5366745744E-01
-      effectivity             3.3003158226E-01
-   Linf norm of error         3.0902420799E-02
-   Linf error estimate        3.4631256050E-03
-      effectivity             1.1206648267E-01
+   energy norm of error       4.6454550778E-01
+   energy error estimate      1.5324283329E-01
+      effectivity             3.2987690273E-01
+   Linf norm of error         3.0902548795E-02
+   Linf error estimate        3.4344293830E-03
+      effectivity             1.1113741478E-01

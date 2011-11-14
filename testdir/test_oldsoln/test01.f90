@@ -11,7 +11,7 @@
 ! the United States.                                                  !
 !                                                                     !
 !     William F. Mitchell                                             !
-!     Mathematical and Computational Sciences Division                !
+!     Applied and Computational Mathematics Division                  !
 !     National Institute of Standards and Technology                  !
 !     william.mitchell@nist.gov                                       !
 !     http://math.nist.gov/phaml                                      !
@@ -85,7 +85,7 @@ do
    call phaml_solve_pde(soln,                    &
                         max_refsolveloop=1,      &
                         refterm=KEEP_NVERT,      &
-                        mg_cycles=1,             &
+                        solver=CG_SOLVER,        &
                         print_grid_when=FINAL,   &
                         print_grid_who=MASTER,   &
                         print_error_when=FINAL,  &

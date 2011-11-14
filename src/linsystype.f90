@@ -11,7 +11,7 @@
 ! the United States.                                                  !
 !                                                                     !
 !     William F. Mitchell                                             !
-!     Mathematical and Computational Sciences Division                !
+!     Applied and Computational Mathematics Division                  !
 !     National Institute of Standards and Technology                  !
 !     william.mitchell@nist.gov                                       !
 !     http://math.nist.gov/phaml                                      !
@@ -219,6 +219,12 @@ type linsys_type
 ! otherwise neq_vert+neq_edge+neq_face
 
    integer :: neq, nlev, system_size, maxdeg, neq_vert, neq_edge, neq_face
+
+! Information about the performance of the solver: number of iterations,
+! relative residual
+
+   integer :: solver_niter
+   real(my_real) :: relresid
 
 ! The minimum value of PDE coefficient r(x,y), used as lambda0 when
 ! the smallest eigenvalues are desired.

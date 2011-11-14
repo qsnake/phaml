@@ -11,7 +11,7 @@
 ! the United States.                                                  !
 !                                                                     !
 !     William F. Mitchell                                             !
-!     Mathematical and Computational Sciences Division                !
+!     Applied and Computational Mathematics Division                  !
 !     National Institute of Standards and Technology                  !
 !     william.mitchell@nist.gov                                       !
 !     http://math.nist.gov/phaml                                      !
@@ -30,6 +30,7 @@ use global
 use message_passing
 use hash_mod
 use gridtype_mod
+use grid_util
 use stopwatch
 use zoltan_interf
 use error_estimators

@@ -1,0 +1,58 @@
+This examples illustrates how to solve the heat equation
+
+u_t = Lu  where _t denotes the time derivative and L is the Laplacian
+
+using a fourth order implicit Runge Kutta method.  The method used here is
+described in Wang, Li and Mavriplis, Dimitri, Implicit solution of the
+unsteady Euler equations for high-order accurate discontinuous Galerkin
+discretizations, J. Comp. Phys., 225 (2007) pp. 1994-2015.
+
+This is a 6-stage RK method defined by
+
+(u^(s)-u^n)/dt - sum_j^s {a_sj Lu^(j)} = 0  for s=1..6
+
+where u^n is the solution at time step n, u^(s) is the solution at the s'th
+stage of the time step interval (t^n, t^{n+1}), dt is the time step, L is
+the Laplacian, and a_sj are the Butcher coefficients, which are given as
+rational numbers in an appendix of the Wang & Mavriplis paper, and can be
+found as double precision values in usermod.f90.  u^(6) is the solution at
+the next time step, i.e. u^{n+1} = u^(6).
+
+Since PHAML only provides one "old" solution, and this scheme requires six
+old solutions, we solve this as a system of six coupled equations where the
+s'th equation is the s'th stage.  (Certainly not the most efficient way to
+implement this scheme if you were starting from scratch, but if you used a
+fully implicit Runge Kutta scheme where the matrix of Butcher coefficients
+is not lower triangular, this approach would be necessary.)
+
+Noting that u^n is u_old^(6), i.e. the sixth component of the solution at the
+previous time step (which has been copied into u_old), and rearranging, we
+get the coupled system
+
+a_11 Lu^(1)                                 - u^(1)/dt = -u_old^(6)/dt
+a_21 Lu^(1) + a_22 Lu^(2)                   - u^(2)/dt = -u_old^(6)/dt
+...
+a_61 Lu^(1) + a_62 Lu^(2) +...+ a_66 Lu^(6) - u^(6)/dt = -u_old^(6)/dt
+
+Negating the equations and writing it in matrix form to see the arrays to
+define in pdecoefs, we get
+
+                            |1/dt                    |       | u_old^(6)/dt |
+                            |    1/dt                |       | u_old^(6)/dt |
+-(A |U|_x)_x -(A |U|_y)_y + |        1/dt            | |U| = | u_old^(6)/dt |
+                            |            1/dt        |       | u_old^(6)/dt |
+                            |                1/dt    |       | u_old^(6)/dt |
+                            |                    1/dt|       | u_old^(6)/dt |
+
+where |U| is the six-component vector solution, and A is the matrix of
+Butcher coefficients.
+
+Notice the solution at the current time step is in the sixth component of the
+solution, so for the graphics you should change the component being displayed
+to the sixth one.  If you leave it at the first component, that is the solution
+at the previous time step.
+
+Since A is not symmetric, you must use a nonsymmetric linear system solver,
+such as one of those from PETSc or MUMPS.  The example is currently configured
+to use the nonsymmetric solver from LAPACK, but this can only be used with
+nproc=1, and should not be used with a very fine grid.

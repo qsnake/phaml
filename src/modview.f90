@@ -9,7 +9,7 @@ module view_modifier
 
 ! William F. Mitchell
 ! william.mitchell@nist.gov
-! Mathematical and Computational Sciences Division
+! Applied and Computational Mathematics Division  
 ! National Institute of Standards and Technology
 ! April, 1998
 ! October, 2000 added multiwindow capability
@@ -672,12 +672,20 @@ call glutAddMenuEntry("quit",QUIT)
 ! bits are lost.
 
 call glMatrixMode(GL_PROJECTION)
-!call gluPerspective(10.0_gldouble, 1.0_gldouble, maxdomain*0.1_gldouble, &
-!                     maxdomain*200.0_gldouble)
-!call gluPerspective(10.0_gldouble, 1.0_gldouble, maxdomain*0.0001_gldouble, &
-!                     maxdomain*1000.0_gldouble)
+
+! this is my usual one
 call gluPerspective(10.0_gldouble, 1.0_gldouble, maxdomain*0.05_gldouble, &
                     maxdomain*500.0_gldouble)
+
+! this has a wider zoom range, but might have depth buffer precision problems
+!call gluPerspective(10.0_gldouble, 1.0_gldouble, maxdomain*0.0001_gldouble, &
+!                     maxdomain*1000.0_gldouble)
+
+! this one is terrible for depth buffer precision, but allows zooming to
+! see the elements at refinement level 53
+!call gluPerspective(10.0_gldouble, 1.0_gldouble, maxdomain*0.0000005_gldouble, &
+!                     maxdomain*100.0_gldouble)
+
 
 ! set the initial view
 

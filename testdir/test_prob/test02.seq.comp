@@ -1,5 +1,5 @@
 ---------------------------------------------------------
-           PHAML   Version 1.8.0
+           PHAML   Version 1.9.1
 
 Output from slave number     1
   PDE id is     0
@@ -20,6 +20,7 @@ Subroutine phaml_solve_pde parameters:
   print_grid_when    PHASES
   print_grid_who     SLAVES
   print_linsys_when  NEVER
+  print_solver_when  NEVER
   print_error_when   PHASES
   print_error_who    SLAVES
   print_error_what   ENERGY_LINF_L2_ERR
@@ -42,7 +43,7 @@ Subroutine phaml_solve_pde parameters:
   prebalance         BALANCE_ELEMENTS
   ignore_quad_err    false
   solver             MG_SOLVER
-  mg_cycles                   5
+  mg_cycles                  10
   mg_tol             MG_ERREST_TOL
   mg_prerelax                 1
   mg_postrelax                2
@@ -79,12 +80,12 @@ My Grid:
    min and max degree       =           1          1
 
 Norms of error:
-   energy norm of error       1.7094276011E-01
-      reduced by              4.8448430707E-01
-   Linf norm of error         2.8314571728E-02
-      reduced by              2.5058289280E-01
-   L2 norm of error           1.9658654025E-02
-      reduced by              2.3065302815E-01
+   energy norm of error       1.7094373300E-01
+      reduced by              4.8448706444E-01
+   Linf norm of error         2.8308128653E-02
+      reduced by              2.5052587183E-01
+   L2 norm of error           1.9650660099E-02
+      reduced by              2.3055923620E-01
 
 My Grid:
    number of vertices       =          41
@@ -98,12 +99,12 @@ My Grid:
    min and max degree       =           1          1
 
 Norms of error:
-   energy norm of error       1.1803974419E-01
-      reduced by              6.9052204442E-01
-   Linf norm of error         1.6684072505E-02
-      reduced by              5.8923979727E-01
-   L2 norm of error           1.2451445823E-02
-      reduced by              6.3338241812E-01
+   energy norm of error       1.1804008451E-01
+      reduced by              6.9052010529E-01
+   Linf norm of error         1.6683563868E-02
+      reduced by              5.8935594340E-01
+   L2 norm of error           1.2448101788E-02
+      reduced by              6.3346990509E-01
 
 My Grid:
    number of vertices       =          81
@@ -117,12 +118,12 @@ My Grid:
    min and max degree       =           1          1
 
 Norms of error:
-   energy norm of error       8.4320719362E-02
-      reduced by              7.1434176634E-01
-   Linf norm of error         7.1100966464E-03
-      reduced by              4.2616073770E-01
-   L2 norm of error           4.6527026138E-03
-      reduced by              3.7366765914E-01
+   energy norm of error       8.4321144677E-02
+      reduced by              7.1434330996E-01
+   Linf norm of error         7.1048140387E-03
+      reduced by              4.2585709474E-01
+   L2 norm of error           4.6461799238E-03
+      reduced by              3.7324404982E-01
 
 My Grid:
    number of vertices       =         145
@@ -136,12 +137,12 @@ My Grid:
    min and max degree       =           1          1
 
 Norms of error:
-   energy norm of error       5.8951086397E-02
-      reduced by              6.9912931060E-01
-   Linf norm of error         4.1954871525E-03
-      reduced by              5.9007456033E-01
-   L2 norm of error           3.0385015441E-03
-      reduced by              6.5306162812E-01
+   energy norm of error       5.8951263238E-02
+      reduced by              6.9912788143E-01
+   Linf norm of error         4.1952657584E-03
+      reduced by              5.9048213444E-01
+   L2 norm of error           3.0355123076E-03
+      reduced by              6.5333507470E-01
 
 My Grid:
    number of vertices       =         289
@@ -155,12 +156,12 @@ My Grid:
    min and max degree       =           1          1
 
 Norms of error:
-   energy norm of error       4.1904462316E-02
-      reduced by              7.1083443712E-01
-   Linf norm of error         1.7948841659E-03
-      reduced by              4.2781305260E-01
-   L2 norm of error           1.1198458909E-03
-      reduced by              3.6855202298E-01
+   energy norm of error       4.1904502916E-02
+      reduced by              7.1083299347E-01
+   Linf norm of error         1.7938935963E-03
+      reduced by              4.2759951327E-01
+   L2 norm of error           1.1186609122E-03
+      reduced by              3.6852458459E-01
 
 My Grid:
    number of vertices       =        1089
@@ -174,12 +175,12 @@ My Grid:
    min and max degree       =           1          1
 
 Norms of error:
-   energy norm of error       2.0891736355E-02
-      reduced by              4.9855636370E-01
-   Linf norm of error         4.5513675734E-04
-      reduced by              2.5357444564E-01
-   L2 norm of error           2.7378648771E-04
-      reduced by              2.4448586179E-01
+   energy norm of error       2.0891761194E-02
+      reduced by              4.9855647342E-01
+   Linf norm of error         4.5387433586E-04
+      reduced by              2.5301073419E-01
+   L2 norm of error           2.7237308980E-04
+      reduced by              2.4348136851E-01
 
 My Grid:
    number of vertices       =        1089
@@ -193,9 +194,9 @@ My Grid:
    min and max degree       =           1          1
 
 Norms of error:
-   energy norm of error       2.0891736355E-02
-   Linf norm of error         4.5513675734E-04
-   L2 norm of error           2.7378648771E-04
+   energy norm of error       2.0891761194E-02
+   Linf norm of error         4.5387433586E-04
+   L2 norm of error           2.7237308980E-04
 
 ---------------------------------------------------------
 phaml_solve_pde complete

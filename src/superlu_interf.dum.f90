@@ -11,7 +11,7 @@
 ! the United States.                                                  !
 !                                                                     !
 !     William F. Mitchell                                             !
-!     Mathematical and Computational Sciences Division                !
+!     Applied and Computational Mathematics Division                  !
 !     National Institute of Standards and Technology                  !
 !     william.mitchell@nist.gov                                       !
 !     http://math.nist.gov/phaml                                      !
@@ -21,7 +21,7 @@
 module superlu_interf
 
 !----------------------------------------------------
-! This module contains a dummhy version of the interface to the SuperLU package.
+! This module contains a dummy version of the interface to the SuperLU package.
 !----------------------------------------------------
 
 !----------------------------------------------------

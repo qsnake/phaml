@@ -11,7 +11,7 @@
 ! the United States.                                                  !
 !                                                                     !
 !     William F. Mitchell                                             !
-!     Mathematical and Computational Sciences Division                !
+!     Applied and Computational Mathematics Division                  !
 !     National Institute of Standards and Technology                  !
 !     william.mitchell@nist.gov                                       !
 !     http://math.nist.gov/phaml                                      !
@@ -88,7 +88,7 @@ call update_usermod(pde1)
 call phaml_solve_pde(pde1, &
                      max_vert=nvert, &
                      max_refsolveloop=nloop, &
-                     mg_cycles=5,  &
+                     mg_cycles=10, &
                      print_grid_when=PHASES    ,print_grid_who=MASTER  ,&
                      print_error_when=PHASES    ,print_error_who=MASTER, &
                      print_error_what=ENERGY_LINF_ERR, &

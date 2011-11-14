@@ -1,5 +1,5 @@
 ---------------------------------------------------------
-           PHAML   Version 1.8.0
+           PHAML   Version 1.9.1
 
 Output from the master process
   PDE id is     0
@@ -21,6 +21,7 @@ Subroutine phaml_solve_pde parameters:
   print_grid_when    FINAL
   print_grid_who     MASTER
   print_linsys_when  NEVER
+  print_solver_when  NEVER
   print_error_when   FINAL
   print_error_who    MASTER
   print_error_what   NEVER
@@ -53,15 +54,15 @@ Subroutine phaml_solve_pde parameters:
 ---------------------------------------------------------
 
 Total Grid:
-   number of vertices      =         433
-   number of leaf elements =         800
-   number of levels        =           8
-   degrees of freedom      =         433
+   number of vertices      =         289
+   number of leaf elements =         512
+   number of levels        =           7
+   degrees of freedom      =         289
    min and max degree      =           1          1
 
 Norms of error:
-   energy error estimate      1.6678790741E-02
-      effectivity             8.3393953703E-03
+   energy error estimate      2.0308371418E-02
+      effectivity             1.0154185709E-02
 
 ---------------------------------------------------------
 phaml_solve_pde complete

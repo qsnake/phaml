@@ -1,5 +1,5 @@
 ---------------------------------------------------------
-           PHAML   Version 1.8.0
+           PHAML   Version 1.9.1
 
 Output from the master process
   PDE id is     0
@@ -20,6 +20,7 @@ Subroutine phaml_solve_pde parameters:
   print_grid_when    FINAL
   print_grid_who     MASTER
   print_linsys_when  NEVER
+  print_solver_when  NEVER
   print_error_when   FINAL
   print_error_who    MASTER
   print_error_what   ENERGY_LINF_L2_ERR
@@ -42,7 +43,7 @@ Subroutine phaml_solve_pde parameters:
   prebalance         BALANCE_ELEMENTS
   ignore_quad_err    false
   solver             MG_SOLVER
-  mg_cycles                   2
+  mg_cycles                   5
   mg_tol             MG_ERREST_TOL
   mg_prerelax                 1
   mg_postrelax                2
@@ -52,16 +53,16 @@ Subroutine phaml_solve_pde parameters:
 ---------------------------------------------------------
 
 Total Grid:
-   number of vertices      =         637
-   number of leaf elements =        1197
-   number of levels        =          10
-   degrees of freedom      =         637
+   number of vertices      =         593
+   number of leaf elements =        1110
+   number of levels        =           9
+   degrees of freedom      =         593
    min and max degree      =           1          1
 
 Norms of error:
-   energy norm of error       8.1759077682E-02
-   Linf norm of error         4.7216097491E-03
-   L2 norm of error           1.7455985428E-03
+   energy norm of error       8.2911516289E-02
+   Linf norm of error         4.7204838437E-03
+   L2 norm of error           1.7385510291E-03
 
 ---------------------------------------------------------
 phaml_solve_pde complete

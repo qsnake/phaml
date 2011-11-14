@@ -11,7 +11,7 @@
 ! the United States.                                                  !
 !                                                                     !
 !     William F. Mitchell                                             !
-!     Mathematical and Computational Sciences Division                !
+!     Applied and Computational Mathematics Division                  !
 !     National Institute of Standards and Technology                  !
 !     william.mitchell@nist.gov                                       !
 !     http://math.nist.gov/phaml                                      !
@@ -56,11 +56,17 @@ public create_petsc_linear_system, create_petsc_linear_system_mf, &
 ! the Fortran include statement, because the include files contain
 ! preprocessor directives.
 
+! At PETSc 3.1 petsc.h was changed to just include the other .h's, so we
+! no longer need the others (in fact, they causes duplicate declarations)
+
+#include "include/petscversion.h"
 #include "include/finclude/petsc.h"
+#if (PETSC_VERSION_MAJOR < 3 || (PETSC_VERSION_MAJOR == 3 && PETSC_VERSION_MINOR == 0))
 #include "include/finclude/petscvec.h"
 #include "include/finclude/petscmat.h"
 #include "include/finclude/petscksp.h"
 #include "include/finclude/petscpc.h"
+#endif
 
 !----------------------------------------------------
 ! The following parameters are defined:
@@ -412,6 +418,7 @@ integer :: jerr
 Vec :: x
 real(kind(0.0d0)) :: temp1, temp2, temp3
 integer :: temp4, temp5
+!external KSPMonitorTrueResidualNorm ! TEMP101110 gfortran bug?
 !----------------------------------------------------
 ! Begin executable code
 
@@ -559,23 +566,6 @@ if (solver_cntl%petsc_cntl%petsc_icc_levels /= huge(0)) then
 
 ! For PETSc version 2.3.1 and later
    call PCFactorSetLevels(pc,solver_cntl%petsc_cntl%petsc_icc_levels,jerr)
-endif
-
-if (solver_cntl%petsc_cntl%petsc_ilu_dt /= huge(0.0d0) .or. &
-    solver_cntl%petsc_cntl%petsc_ilu_dtcol /= huge(0.0d0) .or. &
-    solver_cntl%petsc_cntl%petsc_ilu_maxrowcount /= huge(0)) then
-   temp1 = solver_cntl%petsc_cntl%petsc_ilu_dt
-   if (temp1 == huge(0.0d0)) temp1 = PETSC_DEFAULT_DOUBLE_PRECISION
-   temp2 = solver_cntl%petsc_cntl%petsc_ilu_dtcol
-   if (temp2 == huge(0.0d0)) temp2 = PETSC_DEFAULT_DOUBLE_PRECISION
-   temp4 = solver_cntl%petsc_cntl%petsc_ilu_maxrowcount
-   if (temp4 == huge(0)) temp4 = PETSC_DEFAULT_INTEGER
-
-! For PETSc versions before 2.3.1
-!   call PCILUSetUseDropTolerance(pc,temp1,temp2,temp4,jerr)
-
-! For PETSc version 2.3.1 and later
-   call PCFactorSetUseDropTolerance(pc,temp1,temp2,temp4,jerr)
 endif
 
 if (solver_cntl%petsc_cntl%petsc_sor_omega /= huge(0.0d0)) then
@@ -1160,7 +1150,8 @@ type(proc_info), intent(in), target :: procs
 !----------------------------------------------------
 ! Local variables:
 
-integer :: jerr
+integer :: jerr, dummy_niter
+
 !----------------------------------------------------
 ! Begin executable code
 
@@ -1212,9 +1203,10 @@ endif
 
 ! call the C routine
 
-call petsc_lobpcg_solve_c(petsc_M%b,petsc_M%my_own_eq, &
+call petsc_lobpcg_solve_c(petsc_M%b, &
                           solver_cntl%num_eval, &
                           solver_cntl%blopex_cntl%maxit, &
+                          dummy_niter, &
                           solver_cntl%blopex_cntl%atol, &
                           solver_cntl%blopex_cntl%rtol, &
                           grid%eigenvalue, petsc_lobpcg_opA, &
@@ -1360,7 +1352,7 @@ subroutine petsc_lobpcg_opA(matrix,avec,bvec,jerr)
 
 !----------------------------------------------------
 ! This routine provides the callback for multiplication by the shift-invert
-! matrix M (A - lambda0 M)^(-1) M for lobpcg, or by A if there is not shift.
+! matrix M (A - lambda0 M)^(-1) M for lobpcg, or by A if there is not a shift.
 !----------------------------------------------------
 
 !----------------------------------------------------
@@ -1790,44 +1782,48 @@ if (petsc_hold%solver_cntl%lambda0 == -huge(0.0_my_real)) then
 elseif (petsc_hold%solver_cntl%transformation == SHIFT_INVERT) then
 
 
-   call change_petsc_rhs(invec,petsc_M)
-   full_matrix%matrix_val => full_matrix%mass
-   call petsc_solve(full_matrix,petsc_M,petsc_hold%solver_cntl, &
-                    petsc_hold%io_cntl,petsc_hold%still_sequential, &
-                    petsc_hold%grid,petsc_hold%procs)
-   petsc_hold = hold_petsc_hold
-   outvec = full_matrix%solution(1:)
-   full_matrix%matrix_val => full_matrix%stiffness
+!   call change_petsc_rhs(invec,petsc_M)
+!   full_matrix%matrix_val => full_matrix%mass
+!   call petsc_solve(full_matrix,petsc_M,petsc_hold%solver_cntl, &
+!                    petsc_hold%io_cntl,petsc_hold%still_sequential, &
+!                    petsc_hold%grid,petsc_hold%procs)
+!   petsc_hold = hold_petsc_hold
+!   outvec = full_matrix%solution(1:)
+!   full_matrix%matrix_val => full_matrix%stiffness
+
+   outvec = invec ! TEMP101201 identity preconditioner
 
 ! If lambda0 is not -infinity and the transformation is SHIFT_SQUARE,
 ! precondition with A^-1 M A^-1
 
 else
 
-   hold_petsc_hold = petsc_hold
-   call change_petsc_rhs(invec,petsc_A)
-   hold_matval => petsc_hold%phaml_full_matrix%matrix_val
-   petsc_hold%phaml_full_matrix%matrix_val => petsc_hold%phaml_full_matrix%stiffness
-   call petsc_solve(petsc_hold%phaml_full_matrix,petsc_A,petsc_hold%solver_cntl, &
-                       petsc_hold%io_cntl,petsc_hold%still_sequential, &
-                       petsc_hold%grid,petsc_hold%procs)
-   petsc_hold = hold_petsc_hold
-   invec = petsc_hold%phaml_full_matrix%solution(1:)
-   petsc_hold%phaml_full_matrix%matrix_val => petsc_hold%phaml_full_matrix%mass
-   call matrix_times_vector(invec,outvec,petsc_hold%phaml_full_matrix, &
-                         petsc_hold%procs,petsc_hold%still_sequential, &
-                         1661,1662,1663,1664,1665,1666,nodirch=.true.)
-   invec = outvec
-   call change_petsc_rhs(invec,petsc_A)
-   petsc_hold%phaml_full_matrix%matrix_val => petsc_hold%phaml_full_matrix%stiffness
-   call petsc_solve(petsc_hold%phaml_full_matrix,petsc_A,petsc_hold%solver_cntl, &
-                       petsc_hold%io_cntl,petsc_hold%still_sequential, &
-                       petsc_hold%grid,petsc_hold%procs)
-   petsc_hold = hold_petsc_hold
-   petsc_hold%phaml_full_matrix%matrix_val => hold_matval
-   invec = petsc_hold%phaml_full_matrix%solution(1:)
+   outvec = invec ! TEMP101201 identity preconditioner
 
-   outvec = invec
+!   hold_petsc_hold = petsc_hold
+!   call change_petsc_rhs(invec,petsc_A)
+!   hold_matval => petsc_hold%phaml_full_matrix%matrix_val
+!   petsc_hold%phaml_full_matrix%matrix_val => petsc_hold%phaml_full_matrix%stiffness
+!   call petsc_solve(petsc_hold%phaml_full_matrix,petsc_A,petsc_hold%solver_cntl, &
+!                       petsc_hold%io_cntl,petsc_hold%still_sequential, &
+!                       petsc_hold%grid,petsc_hold%procs)
+!   petsc_hold = hold_petsc_hold
+!   invec = petsc_hold%phaml_full_matrix%solution(1:)
+!   petsc_hold%phaml_full_matrix%matrix_val => petsc_hold%phaml_full_matrix%mass
+!   call matrix_times_vector(invec,outvec,petsc_hold%phaml_full_matrix, &
+!                         petsc_hold%procs,petsc_hold%still_sequential, &
+!                         1661,1662,1663,1664,1665,1666,nodirch=.true.)
+!   invec = outvec
+!   call change_petsc_rhs(invec,petsc_A)
+!   petsc_hold%phaml_full_matrix%matrix_val => petsc_hold%phaml_full_matrix%stiffness
+!   call petsc_solve(petsc_hold%phaml_full_matrix,petsc_A,petsc_hold%solver_cntl, &
+!                       petsc_hold%io_cntl,petsc_hold%still_sequential, &
+!                       petsc_hold%grid,petsc_hold%procs)
+!   petsc_hold = hold_petsc_hold
+!   petsc_hold%phaml_full_matrix%matrix_val => hold_matval
+!   invec = petsc_hold%phaml_full_matrix%solution(1:)
+!
+!   outvec = invec
 
 endif ! lambda0 == -inf
 

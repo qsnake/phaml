@@ -11,7 +11,7 @@
 ! the United States.                                                  !
 !                                                                     !
 !     William F. Mitchell                                             !
-!     Mathematical and Computational Sciences Division                !
+!     Applied and Computational Mathematics Division                  !
 !     National Institute of Standards and Technology                  !
 !     william.mitchell@nist.gov                                       !
 !     http://math.nist.gov/phaml                                      !
@@ -42,15 +42,12 @@ type petsc_options
    real(kind(0.0d0)) :: petsc_rtol
    real(kind(0.0d0)) :: petsc_atol
    real(kind(0.0d0)) :: petsc_dtol
-   real(kind(0.0d0)) :: petsc_ilu_dt
-   real(kind(0.0d0)) :: petsc_ilu_dtcol
    real(kind(0.0d0)) :: petsc_sor_omega
    real(kind(0.0d0)) :: petsc_eisenstat_omega
    integer :: petsc_gmres_max_steps
    integer :: petsc_maxits
    integer :: petsc_ilu_levels
    integer :: petsc_icc_levels
-   integer :: petsc_ilu_maxrowcount
    integer :: petsc_sor_its
    integer :: petsc_sor_lits
    integer :: petsc_asm_overlap
@@ -58,7 +55,6 @@ type petsc_options
 end type petsc_options
 
 type(petsc_options), parameter :: petsc_dummy = petsc_options(0.0d0, 0.0d0, &
-   0.0d0, 0.0d0, 0.0d0, 0.0d0, 0.0d0, 0.0d0, 0.0d0, 0.0d0, 0, 0, 0, 0, 0, 0, &
-   0, 0, .false.)
+   0.0d0, 0.0d0, 0.0d0, 0.0d0, 0.0d0, 0.0d0, 0, 0, 0, 0, 0, 0, 0, .false.)
 
 end module petsc_type_mod

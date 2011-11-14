@@ -4,3 +4,4 @@ test03 query
 test04 evaluate
 test05 update_usermod
 test06 store_matrix
+test07 get_grid_soln

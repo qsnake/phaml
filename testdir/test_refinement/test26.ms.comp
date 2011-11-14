@@ -1,5 +1,5 @@
 ---------------------------------------------------------
-           PHAML   Version 1.8.0
+           PHAML   Version 1.9.1
 
 Output from the master process
   PDE id is     0
@@ -20,6 +20,7 @@ Subroutine phaml_solve_pde parameters:
   print_grid_when    PHASES
   print_grid_who     MASTER
   print_linsys_when  NEVER
+  print_solver_when  NEVER
   print_error_when   NEVER
   print_time_when    NEVER
   pause_after_draw   false
@@ -39,7 +40,7 @@ Subroutine phaml_solve_pde parameters:
   prebalance         BALANCE_ELEMENTS
   ignore_quad_err    false
   solver             MG_SOLVER
-  mg_cycles                   2
+  mg_cycles                   5
   mg_tol             MG_ERREST_TOL
   mg_prerelax                 1
   mg_postrelax                2
@@ -63,24 +64,24 @@ Total Grid:
    min and max degree      =           1          1
 
 Total Grid:
-   number of vertices      =         144
-   number of leaf elements =         242
-   number of levels        =           9
-   degrees of freedom      =         144
+   number of vertices      =         222
+   number of leaf elements =         368
+   number of levels        =          10
+   degrees of freedom      =         222
    min and max degree      =           1          1
 
 Total Grid:
-   number of vertices      =         580
-   number of leaf elements =        1058
-   number of levels        =          11
-   degrees of freedom      =         580
+   number of vertices      =         710
+   number of leaf elements =        1274
+   number of levels        =          12
+   degrees of freedom      =         710
    min and max degree      =           1          1
 
 Total Grid:
-   number of vertices      =         580
-   number of leaf elements =        1058
-   number of levels        =          11
-   degrees of freedom      =         580
+   number of vertices      =         710
+   number of leaf elements =        1274
+   number of levels        =          12
+   degrees of freedom      =         710
    min and max degree      =           1          1
 
 ---------------------------------------------------------

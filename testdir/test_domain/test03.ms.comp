@@ -1,5 +1,5 @@
 ---------------------------------------------------------
-           PHAML   Version 1.8.0
+           PHAML   Version 1.9.1
 
 Output from the master process
   PDE id is     3
@@ -20,6 +20,7 @@ Subroutine phaml_solve_pde parameters:
   print_grid_when    PHASES
   print_grid_who     MASTER
   print_linsys_when  NEVER
+  print_solver_when  NEVER
   print_error_when   FINAL
   print_error_who    MASTER
   print_error_what   LINF_ERR
@@ -52,35 +53,35 @@ Subroutine phaml_solve_pde parameters:
 ---------------------------------------------------------
 
 Total Grid:
-   number of vertices      =         418
-   number of leaf elements =         745
+   number of vertices      =         410
+   number of leaf elements =         732
    number of levels        =           1
-   degrees of freedom      =         418
+   degrees of freedom      =         410
    min and max degree      =           1          1
 
 Total Grid:
-   number of vertices      =         907
-   number of leaf elements =        1686
+   number of vertices      =         854
+   number of leaf elements =        1580
    number of levels        =           3
-   degrees of freedom      =         907
+   degrees of freedom      =         854
    min and max degree      =           1          1
 
 Total Grid:
-   number of vertices      =        1863
-   number of leaf elements =        3532
+   number of vertices      =        1976
+   number of leaf elements =        3739
    number of levels        =           4
-   degrees of freedom      =        1863
+   degrees of freedom      =        1976
    min and max degree      =           1          1
 
 Total Grid:
-   number of vertices      =        1863
-   number of leaf elements =        3532
+   number of vertices      =        1976
+   number of leaf elements =        3739
    number of levels        =           4
-   degrees of freedom      =        1863
+   degrees of freedom      =        1976
    min and max degree      =           1          1
 
 Norms of error:
-   Linf norm of error         3.7382662700E-03
+   Linf norm of error         3.0364325548E-03
 
 ---------------------------------------------------------
 phaml_solve_pde complete

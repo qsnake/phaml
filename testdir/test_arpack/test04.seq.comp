@@ -1,5 +1,5 @@
 ---------------------------------------------------------
-           PHAML   Version 1.8.0
+           PHAML   Version 1.9.1
 
 Output from slave number     1
   PDE id is     0
@@ -20,6 +20,7 @@ Subroutine phaml_solve_pde parameters:
   print_grid_when    PHASES
   print_grid_who     SLAVES
   print_linsys_when  NEVER
+  print_solver_when  NEVER
   print_error_when   PHASES
   print_error_who    SLAVES
   print_error_what   ENERGY_LINF_ERR
@@ -73,113 +74,113 @@ My Grid:
 
 Norms of error:
  Eigenvector           1
-   energy norm of error       8.5657831087E-01
+   energy norm of error       8.5561840990E-01
    energy error estimate      3.3353373990E-01
-      effectivity             3.8937915620E-01
+      effectivity             3.8981599279E-01
    Linf norm of error         1.3374885086E-01
    Linf error estimate        9.8650670987E-02
       effectivity             7.3758144726E-01
 
 My Grid:
-   number of vertices       =         275
-   number of vertices I own =         275
-   number of elements       =         776
-   number of leaf elements  =         516
-   leaf elements I own      =         516
+   number of vertices       =         301
+   number of vertices I own =         301
+   number of elements       =         880
+   number of leaf elements  =         568
+   leaf elements I own      =         568
    number of levels         =           7
-   degrees of freedom       =         275
-   degrees of freedom I own =         275
+   degrees of freedom       =         301
+   degrees of freedom I own =         301
    min and max degree       =           1          1
 
 Norms of error:
  Eigenvector           1
-   energy norm of error       3.7678755958E-01
-      reduced by              4.3987520441E-01
-   energy error estimate      9.4698089886E-02
-      reduced by              2.8392356921E-01
-      effectivity             2.5133019251E-01
-   Linf norm of error         2.7322464301E-02
-      reduced by              2.0428186205E-01
-   Linf error estimate        4.2589603745E-03
-      reduced by              4.3172137928E-02
-      effectivity             1.5587760780E-01
+   energy norm of error       3.5290423727E-01
+      reduced by              4.1245517065E-01
+   energy error estimate      8.7119180194E-02
+      reduced by              2.6120050169E-01
+      effectivity             2.4686351422E-01
+   Linf norm of error         2.7416902346E-02
+      reduced by              2.0498794696E-01
+   Linf error estimate        3.9380440680E-03
+      reduced by              3.9919080414E-02
+      effectivity             1.4363563098E-01
 
 Eigenvalues and error estimates:
-     9.8630549324E+00  6.5466620391E-02
+     9.8395691435E+00  5.4379087142E-02
 
 My Grid:
-   number of vertices       =         613
-   number of vertices I own =         613
-   number of elements       =        2128
-   number of leaf elements  =        1192
-   leaf elements I own      =        1192
+   number of vertices       =         593
+   number of vertices I own =         593
+   number of elements       =        2048
+   number of leaf elements  =        1152
+   leaf elements I own      =        1152
    number of levels         =           8
-   degrees of freedom       =         613
-   degrees of freedom I own =         613
+   degrees of freedom       =         593
+   degrees of freedom I own =         593
    min and max degree       =           1          1
 
 Norms of error:
  Eigenvector           1
-   energy norm of error       1.9143728201E-01
-      reduced by              5.0807750186E-01
-   energy error estimate      4.9073342332E-02
-      reduced by              5.1820836504E-01
-      effectivity             2.5634161652E-01
-   Linf norm of error         6.7347327001E-03
-      reduced by              2.4649067616E-01
-   Linf error estimate        1.1409586575E-03
-      reduced by              2.6789604909E-01
-      effectivity             1.6941409680E-01
+   energy norm of error       1.9487203889E-01
+      reduced by              5.5219523688E-01
+   energy error estimate      4.9969366130E-02
+      reduced by              5.7357479741E-01
+      effectivity             2.5642142615E-01
+   Linf norm of error         7.0081896685E-03
+      reduced by              2.5561566293E-01
+   Linf error estimate        1.3469930856E-03
+      reduced by              3.4204621948E-01
+      effectivity             1.9220271558E-01
 
 Eigenvalues and error estimates:
-     9.7131319943E+00  2.0162729865E-02
+     9.7150685416E+00  2.0978737430E-02
 
 My Grid:
-   number of vertices       =        1201
-   number of vertices I own =        1201
-   number of elements       =        4480
-   number of leaf elements  =        2368
-   leaf elements I own      =        2368
-   number of levels         =          10
-   degrees of freedom       =        1201
-   degrees of freedom I own =        1201
+   number of vertices       =        1209
+   number of vertices I own =        1209
+   number of elements       =        4512
+   number of leaf elements  =        2384
+   leaf elements I own      =        2384
+   number of levels         =           9
+   degrees of freedom       =        1209
+   degrees of freedom I own =        1209
    min and max degree       =           1          1
 
 Norms of error:
  Eigenvector           1
-   energy norm of error       1.3235863528E-01
-      reduced by              6.9139424616E-01
-   energy error estimate      3.3081227576E-02
-      reduced by              6.7411808537E-01
-      effectivity             2.4993630001E-01
-   Linf norm of error         5.1212613603E-03
-      reduced by              7.6042533361E-01
-   Linf error estimate        5.4967114669E-04
-      reduced by              4.8176254508E-01
-      effectivity             1.0733120378E-01
+   energy norm of error       1.3256921685E-01
+      reduced by              6.8028855039E-01
+   energy error estimate      3.3013775402E-02
+      reduced by              6.6068029192E-01
+      effectivity             2.4903047771E-01
+   Linf norm of error         4.9281348353E-03
+      reduced by              7.0319655552E-01
+   Linf error estimate        5.4973639420E-04
+      reduced by              4.0812117009E-01
+      effectivity             1.1155059928E-01
 
 Eigenvalues and error estimates:
-     9.6851126775E+00  8.8592830723E-03
+     9.6851931225E+00  9.1496760330E-03
 
 My Grid:
-   number of vertices       =        1201
-   number of vertices I own =        1201
-   number of elements       =        4480
-   number of leaf elements  =        2368
-   leaf elements I own      =        2368
-   number of levels         =          10
-   degrees of freedom       =        1201
-   degrees of freedom I own =        1201
+   number of vertices       =        1209
+   number of vertices I own =        1209
+   number of elements       =        4512
+   number of leaf elements  =        2384
+   leaf elements I own      =        2384
+   number of levels         =           9
+   degrees of freedom       =        1209
+   degrees of freedom I own =        1209
    min and max degree       =           1          1
 
 Norms of error:
  Eigenvector           1
-   energy norm of error       1.3235863528E-01
-   energy error estimate      3.3081227576E-02
-      effectivity             2.4993630001E-01
-   Linf norm of error         5.1212613603E-03
-   Linf error estimate        5.4967114669E-04
-      effectivity             1.0733120378E-01
+   energy norm of error       1.3256921685E-01
+   energy error estimate      3.3013775402E-02
+      effectivity             2.4903047771E-01
+   Linf norm of error         4.9281348353E-03
+   Linf error estimate        5.4973639420E-04
+      effectivity             1.1155059928E-01
 
 ---------------------------------------------------------
 phaml_solve_pde complete

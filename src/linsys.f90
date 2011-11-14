@@ -11,7 +11,7 @@
 ! the United States.                                                  !
 !                                                                     !
 !     William F. Mitchell                                             !
-!     Mathematical and Computational Sciences Division                !
+!     Applied and Computational Mathematics Division                  !
 !     National Institute of Standards and Technology                  !
 !     william.mitchell@nist.gov                                       !
 !     http://math.nist.gov/phaml                                      !
@@ -100,7 +100,8 @@ logical, intent(in), optional :: no_time
 !----------------------------------------------------
 ! Local variables:
 
-integer :: i,j,lev,vert,elem,edge,eq,objtype,brank,srank,lid,loc_neq,info,ss
+integer :: i,j,lev,vert,elem,edge,eq,objtype,brank,srank,lid,loc_neq,info,ss, &
+           my_master
 type(linsys_type) :: linear_system
 real(my_real), pointer :: block(:,:)
 integer, pointer :: ipiv(:)
@@ -127,6 +128,11 @@ if (ierr /= 0) then
                 intlist=(/ierr/))
     return
 endif
+
+! Print linear system summary
+
+call print_linsys_info(linear_system,procs,io_cntl,still_sequential, &
+                       (/PHASES,FREQUENTLY,TOO_MUCH/),1001)
 
 !call count_memory(linear_system)
 
@@ -246,6 +252,12 @@ case (ELLIPTIC)
                            .true.)
    endif
 
+! Print solver summary before returning to non-condensed matrix, because in
+! some cases the face basis equations no longer exist
+
+   call print_solver_info(linear_system,procs,io_cntl,still_sequential, &
+                          (/PHASES,FREQUENTLY,TOO_MUCH/),1004)
+
 ! return linear system delimiters to the non-condensed matrix; however, the
 ! matrix values and rhs for rows associated with vertex and edge bases remain
 ! the statically condensed Schur complement values, unless the stiffness matrix
@@ -343,11 +355,6 @@ end select
 
 if (my_proc(procs) /= MASTER) then
 
-! Print linear system summary
-
-   call print_linsys_info(linear_system,procs,io_cntl,still_sequential, &
-                          (/PHASES,FREQUENTLY,TOO_MUCH/),1001)
-
 ! copy the new solution to the grid only if no error has occured
 
    if (ierr == 0) then
@@ -392,12 +399,14 @@ if (my_proc(procs) /= MASTER) then
          vert = grid%head_level_vert(lev)
          do while (vert /= END_OF_LIST)
             do i=1,grid%system_size
-               if (grid%vertex_type(vert,i) == PERIODIC_SLAVE .or. &
-                   grid%vertex_type(vert,i) == PERIODIC_SLAVE_NAT .or. &
-                   grid%vertex_type(vert,i) == PERIODIC_SLAVE_MIX) then
-                  grid%vertex_solution(vert,i,:) = &
-                     grid%vertex_solution(grid%vertex(vert)%next,i,:)
-               endif
+               my_master = vert
+               do while (grid%vertex_type(my_master,i) == PERIODIC_SLAVE .or. &
+                     grid%vertex_type(my_master,i) == PERIODIC_SLAVE_NAT .or. &
+                     grid%vertex_type(my_master,i) == PERIODIC_SLAVE_MIX)
+                  my_master = grid%vertex(my_master)%next
+               end do
+               grid%vertex_solution(vert,i,:) = &
+                  grid%vertex_solution(my_master,i,:)
             end do
             vert = grid%vertex(vert)%next
          end do
@@ -456,11 +465,6 @@ if (my_proc(procs) /= MASTER) then
       call destroy_superlu_linear_system(linear_system%superlu_matrix,procs)
       linear_system%superlu_matrix_exists = .false.
    endif
-
-else ! MASTER
-
-   call print_linsys_info(linear_system,procs,io_cntl,still_sequential, &
-                          (/PHASES,FREQUENTLY,TOO_MUCH/),1001)
 
 endif
 

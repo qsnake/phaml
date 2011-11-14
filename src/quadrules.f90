@@ -175,12 +175,16 @@ if (order < 1 .or. order > MAX_QUAD_ORDER_LINE) then
    return
 endif
 
-! on first call, set up the quadrature rule data base
+! On first call, set up the quadrature rule data base.  For OpenMP, make
+! this critical so only one thread does the initialization, and the others
+! wait until it is done.
 
+!$omp critical (quad_rule_line_init_critical)
 if (first_call) then
    call setup_line(ierr)
    first_call = .false.
 endif
+!$omp end critical (quad_rule_line_init_critical)
 
 ! some rules are missing; use the first available rule that is larger
 
@@ -342,12 +346,16 @@ else
    loc_order = order
 endif
 
-! on first call, set up the quadrature rule data base
+! On first call, set up the quadrature rule data base.  For OpenMP, make
+! this critical so only one thread does the initialization, and the others
+! wait until it is done.
 
+!$omp critical (quad_rule_tri_init_critical)
 if (first_call) then
    call setup_tri(ierr)
    first_call = .false.
 endif
+!$omp end critical (quad_rule_tri_init_critical)
 
 ! area of the triangle
 

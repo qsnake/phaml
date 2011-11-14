@@ -1,5 +1,5 @@
 ---------------------------------------------------------
-           PHAML   Version 1.8.0
+           PHAML   Version 1.9.1
 
 Output from the master process
   PDE id is     0
@@ -21,6 +21,8 @@ Subroutine phaml_solve_pde parameters:
   print_grid_who     MASTER
   print_linsys_when  PHASES
   print_linsys_who   MASTER
+  print_solver_when  PHASES
+  print_solver_who   MASTER
   print_error_when   TOO_MUCH
   print_error_who    MASTER
   print_error_what   ENERGY_ERR
@@ -43,7 +45,7 @@ Subroutine phaml_solve_pde parameters:
   prebalance         BALANCE_ELEMENTS
   ignore_quad_err    false
   solver             MG_SOLVER
-  mg_cycles                   2
+  mg_cycles                   5
   mg_tol             MG_ERREST_TOL
   mg_prerelax                 1
   mg_postrelax                2
@@ -59,6 +61,12 @@ Total Grid:
    degrees of freedom      =           9
    min and max degree      =           1          1
 
+Total Linear System:
+   number of equations =           9
+   number of nonzeroes =          41
+   condensed matrix number of equations =           9
+   condensed matrix number of nonzeroes =          41
+
 L2 norm of linear system residual
 
       iteration    absolute residual    relative residual      reduction
@@ -72,6 +80,10 @@ L2 norm of linear system residual
       iteration    absolute residual    relative residual      reduction
 
            0  8.8817841970E-16  1.8361992673E-16
+
+Solver information:
+   number of iterations =           1
+   relative residual =   1.8361992673E-16
 After solution, full matrix:
 
 L2 norm of linear system residual
@@ -80,69 +92,64 @@ L2 norm of linear system residual
 
            0  8.8817841970E-16  1.8361992673E-16
 
-Total Linear System:
-   number of equations =           9
-   number of nonzeroes =          41
-   condensed matrix number of equations =           9
-   condensed matrix number of nonzeroes =          41
-   coarse matrix neq =           1
-   coarse (half) bandwidth =           0
-
 Norms of error:
-   energy norm of error       3.8589726446E+00
+   energy norm of error       4.0333158308E+00
    energy error estimate      2.7431604171E+00
-      effectivity             7.1085251689E-01
+      effectivity             6.8012536884E-01
 
 Norms of error:
-   energy norm of error       3.8589726446E+00
+   energy norm of error       4.0333158308E+00
       reduced by              1.0000000000E+00
    energy error estimate      2.7431604171E+00
       reduced by              1.0000000000E+00
-      effectivity             7.1085251689E-01
+      effectivity             6.8012536884E-01
 
 Total Grid:
-   number of vertices      =          27
-   number of leaf elements =          38
-   number of levels        =           4
-   degrees of freedom      =          27
+   number of vertices      =          29
+   number of leaf elements =          40
+   number of levels        =           5
+   degrees of freedom      =          29
    min and max degree      =           1          1
+
+Total Linear System:
+   number of equations =          29
+   number of nonzeroes =         165
+   condensed matrix number of equations =          29
+   condensed matrix number of nonzeroes =         165
 
 L2 norm of linear system residual
 
       iteration    absolute residual    relative residual      reduction
 
-           0  2.6503866813E+00  6.4726454348E-01
-           1  4.9559046554E-03  1.2103069288E-03  1.8698798520E-03
-           2  3.0094351039E-04  7.3494960278E-05  6.0724233276E-02
+           0  2.2619968672E+00  5.5062264617E-01
+           1  2.0823235471E-02  5.0688598131E-03  9.2056871403E-03
+           2  9.8150651112E-04  2.3892151233E-04  4.7135158822E-02
+           3  4.9747551850E-05  1.2109711131E-05  5.0684892343E-02
 After solution, condensed matrix:
 
 L2 norm of linear system residual
 
       iteration    absolute residual    relative residual      reduction
 
-           0  3.0094351039E-04  7.3494960278E-05
+           0  4.9747551850E-05  1.2109711131E-05
+
+Solver information:
+   number of iterations =           3
+   relative residual =   1.2109711131E-05
 After solution, full matrix:
 
 L2 norm of linear system residual
 
       iteration    absolute residual    relative residual      reduction
 
-           0  3.0094351039E-04  7.3494960278E-05
-
-Total Linear System:
-   number of equations =          27
-   number of nonzeroes =         155
-   condensed matrix number of equations =          27
-   condensed matrix number of nonzeroes =         155
-   coarse matrix neq =           1
-   coarse (half) bandwidth =           0
+           0  4.9747551850E-05  1.2109711131E-05
 
 Norms of error:
-   energy norm of error       2.9445325982E+00
-      reduced by              7.6303536442E-01
-   energy error estimate      1.1756831885E+00
-      reduced by              4.2858710748E-01
-      effectivity             3.9927667611E-01
+   energy norm of error       3.0143042418E+00
+      reduced by              7.4735140224E-01
+   energy error estimate      1.0981744617E+00
+      reduced by              4.0033184163E-01
+      effectivity             3.6432104179E-01
 
 Total Grid:
    number of vertices      =          36
@@ -151,42 +158,45 @@ Total Grid:
    degrees of freedom      =          36
    min and max degree      =           1          1
 
+Total Linear System:
+   number of equations =          36
+   number of nonzeroes =         202
+   condensed matrix number of equations =          36
+   condensed matrix number of nonzeroes =         202
+
 L2 norm of linear system residual
 
       iteration    absolute residual    relative residual      reduction
 
            0  3.4985670214E+00  8.8146938793E-01
-           1  2.1189505379E-02  5.3387287489E-03  6.0566241119E-03
-           2  6.3113201352E-04  1.5901468980E-04  2.9785122504E-02
+           1  2.1287715040E-02  5.3634728254E-03  6.0846955082E-03
+           2  7.3492194661E-04  1.8516472444E-04  3.4523289382E-02
+           3  2.4388700000E-05  6.1447707961E-06  3.3185428891E-02
 After solution, condensed matrix:
 
 L2 norm of linear system residual
 
       iteration    absolute residual    relative residual      reduction
 
-           0  6.3113201352E-04  1.5901468980E-04
+           0  2.4388700000E-05  6.1447707961E-06
+
+Solver information:
+   number of iterations =           3
+   relative residual =   6.1447707961E-06
 After solution, full matrix:
 
 L2 norm of linear system residual
 
       iteration    absolute residual    relative residual      reduction
 
-           0  6.3113201352E-04  1.5901468980E-04
-
-Total Linear System:
-   number of equations =          36
-   number of nonzeroes =         202
-   condensed matrix number of equations =          36
-   condensed matrix number of nonzeroes =         202
-   coarse matrix neq =           1
-   coarse (half) bandwidth =           0
+           0  2.4388700000E-05  6.1447707961E-06
 
 Norms of error:
-   energy norm of error       2.9224776076E+00
-      reduced by              9.9250985007E-01
-   energy error estimate      8.7511040785E-01
-      reduced by              7.4434202717E-01
-      effectivity             2.9944127051E-01
+   energy norm of error       2.9236222992E+00
+      reduced by              9.6991612813E-01
+   energy error estimate      8.7510892718E-01
+      reduced by              7.9687604997E-01
+      effectivity             2.9932352323E-01
 
 Total Grid:
    number of vertices      =          75
@@ -195,180 +205,199 @@ Total Grid:
    degrees of freedom      =          75
    min and max degree      =           1          1
 
-L2 norm of linear system residual
-
-      iteration    absolute residual    relative residual      reduction
-
-           0  6.7412312681E+00  1.8598051573E+00
-           1  6.0667917104E-02  1.6737373430E-02  8.9995306038E-03
-           2  3.3511421904E-03  9.2453014599E-04  5.5237469001E-02
-After solution, condensed matrix:
-
-L2 norm of linear system residual
-
-      iteration    absolute residual    relative residual      reduction
-
-           0  3.3511421904E-03  9.2453014599E-04
-After solution, full matrix:
-
-L2 norm of linear system residual
-
-      iteration    absolute residual    relative residual      reduction
-
-           0  3.3511421904E-03  9.2453014599E-04
-
 Total Linear System:
    number of equations =          75
    number of nonzeroes =         439
    condensed matrix number of equations =          75
    condensed matrix number of nonzeroes =         439
-   coarse matrix neq =           1
-   coarse (half) bandwidth =           0
+
+L2 norm of linear system residual
+
+      iteration    absolute residual    relative residual      reduction
+
+           0  6.7412312681E+00  1.8598051573E+00
+           1  5.8945749277E-02  1.6262253014E-02  8.7440627584E-03
+           2  3.3899993918E-03  9.3525026827E-04  5.7510497930E-02
+           3  2.0013997050E-04  5.5215632651E-05  5.9038349973E-02
+           4  1.1771683048E-05  3.2476317711E-06  5.8817251840E-02
+After solution, condensed matrix:
+
+L2 norm of linear system residual
+
+      iteration    absolute residual    relative residual      reduction
+
+           0  1.1771683048E-05  3.2476317711E-06
+
+Solver information:
+   number of iterations =           4
+   relative residual =   3.2476317711E-06
+After solution, full matrix:
+
+L2 norm of linear system residual
+
+      iteration    absolute residual    relative residual      reduction
+
+           0  1.1771683048E-05  3.2476317712E-06
 
 Norms of error:
-   energy norm of error       2.0694628300E+00
-      reduced by              7.0811931104E-01
-   energy error estimate      5.2471032703E-01
-      reduced by              5.9959328826E-01
-      effectivity             2.5354904637E-01
+   energy norm of error       2.0694813748E+00
+      reduced by              7.0784840278E-01
+   energy error estimate      5.2467006054E-01
+      reduced by              5.9954828964E-01
+      effectivity             2.5352731700E-01
 
 Total Grid:
-   number of vertices      =         171
-   number of leaf elements =         294
+   number of vertices      =         170
+   number of leaf elements =         290
    number of levels        =           9
-   degrees of freedom      =         171
+   degrees of freedom      =         170
    min and max degree      =           1          1
+
+Total Linear System:
+   number of equations =         170
+   number of nonzeroes =        1088
+   condensed matrix number of equations =         170
+   condensed matrix number of nonzeroes =        1088
 
 L2 norm of linear system residual
 
       iteration    absolute residual    relative residual      reduction
 
-           0  1.0089287839E+01  3.4835774664E+00
-           1  2.0796287430E-01  7.1804352728E-02  2.0612245147E-02
-           2  1.0548605826E-02  3.6421684213E-03  5.0723504675E-02
+           0  1.0079041485E+01  3.4447084960E+00
+           1  2.5147995702E-01  8.5948167372E-02  2.4950781023E-02
+           2  9.5651877609E-03  3.2690889897E-03  3.8035586908E-02
+           3  7.0078342589E-04  2.3950636819E-04  7.3263948749E-02
+           4  4.8809551635E-05  1.6681613767E-05  6.9649980053E-02
+           5  3.7028500068E-06  1.2655210217E-06  7.5863225184E-02
 After solution, condensed matrix:
 
 L2 norm of linear system residual
 
       iteration    absolute residual    relative residual      reduction
 
-           0  1.0548605826E-02  3.6421684213E-03
+           0  3.7028500068E-06  1.2655210217E-06
+
+Solver information:
+   number of iterations =           5
+   relative residual =   1.2655210217E-06
 After solution, full matrix:
 
 L2 norm of linear system residual
 
       iteration    absolute residual    relative residual      reduction
 
-           0  1.0548605826E-02  3.6421684213E-03
-
-Total Linear System:
-   number of equations =         171
-   number of nonzeroes =        1099
-   condensed matrix number of equations =         171
-   condensed matrix number of nonzeroes =        1099
-   coarse matrix neq =           1
-   coarse (half) bandwidth =           0
+           0  3.7028500068E-06  1.2655210217E-06
 
 Norms of error:
-   energy norm of error       1.2037153855E+00
-      reduced by              5.8165595828E-01
-   energy error estimate      3.4981331996E-01
-      reduced by              6.6667893109E-01
-      effectivity             2.9061132239E-01
+   energy norm of error       1.2083481054E+00
+      reduced by              5.8388933581E-01
+   energy error estimate      3.5146556620E-01
+      reduced by              6.6987921102E-01
+      effectivity             2.9086449891E-01
 
 Total Grid:
-   number of vertices      =         307
-   number of leaf elements =         536
-   number of levels        =          11
-   degrees of freedom      =         307
+   number of vertices      =         291
+   number of leaf elements =         504
+   number of levels        =          10
+   degrees of freedom      =         291
    min and max degree      =           1          1
+
+Total Linear System:
+   number of equations =         291
+   number of nonzeroes =        1879
+   condensed matrix number of equations =         291
+   condensed matrix number of nonzeroes =        1879
 
 L2 norm of linear system residual
 
       iteration    absolute residual    relative residual      reduction
 
-           0  1.0973069017E+01  4.8199259677E+00
-           1  5.7641946457E-01  2.5319253359E-01  5.2530378119E-02
-           2  3.5207706915E-02  1.5465002596E-02  6.1080010442E-02
+           0  9.3734500562E+00  4.0161649275E+00
+           1  6.8792414729E-01  2.9474919230E-01  7.3390709202E-02
+           2  3.9358990801E-02  1.6863822551E-02  5.7214143385E-02
+           3  2.9846710970E-03  1.2788174373E-03  7.5832002708E-02
+           4  2.3673749465E-04  1.0143296410E-04  7.9317783086E-02
+           5  1.9636869682E-05  8.4136477849E-06  8.2947864725E-02
 After solution, condensed matrix:
 
 L2 norm of linear system residual
 
       iteration    absolute residual    relative residual      reduction
 
-           0  3.5207706915E-02  1.5465002596E-02
+           0  1.9636869682E-05  8.4136477849E-06
+
+Solver information:
+   number of iterations =           5
+   relative residual =   8.4136477849E-06
 After solution, full matrix:
 
 L2 norm of linear system residual
 
       iteration    absolute residual    relative residual      reduction
 
-           0  3.5207706915E-02  1.5465002596E-02
-
-Total Linear System:
-   number of equations =         307
-   number of nonzeroes =        1991
-   condensed matrix number of equations =         307
-   condensed matrix number of nonzeroes =        1991
-   coarse matrix neq =           1
-   coarse (half) bandwidth =           0
+           0  1.9636869682E-05  8.4136477848E-06
 
 Norms of error:
-   energy norm of error       7.5925288003E-01
-      reduced by              3.1537890484E-01
-   energy error estimate      2.4858643863E-01
-      reduced by              3.5531299760E-01
-      effectivity             3.2740927979E-01
+   energy norm of error       7.7409901505E-01
+      reduced by              3.2031291793E-01
+   energy error estimate      2.5575291028E-01
+      reduced by              3.6383779078E-01
+      effectivity             3.3038785131E-01
 
 Total Grid:
-   number of vertices      =         740
-   number of leaf elements =        1334
+   number of vertices      =         734
+   number of leaf elements =        1322
    number of levels        =          12
-   degrees of freedom      =         740
+   degrees of freedom      =         734
    min and max degree      =           1          1
+
+Total Linear System:
+   number of equations =         734
+   number of nonzeroes =        4844
+   condensed matrix number of equations =         734
+   condensed matrix number of nonzeroes =        4844
 
 L2 norm of linear system residual
 
       iteration    absolute residual    relative residual      reduction
 
-           0  1.3205115309E+01  8.6201996629E+00
-           1  1.1680539379E+00  7.6249679964E-01  8.8454656442E-02
-           2  7.5426720628E-02  4.9237994257E-02  6.4574689730E-02
+           0  1.2953404411E+01  8.4256173733E+00
+           1  1.2127831194E+00  7.8886184644E-01  9.3626592745E-02
+           2  7.6691603504E-02  4.9884500350E-02  6.3236041362E-02
+           3  5.9679973157E-03  3.8819186271E-03  7.7818131882E-02
+           4  4.9039087401E-04  3.1897760131E-04  8.2170089574E-02
+           5  4.1388244052E-05  2.6921224496E-05  8.4398479346E-02
 After solution, condensed matrix:
 
 L2 norm of linear system residual
 
       iteration    absolute residual    relative residual      reduction
 
-           0  7.5426720628E-02  4.9237994257E-02
+           0  4.1388244052E-05  2.6921224496E-05
+
+Solver information:
+   number of iterations =           5
+   relative residual =   2.6921224496E-05
 After solution, full matrix:
 
 L2 norm of linear system residual
 
       iteration    absolute residual    relative residual      reduction
 
-           0  7.5426720628E-02  4.9237994257E-02
-
-Total Linear System:
-   number of equations =         740
-   number of nonzeroes =        4886
-   condensed matrix number of equations =         740
-   condensed matrix number of nonzeroes =        4886
-   coarse matrix neq =           1
-   coarse (half) bandwidth =           0
+           0  4.1388244052E-05  2.6921224496E-05
 
 Norms of error:
-   energy norm of error       4.6890742300E-01
-      reduced by              6.1759057534E-01
-   energy error estimate      1.5502307722E-01
-      reduced by              6.2361840039E-01
-      effectivity             3.3060486913E-01
+   energy norm of error       4.6454551050E-01
+      reduced by              6.0011122798E-01
+   energy error estimate      1.5324414417E-01
+      reduced by              5.9918827123E-01
+      effectivity             3.2987972267E-01
 
 Total Grid:
-   number of vertices      =         740
-   number of leaf elements =        1334
+   number of vertices      =         734
+   number of leaf elements =        1322
    number of levels        =          12
-   degrees of freedom      =         740
+   degrees of freedom      =         734
    min and max degree      =           1          1
 
 ---------------------------------------------------------

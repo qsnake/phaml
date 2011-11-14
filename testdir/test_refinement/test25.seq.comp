@@ -1,5 +1,5 @@
 ---------------------------------------------------------
-           PHAML   Version 1.8.0
+           PHAML   Version 1.9.1
 
 Output from slave number     1
   PDE id is     0
@@ -20,6 +20,7 @@ Subroutine phaml_solve_pde parameters:
   print_grid_when    PHASES
   print_grid_who     SLAVES
   print_linsys_when  NEVER
+  print_solver_when  NEVER
   print_error_when   NEVER
   print_time_when    NEVER
   pause_after_draw   false
@@ -60,14 +61,14 @@ My Grid:
    min and max degree       =           5          5
 
 My Grid:
-   number of vertices       =          14
-   number of vertices I own =          14
-   number of elements       =          28
-   number of leaf elements  =          18
-   leaf elements I own      =          18
+   number of vertices       =          19
+   number of vertices I own =          19
+   number of elements       =          40
+   number of leaf elements  =          24
+   leaf elements I own      =          24
    number of levels         =           3
-   degrees of freedom       =         246
-   degrees of freedom I own =         246
+   degrees of freedom       =         331
+   degrees of freedom I own =         331
    min and max degree       =           5          5
 
 My Grid:

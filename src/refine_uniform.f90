@@ -11,7 +11,7 @@
 ! the United States.                                                  !
 !                                                                     !
 !     William F. Mitchell                                             !
-!     Mathematical and Computational Sciences Division                !
+!     Applied and Computational Mathematics Division                  !
 !     National Institute of Standards and Technology                  !
 !     william.mitchell@nist.gov                                       !
 !     http://math.nist.gov/phaml                                      !
@@ -33,6 +33,7 @@ use refine_elements
 use grid_util
 use hash_mod
 use omp_lib
+use message_passing
 !----------------------------------------------------
 
 implicit none
@@ -76,7 +77,7 @@ integer :: element_list(size(grid%element)), edge_list(size(grid%edge)), &
 
 ! make a list of all owned leaves
 
-call list_elements(grid,element_list,nelem,level=0,own=.true.,leaf=.true.)
+call list_elements(grid,element_list,nelem,own=.true.,leaf=.true.)
 
 ! refine all elements on the list
 
@@ -135,9 +136,6 @@ grid%dof_own = grid%dof_own + total_delta_dof_own
 ! For uniform refinement we don't need to set an initial guess, other than 0,
 ! for the new solution components, because we don't need a new error indicator
 ! to determine if the element should be refined again.
-!
-! TEMP NOTE: the adaptive refinement version of this will need to maintain elist
-!       and conditionally compute error indicators, but uniform doesn't need it.
 
 end subroutine refine_uniform_p
 
@@ -158,7 +156,7 @@ type(refine_options), intent(in) :: refine_control
 ! Local variables:
 
 character(len=1), pointer :: reftype(:)
-integer :: lev, elem, errcode, mate, parent, i, nelem, &
+integer :: lev, elem, errcode, mate, parent, i, nelem, astat, &
            element_list(size(grid%element)), vert_lid(2,size(grid%element)), &
            edge_lid(6,size(grid%element)), elem_lid(4,size(grid%element)), &
            one_vert_lid(2),one_edge_lid(6),one_elem_lid(4), &
@@ -177,7 +175,12 @@ integer :: lev, elem, errcode, mate, parent, i, nelem, &
 ! compatibility, for refinement.  Only mark one in each compatibly divisible
 ! pair.
 
-allocate(reftype(size(grid%element)))
+allocate(reftype(size(grid%element)),stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("memory allocation failed in refine_uniform_h")
+   stop
+endif
 reftype = "n"
 do lev=1,grid%nlev
    elem = grid%head_level_elem(lev)
@@ -239,7 +242,7 @@ do lev=1,grid%nlev
       elem = grid%element(elem)%next
    end do
 
-! if the list is empty, more on to the next level
+! if the list is empty, move on to the next level
 
    if (nelem == 0) cycle
 

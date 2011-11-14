@@ -11,7 +11,7 @@
 ! the United States.                                                  !
 !                                                                     !
 !     William F. Mitchell                                             !
-!     Mathematical and Computational Sciences Division                !
+!     Applied and Computational Mathematics Division                  !
 !     National Institute of Standards and Technology                  !
 !     william.mitchell@nist.gov                                       !
 !     http://math.nist.gov/phaml                                      !
@@ -45,7 +45,8 @@ use linsys_io
 
 implicit none
 private
-public partition, redistribute, set_weights, check_balance
+public partition, redistribute, set_weights, lightweight_set_weights, &
+       check_balance
 
 !----------------------------------------------------
 ! The following parameters are defined:
@@ -70,7 +71,7 @@ contains
 !          ---------
 subroutine partition(grid,procs,lb,refcont,predictive_load_balance,form, &
                      balance_what,new_num_part,export_gid,export_proc, &
-                     first_call)
+                     first_call,weights_already_set)
 !          ---------
 
 !----------------------------------------------------
@@ -90,11 +91,12 @@ logical, intent(in) :: predictive_load_balance
 integer, intent(in) :: form, balance_what, new_num_part
 type(hash_key), pointer :: export_gid(:)
 integer, pointer :: export_proc(:)
-logical, optional :: first_call
+logical, optional :: first_call, weights_already_set
 
 !----------------------------------------------------
 ! Local variables:
 
+logical :: loc_weights_already_set
 !----------------------------------------------------
 ! Begin executable code
 
@@ -108,7 +110,15 @@ call start_watch((/ppartition,tpartition/))
 
 ! set the weights
 
-call set_weights(grid,predictive_load_balance,balance_what,refcont,procs)
+if (present(weights_already_set)) then
+   loc_weights_already_set = weights_already_set
+else
+   loc_weights_already_set = .false.
+endif
+
+if (.not. loc_weights_already_set) then
+   call set_weights(grid,predictive_load_balance,balance_what,refcont,procs)
+endif
 
 ! select method for partitioning.
 
@@ -158,6 +168,7 @@ integer :: lev, vert, elem, elem_deg, side, edge, total
 real(my_real) :: global_max_errind, reftol, normsoln, eta, eta_max, R, &
                  two_div_log2, loggamma
 character(len=1) :: reftype(size(grid%element))
+integer :: new_p(2)
 !----------------------------------------------------
 ! Begin executable code
 
@@ -181,7 +192,7 @@ endif
 
 ! compute maximum error indicator
 
-global_max_errind = compute_global_max_errind(grid,procs)
+global_max_errind = compute_global_max_errind(grid,procs,.false.)
 
 ! some constants for predictive load balancing
 
@@ -195,7 +206,7 @@ loggamma = log(0.125_my_real)
 
 reftol = 0.0_my_real
 if (predictive .and. refcont%refterm == ONE_REF) then
-   call get_grid_info(grid,procs,.false.,3344, &
+   call get_grid_info(grid,procs,.false.,540, &
                       total_nelem_leaf=total,no_master=.true.)
    reftol = refcont%reftol/sqrt(real(total,my_real))
 ! TEMP only using first component of first eigenvalue
@@ -227,12 +238,13 @@ do lev=1,grid%nlev
 ! refined.  If so, or if it is not a ONE_REF termination, determine h or p.
 ! TEMP this is a bit expensive because we are determining the h or p
 !      refinement choice twice
+! TEMP I should use new_p if it is set, instead of element%degree
 
             if ((refcont%refterm /= ONE_REF .and. &
                  refcont%refterm /= ONE_REF_HALF_ERRIND) .or. &
                  maxval(grid%element_errind(elem,:)) > reftol) then
                call mark_reftype_one(elem,grid,refcont,global_max_errind, &
-                                     reftype,.false.)
+                                     reftype,.false.,new_p)
             else
                reftype(elem) = "n"
             endif
@@ -438,6 +450,148 @@ do lev=1,grid%nlev
 end do
 
 end subroutine set_weights
+
+!          -----------------------
+subroutine lightweight_set_weights(grid,balance_what,new_level,new_p)
+!          -----------------------
+
+!----------------------------------------------------
+! This routine sets the weights for each element.  It is a light weight version
+! of set_weights in which the h and p refinement of the elements has already
+! been determined and is only used for predictive load balancing.
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+
+type(grid_type), intent(inout) :: grid
+integer, intent(in) :: balance_what
+integer, intent(in) :: new_level(:), new_p(:)
+!----------------------------------------------------
+! Local variables:
+
+integer :: assoc_verts(size(grid%element))
+integer :: lev, vert, elem, side, edge, delta, p
+!----------------------------------------------------
+! Begin executable code
+
+! count the number of associated vertices for each element
+
+assoc_verts = 0
+do lev=1,grid%nlev
+   vert = grid%head_level_vert(lev)
+   do while (vert /= END_OF_LIST)
+      assoc_verts(grid%vertex(vert)%assoc_elem) = &
+         assoc_verts(grid%vertex(vert)%assoc_elem) + 1
+      vert = grid%vertex(vert)%next
+   end do
+end do
+
+! for each element ...
+
+do lev=1,grid%nlev
+   elem = grid%head_level_elem(lev)
+   do while (elem /= END_OF_LIST)
+      if (grid%element(elem)%isleaf .and. grid%element(elem)%iown) then
+
+! Estimate the number of associated vertices, associated edges, elements
+! and equations for this element after it is refined to (new_level,new_p).
+! These formulas are derived for refinements or no change; assume they're
+! OK for coarsening, too, but don't set a negative weight.
+
+! Let d (for delta) be the change in refinement level and p be the new degree.
+
+! elements: 2^d
+
+! vertices: it's a 50-50 shot as to whether a new vertex on the element
+! boundary will be associated with this element or the neighboring element,
+! so count those vertices as 1/2 and interior vertices as 1.
+! 2^(d-1) - 1/2 + number currently associated
+
+! edges: the child edges of an edge of the element will be associated with the
+! element if and only if the edge is associated, so use that association
+! status to determine which ones to include.  The number of edges in the
+! refined element depend whether d is even or odd and whether the edge is
+! interior or a decendent of the base or a non-based side.
+! d odd,  non-base: 2^((d-1)/2)
+! d odd,  base:     2^((d+2)/2)
+! d odd,  interior: 3*2^(d-1) - 2^((d+1)/2) (zero if negative)
+! d even, non-base: 2^d
+! d even, base:     2^d
+! d even, interior: 3*2^(d-1) - 3*2^(d/2-1) (zero if negative)
+
+! equations: for simplicity, assume the degree of the element edges is the
+! same as the degree of this element.  Then the number of equations is the
+! number of associated vertices plus the (p-1)*number of descendent edges for
+! each associated edge and interior edges plus (p-1)(p-2)/2 times the number
+! of descendent elements.
+
+         delta = new_level(elem) - grid%element(elem)%level
+         p = new_p(elem)
+
+         select case (balance_what)
+
+         case (BALANCE_NONE)
+            grid%element(elem)%weight = 0.0_my_real
+
+         case (BALANCE_ELEMENTS)
+            grid%element(elem)%weight = 2**delta
+
+         case (BALANCE_VERTICES)
+            grid%element(elem)%weight = 2**(delta-1) - 0.5_my_real + &
+                                        assoc_verts(elem)
+
+         case (BALANCE_EQUATIONS)
+            grid%element(elem)%weight = assoc_verts(elem) + &
+                                        2**delta*((p-1)*(p-2))/2.0_my_real
+            if (p > 1) then
+               if (2*(delta/2) == delta) then
+                  do side=1,3
+                     edge = grid%element(elem)%edge(side)
+                     if (grid%edge(edge)%assoc_elem == elem) then
+                        grid%element(elem)%weight = grid%element(elem)%weight +&
+                                                    (p-1)*2**delta
+                     endif
+                  end do
+                  grid%element(elem)%weight = grid%element(elem)%weight + &
+                      max(0.0_my_real, &
+                      (3*2**(delta-1)-3*2**(delta/2-1))*(p-1)*(p-2)/2.0_my_real)
+               else
+                  do side=1,3
+                     edge = grid%element(elem)%edge(side)
+                     if (grid%edge(edge)%assoc_elem == elem) then
+                        grid%element(elem)%weight = grid%element(elem)%weight +&
+                                                    (p-1)*2**((delta-1)/2)
+                        if (side==3) then
+                        grid%element(elem)%weight = grid%element(elem)%weight +&
+                                                    (p-1)*2**((delta-1)/2)
+                        endif
+                     endif
+                  end do
+                  grid%element(elem)%weight = grid%element(elem)%weight + &
+                      max(0.0_my_real, &
+                      (3*2**(delta-1)-2**((delta+1)/2))*(p-1)*(p-2)/2.0_my_real)
+               endif
+            endif
+
+         case default
+            ierr = PHAML_INTERNAL_ERROR
+            call fatal("unknown value for balance_what in lightweight_set_weights")
+            stop
+
+         end select
+
+      else ! not a leaf or I don't own it
+
+         grid%element(elem)%weight = 0.0_my_real
+
+      endif
+
+      elem = grid%element(elem)%next
+   end do
+end do
+
+end subroutine lightweight_set_weights
 
 !          ------------
 subroutine reftree_kway(grid,procs,new_num_part,export_gid, &
@@ -1110,7 +1264,7 @@ real(my_real), allocatable :: rsend(:)
 real(my_real), pointer :: rrecv(:)
 type(hash_key) :: elemgid, gid
 integer i, j, k, l, m, part, elemlid, errcode, allocstat, nproc, &
-        iindex, rindex, d, to, elem, edge, vert, d1, d2, d3
+        iindex, rindex, d, to, elem, edge, vert, d1, d2, d3, nerrind
 logical :: skip_comm
 
 !----------------------------------------------------
@@ -1120,7 +1274,6 @@ logical :: skip_comm
 
 if (PARALLEL == SEQUENTIAL) return
 
-grid%errind_up2date = .false.
 grid_changed = .true.
 
 ! master does not participate
@@ -1133,6 +1286,7 @@ call reset_watch((/pdistribute,cpdistribute/))
 call start_watch((/pdistribute,tdistribute/))
 
 nproc = num_proc(procs)
+nerrind = max(1,grid%num_eval)
 
 if (.not.associated(export_gid)) then
    allocate(export_gid(0),export_part(0),stat=allocstat)
@@ -1210,6 +1364,7 @@ if (.not. skip_comm) then
       to = export_part(i)
       nisend(to) = nisend(to) + KEY_SIZE
       nisend(to) = nisend(to) + 4
+      nrsend(to) = nrsend(to) + nerrind
       nrsend(to) = nrsend(to) + VERTICES_PER_ELEMENT*grid%nsoln
       do j=1,EDGES_PER_ELEMENT
          d = grid%edge(grid%element(elemlid)%edge(j))%degree
@@ -1287,6 +1442,11 @@ if (.not. skip_comm) then
       isend(iind(to):iind(to)+3)=(/grid%edge(grid%element(elemlid)%edge)%degree, &
                                    grid%element(elemlid)%degree /)
       iind(to) = iind(to) + 4
+
+! pack the error indicators
+
+      rsend(rind(to):rind(to)+nerrind-1) = grid%element_errind(elemlid,:)
+      rind(to) = rind(to) + nerrind
 
 ! pack the vertex solutions
 
@@ -1493,6 +1653,11 @@ if (.not. skip_comm) then
             end do
          endif
 
+! error indicators
+
+      grid%element_errind(elemlid,:) = rrecv(rindex:rindex+nerrind-1)
+      rindex = rindex + nerrind
+
 ! set the solution values of this element
 
 ! NOTE: for edges, it is possible that the current degree does not agree with
@@ -1659,8 +1824,6 @@ if (.not. skip_comm) then
    if (associated(irecv)) deallocate(irecv,stat=allocstat)
    if (associated(rrecv)) deallocate(rrecv,stat=allocstat)
    deallocate(nirecv,nrrecv,nisend,nrsend,iind,rind,stat=allocstat)
-
-   grid%errind_up2date = .false.
 
 else ! skip_comm
 
@@ -1999,7 +2162,7 @@ integer, intent(in), optional :: fileunit
 !----------------------------------------------------
 ! Local variables:
 
-integer :: nproc, i, p, ni, nr
+integer :: nproc, i, p, ni, nr, astat
 integer, allocatable :: nentities(:), neq(:)
 integer, pointer :: irecv(:)
 real(my_real), pointer :: rrecv(:)
@@ -2015,7 +2178,12 @@ if (my_proc(procs) == MASTER) then
 
 ! receive the number of entities owned by each processor
 
-   allocate(nentities(nproc),neq(nproc))
+   allocate(nentities(nproc),neq(nproc),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("allocation failed in check_balance",procs=procs)
+      return
+   endif
    do i=1,num_proc(procs)
       call phaml_recv(procs,p,irecv,ni,rrecv,nr,501)
       nentities(p) = irecv(1)
@@ -2062,7 +2230,12 @@ else ! SLAVE
 
 ! get the number of entities I own
 
-   allocate(nentities(2))
+   allocate(nentities(2),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("allocation failed in check_balance",procs=procs)
+      return
+   endif
    select case(what)
    case (BALANCE_ELEMENTS)
       nentities(1) = grid%nelem_leaf_own

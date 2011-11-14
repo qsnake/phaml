@@ -11,7 +11,7 @@
 ! the United States.                                                  !
 !                                                                     !
 !     William F. Mitchell                                             !
-!     Mathematical and Computational Sciences Division                !
+!     Applied and Computational Mathematics Division                  !
 !     National Institute of Standards and Technology                  !
 !     william.mitchell@nist.gov                                       !
 !     http://math.nist.gov/phaml                                      !
@@ -36,6 +36,7 @@ use hash_mod
 use hash_eq_mod
 use linsystype_mod
 use gridtype_mod
+use grid_util
 use linsys_util
 use quadrature_rules
 use basis_functions
@@ -125,6 +126,8 @@ if (my_proc(procs) == MASTER) then
    linear_system%neq_face = 0
    nullify(linear_system%begin_row)
    nullify(linear_system%nn_comm_end_of_send)
+   linear_system%solver_niter = 0
+   linear_system%relresid = -huge(0.0_my_real)
    return
 endif
 
@@ -169,6 +172,8 @@ linear_system%system_size = solver_cntl%system_size
 !linear_system%nlev = grid%nlev
 linear_system%nlev = phaml_global_max(procs,grid%nlev,1101)
 linear_system%maxdeg = 1
+linear_system%solver_niter = 0
+linear_system%relresid = -huge(0.0_my_real)
 
 ! Determine number of vertex, edge and face equations and maximum number of
 ! equations related to any element.
@@ -229,7 +234,12 @@ endif
 ! Schroedinger equation.  Subtract A*u_old from the right hand side.
 
 if (crank_nicholson) then
-   allocate(tempvec(linear_system%neq))
+   allocate(tempvec(linear_system%neq),stat=allocstat)
+   if (allocstat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("allocation failed in create_linear_system",procs=procs)
+      return
+   endif
    linear_system%matrix_val => linear_system%stiffness
    call matrix_times_vector(linear_system%solution(1:),tempvec,linear_system, &
                             procs,still_sequential,10001,10002,10003,10004, &
@@ -790,7 +800,12 @@ integer, allocatable :: eqlist(:), adjacencies(:,:)
 
 neq = linear_system%neq
 syssize = linear_system%system_size
-allocate(eqlist(maxeq_per_elem))
+allocate(eqlist(maxeq_per_elem),stat=allocstat)
+if (allocstat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("allocation failed in create_column_index",procs=procs)
+   return
+endif
 
 ! Determine the maximum number of entries in any row of the matrix
 
@@ -1035,6 +1050,12 @@ do lev=1,grid%nlev
          neigh = get_neighbors(elem,grid)
 ! for each vertex of this element
          do i=1,VERTICES_PER_ELEMENT
+            do while (any(grid%vertex_type(v(i),:) == PERIODIC_SLAVE) .or. &
+                      any(grid%vertex_type(v(i),:) == PERIODIC_SLAVE_DIR) .or. &
+                      any(grid%vertex_type(v(i),:) == PERIODIC_SLAVE_NAT) .or. &
+                      any(grid%vertex_type(v(i),:) == PERIODIC_SLAVE_MIX))
+               v(i) = grid%vertex(v(i))%next
+            end do
             deg = grid%element(elem)%degree
 ! face bases
             num_adjacent(v(i)) = num_adjacent(v(i)) + (deg-1)*(deg-2)
@@ -1193,7 +1214,12 @@ type(hash_key_eq) :: gid
 nproc = num_proc(procs)
 
 nullify(linear_system%nn_comm_end_of_send)
-allocate(linear_system%nn_comm_remote_neigh(linear_system%neq))
+allocate(linear_system%nn_comm_remote_neigh(linear_system%neq),stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("allocation failed in make_nn_comm_map",procs=procs)
+   return
+endif
 linear_system%nn_comm_remote_neigh = .false.
 
 ! cases where this is not necessary
@@ -1266,7 +1292,12 @@ deallocate(send_int)
 
 ! count the number I have of each degree for each processor
 
-allocate(linear_system%nn_comm_end_of_send(nproc,linear_system%maxdeg+1))
+allocate(linear_system%nn_comm_end_of_send(nproc,linear_system%maxdeg+1),stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("allocation failed in make_nn_comm_map",procs=procs)
+   return
+endif
 linear_system%nn_comm_end_of_send = 0
 ind = 1
 do proc=1,nproc
@@ -1304,13 +1335,28 @@ end do
 
 ! allocate the lists
 
-allocate(linear_system%nn_comm_send_lid(nproc))
+allocate(linear_system%nn_comm_send_lid(nproc),stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("allocation failed in make_nn_comm_map",procs=procs)
+   return
+endif
 nint = nproc
 do proc=1,nproc
-   allocate(linear_system%nn_comm_send_lid(proc)%lid(linear_system%nn_comm_end_of_send(proc,linear_system%maxdeg+1)))
+   allocate(linear_system%nn_comm_send_lid(proc)%lid(linear_system%nn_comm_end_of_send(proc,linear_system%maxdeg+1)),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("allocation failed in make_nn_comm_map",procs=procs)
+      return
+   endif
    nint = nint + linear_system%nn_comm_end_of_send(proc,linear_system%maxdeg+1)*(KEY_SIZE+1)
 end do
-allocate(send_int(nint))
+allocate(send_int(nint),stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("allocation failed in make_nn_comm_map",procs=procs)
+   return
+endif
 
 ! create the lists to keep
 
@@ -1372,10 +1418,20 @@ if (timeit) call stop_watch((/cpassemble,ctassemble/))
 ! for each processor, create a list of local IDs of data I will be receiving
 ! from that processor
 
-allocate(linear_system%nn_comm_recv_lid(nproc))
+allocate(linear_system%nn_comm_recv_lid(nproc),stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("allocation failed in make_nn_comm_map",procs=procs)
+   return
+endif
 ind = 1
 do proc=1,nproc
-   allocate(linear_system%nn_comm_recv_lid(proc)%lid(recv_int(ind)))
+   allocate(linear_system%nn_comm_recv_lid(proc)%lid(recv_int(ind)),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("allocation failed in make_nn_comm_map",procs=procs)
+      return
+   endif
    ind = ind + 1
    do eq=1,nrecv(proc)/(KEY_SIZE+1)
       gid = hash_unpack_key(recv_int,ind,extended=.true.)
@@ -1443,7 +1499,12 @@ if (my_proc(procs) == MASTER .or. still_sequential .or. nproc==1) return
 
 ! get the full nearest neighbor map of all processors
 
-allocate(send_int(nproc),nrecv(nproc))
+allocate(send_int(nproc),nrecv(nproc),stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("allocation failed in make_fudop_comm_map",procs=procs)
+   return
+endif
 do p=1,nproc
    send_int(p) = min(1,linear_system%nn_comm_end_of_send(p,linear_system%maxdeg+1))
 end do
@@ -1455,7 +1516,12 @@ deallocate(send_int)
 ! determine the proxy for each processor pair, i.e. a nearest neighbor to which
 ! a message is sent to be delivered to the other processor
 
-allocate(all_proxy(nproc,nproc))
+allocate(all_proxy(nproc,nproc),stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("allocation failed in make_fudop_comm_map",procs=procs)
+   return
+endif
 all_proxy = -1
 
 ! first, nearest neighbors are their own proxy
@@ -1475,7 +1541,12 @@ if (any(all_proxy==-1)) then
 ! within a distance of k via nearest neighbor connections.  Start with the
 ! nearest neighbor map.
 
-   allocate(power_map(nproc,nproc),old_power(nproc,nproc))
+   allocate(power_map(nproc,nproc),old_power(nproc,nproc),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("allocation failed in make_fudop_comm_map",procs=procs)
+      return
+   endif
    power_map = reshape(nn_map,(/nproc,nproc/))
 
 ! iterate until all proxies have been determined
@@ -1524,12 +1595,22 @@ deallocate(nn_map)
 
 ! keep my proxies
 
-allocate(linear_system%fudop_comm_proxy(nproc))
+allocate(linear_system%fudop_comm_proxy(nproc),stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("allocation failed in make_fudop_comm_map",procs=procs)
+   return
+endif
 linear_system%fudop_comm_proxy = all_proxy(my_processor,:)
 
 ! determine which equations need r_others
 
-allocate(need_r_others(linear_system%neq))
+allocate(need_r_others(linear_system%neq),stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("allocation failed in make_fudop_comm_map",procs=procs)
+   return
+endif
 call make_need_r_others(linear_system)
 ! TEMP090212 eventually remove need_r_others from the linsys data structure
 ! and return the result directly in need_r_others
@@ -1592,7 +1673,12 @@ deallocate(send_int)
 ! count the number I have for each processor
 
 allocate(linear_system%fudop_comm_nsend(nproc), &
-         linear_system%resid_comm_nsend(nproc))
+         linear_system%resid_comm_nsend(nproc),stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("allocation failed in make_fudop_comm_map",procs=procs)
+   return
+endif
 linear_system%fudop_comm_nsend = 0
 linear_system%resid_comm_nsend = 0
 ind = 1
@@ -1626,15 +1712,31 @@ end do
 ! allocate the lists
 
 allocate(linear_system%fudop_comm_send_lid(nproc), &
-         linear_system%resid_comm_send_lid(nproc))
+         linear_system%resid_comm_send_lid(nproc),stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("allocation failed in make_fudop_comm_map",procs=procs)
+   return
+endif
 nint = 2*nproc
 do proc=1,nproc
    allocate(linear_system%fudop_comm_send_lid(proc)%lid(linear_system%fudop_comm_nsend(proc)), &
-            linear_system%resid_comm_send_lid(proc)%lid(linear_system%resid_comm_nsend(proc)))
+            linear_system%resid_comm_send_lid(proc)%lid(linear_system%resid_comm_nsend(proc)), &
+            stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("allocation failed in make_fudop_comm_map",procs=procs)
+      return
+   endif
    nint = nint + (linear_system%fudop_comm_nsend(proc) + &
                   linear_system%resid_comm_nsend(proc))*(KEY_SIZE+1)
 end do
-allocate(send_int(nint),nsend(nproc))
+allocate(send_int(nint),nsend(nproc),stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("allocation failed in make_fudop_comm_map",procs=procs)
+   return
+endif
 
 ! create the lists to keep
 
@@ -1700,13 +1802,23 @@ if (timeit) call stop_watch((/cpassemble,ctassemble/))
 ! from that processor, for both unowned equations and r_others
 
 allocate(linear_system%fudop_comm_recv_lid(nproc), &
-         linear_system%resid_comm_recv_lid(nproc))
+         linear_system%resid_comm_recv_lid(nproc),stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("allocation failed in make_fudop_comm_map",procs=procs)
+   return
+endif
 ind = 1
 do proc=1,nproc
    nunowned = recv_int(ind)
    nrothers = recv_int(ind+1)
    allocate(linear_system%fudop_comm_recv_lid(proc)%lid(nunowned), &
-            linear_system%resid_comm_recv_lid(proc)%lid(nrothers))
+            linear_system%resid_comm_recv_lid(proc)%lid(nrothers),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("allocation failed in make_fudop_comm_map",procs=procs)
+      return
+   endif
    ind = ind + 2
    do eq=1,nunowned
       gid = hash_unpack_key(recv_int,ind,extended=.true.)
@@ -1737,7 +1849,12 @@ call phaml_alltoall(procs,linear_system%fudop_comm_nsend,nproc,all_sizes, &
 ! messages are on the senders.  0 indicates there is no message or the
 ! message has reached its destination.
 
-allocate(location(nproc,nproc))
+allocate(location(nproc,nproc),stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("allocation failed in make_fudop_comm_map",procs=procs)
+   return
+endif
 do i=1,nproc
    do j=1,nproc
       if (all_sizes(nproc*(i-1)+j) == 0) then
@@ -1748,7 +1865,12 @@ do i=1,nproc
    end do
 end do
 
-allocate(mess_size(nproc,nproc,nproc),nchunk(nproc,nproc))
+allocate(mess_size(nproc,nproc,nproc),nchunk(nproc,nproc),stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("allocation failed in make_fudop_comm_map",procs=procs)
+   return
+endif
 mess_size = 0
 nchunk = 0
 
@@ -1789,7 +1911,12 @@ deallocate(all_sizes)
 
 allocate(linear_system%fudop_comm_mess_size(nproc,step), &
          linear_system%fudop_comm_nchunk(nproc,step), &
-         linear_system%fudop_comm_nproc_recv(step))
+         linear_system%fudop_comm_nproc_recv(step),stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("allocation failed in make_fudop_comm_map",procs=procs)
+   return
+endif
 
 linear_system%fudop_comm_mess_size = mess_size(my_processor,:,1:step)
 linear_system%fudop_comm_nchunk = nchunk(:,1:step)
@@ -1860,7 +1987,12 @@ deallocate(all_sizes,location,all_proxy,nrecv)
 
 allocate(linear_system%resid_comm_mess_size(nproc,step), &
          linear_system%resid_comm_nchunk(nproc,step), &
-         linear_system%resid_comm_nproc_recv(step))
+         linear_system%resid_comm_nproc_recv(step),stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("allocation failed in make_fudop_comm_map",procs=procs)
+   return
+endif
 
 linear_system%resid_comm_mess_size = mess_size(my_processor,:,1:step)
 linear_system%resid_comm_nchunk = nchunk(:,1:step)
@@ -2014,7 +2146,7 @@ siz = maxeq_per_elem*linear_system%system_size
 
 !$omp parallel &
 !$omp  default(shared) &
-!$omp  private(local_stiffness, local_mass, local_rhs, i, elem, eqlist, nleq)
+!$omp  private(i, elem, eqlist, local_stiffness, local_mass, local_rhs, nleq)
 
 ! space for equation list and elemental matrices
 
@@ -2023,7 +2155,15 @@ allocate(eqlist(maxeq_per_elem), local_stiffness(siz,siz), local_mass(siz,siz),&
 
 ! pass through the elements
 
-!$omp do
+! OpenMP parallel section.  To get the same results as a sequential program,
+! we need the ordered construct for assembling the global matrix, because
+! floating point arithmetic is not commutative.  To keep this somewhat
+! efficient we need a chunk size of 1 (so threads aren't waiting for the
+! previous thread to complete many loops), and since the amount of work in
+! computing the elemental matrix varies strongly with the degree of the element,
+! we use a dynamic schedule (which has a default chunk size of 1).
+
+!$omp do ordered, schedule(dynamic)
 do i=1,nelem_leaf
    elem = leaf_element(i)
 
@@ -2045,8 +2185,10 @@ do i=1,nelem_leaf
 
 ! assemble local values into global matrix etc.
 
+!$omp ordered
    call assemble(linear_system,eqlist,nleq,local_stiffness,local_rhs, &
                  local_mass)
+!$omp end ordered
 
 end do
 !$omp end do
@@ -2387,20 +2529,20 @@ do qp = 1,nquad_pts
 
       if (my_real == kind(1.0)) then
          call sgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*cxx(1,1), &
-                    basisx(1,qp),nbasis,basisx(1,qp),1,1.0_my_real,lmat,size(lmat,1))
+                    basisx(1,qp),nbasis,basisx(1,qp),1,1.0,lmat,size(lmat,1))
          call sgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*cyy(1,1), &
-                    basisy(1,qp),nbasis,basisy(1,qp),1,1.0_my_real,lmat,size(lmat,1))
+                    basisy(1,qp),nbasis,basisy(1,qp),1,1.0,lmat,size(lmat,1))
          call sgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*cxy(1,1), &
-                    basisx(1,qp),nbasis,basisy(1,qp),1,1.0_my_real,lmat,size(lmat,1))
+                    basisx(1,qp),nbasis,basisy(1,qp),1,1.0,lmat,size(lmat,1))
          call sgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*cx(1,1), &
-                    basis(1,qp),nbasis,basisx(1,qp),1,1.0_my_real,lmat,size(lmat,1))
+                    basis(1,qp),nbasis,basisx(1,qp),1,1.0,lmat,size(lmat,1))
          call sgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*cy(1,1), &
-                    basis(1,qp),nbasis,basisy(1,qp),1,1.0_my_real,lmat,size(lmat,1))
+                    basis(1,qp),nbasis,basisy(1,qp),1,1.0,lmat,size(lmat,1))
          call sgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*c(1,1), &
-                    basis(1,qp),nbasis,basis(1,qp),1,1.0_my_real,lmat,size(lmat,1))
+                    basis(1,qp),nbasis,basis(1,qp),1,1.0,lmat,size(lmat,1))
          if (present(lmassmat)) then
             call sgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*rs(1), &
-                       basis(1,qp),nbasis,basis(1,qp),1,1.0_my_real,lmassmat, &
+                       basis(1,qp),nbasis,basis(1,qp),1,1.0,lmassmat, &
                        size(lmassmat,1))
          endif
       elseif (my_real == kind(1.0d0)) then
@@ -2549,6 +2691,7 @@ do qp = 1,nquad_pts
    do i=1,ss
       do j=1,ss
          if (rs(j) /= 0.0_my_real) then
+!$omp atomic
             rmin = min(rmin,c(i,j)/rs(j))
          endif
       end do
@@ -3173,7 +3316,8 @@ type(proc_info), intent(in) :: procs
 ! Local variables:
 
 integer :: i, j, k, row, col, eq, objtype, brank, srank, lid, degree, loc_neq, &
-           syssize, rowlen, info, eq_list(linear_system%neq), iblock, nblock
+           syssize, rowlen, info, eq_list(linear_system%neq), iblock, nblock, &
+           astat
 real(my_real) :: temp
 real(my_real), allocatable :: row_block(:,:), row_block_t(:,:)
 real(my_real), pointer :: block(:,:)
@@ -3199,7 +3343,12 @@ syssize = linear_system%system_size
 
 ! allocate the structure that contains the factored blocks
 
-allocate(linear_system%elem_block(size(grid%element)))
+allocate(linear_system%elem_block(size(grid%element)),stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("allocation failed in static_condensation",procs=procs)
+   return
+endif
 do i=1,size(linear_system%elem_block)
    nullify(linear_system%elem_block(i)%matrix, &
            linear_system%elem_block(i)%ipiv)
@@ -3271,9 +3420,19 @@ if (my_real /= kind(0.0) .and. my_real /= kind(0.0d0)) then
    return
 endif
 
-! go through the element equation blocks; OpenMP parallel section
+! go through the element equation blocks
+
+! OpenMP parallel section.  To get the same results as a sequential program,
+! we need the ordered construct for multiplying by the Schur complement,
+! because floating point arithmetic is not commutative.  To keep this
+! somewhat efficient we need a chunk size of 1 (so threads aren't waiting
+! for the previous thread to complete many loops), and since the amount of
+! work varies strongly with the degree of the element, we use a dynamic
+! schedule (which has a default chunk size of 1).
 
 !$omp parallel do &
+!$omp  ordered &
+!$omp  schedule(dynamic) &
 !$omp  default(shared) &
 !$omp  private(iblock,eq,objtype,brank,srank,lid,degree,loc_neq,block,ipiv, &
 !$omp          rowlen,row_block,row_block_t,i,j,col,info,row,temp,k)
@@ -3312,7 +3471,7 @@ do iblock = 1,nblock
          row_block(i,j-linear_system%begin_row(eq+i-1)+1) = &
             linear_system%condensed(j)
          row_block_t(j-linear_system%begin_row(eq+i-1)+1,i) = &
-             get_matval(linear_system,linear_system%condensed,col,eq+i-1)
+            get_matval(linear_system,linear_system%condensed,col,eq+i-1)
       end do
       row_block(i,rowlen+1) = linear_system%rhs(eq+i-1)
       row_block_t(rowlen+1,i) = linear_system%rhs(eq+i-1)
@@ -3353,6 +3512,7 @@ do iblock = 1,nblock
 
 ! form the Schur complement
 
+!$omp ordered
    do i=1,rowlen
       row = linear_system%column_index(linear_system%begin_row(eq)+i-1)
       if (row >= eq .and. row < eq+loc_neq) cycle
@@ -3381,6 +3541,7 @@ do iblock = 1,nblock
       end do
       linear_system%rhs_cond(row) = linear_system%rhs_cond(row) - temp
    end do
+!$omp end ordered
 
    deallocate(row_block,row_block_t)
 end do ! blocks of face equations

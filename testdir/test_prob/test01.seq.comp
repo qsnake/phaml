@@ -1,5 +1,5 @@
 ---------------------------------------------------------
-           PHAML   Version 1.8.0
+           PHAML   Version 1.9.1
 
 Output from slave number     1
   PDE id is     0
@@ -20,6 +20,7 @@ Subroutine phaml_solve_pde parameters:
   print_grid_when    PHASES
   print_grid_who     SLAVES
   print_linsys_when  NEVER
+  print_solver_when  NEVER
   print_error_when   PHASES
   print_error_who    SLAVES
   print_error_what   ENERGY_LINF_L2_ERR
@@ -58,12 +59,12 @@ My Grid:
    number of leaf elements  =           8
    leaf elements I own      =           8
    number of levels         =           1
-   degrees of freedom       =           9
-   degrees of freedom I own =           9
+   degrees of freedom       =           6
+   degrees of freedom I own =           6
    min and max degree       =           1          1
 
 Norms of error:
-   energy norm of error       1.7088607575E+00
+   energy norm of error       1.7088498885E+00
    Linf norm of error         5.8044584982E-01
    L2 norm of error           2.0010207062E-01
 
@@ -74,128 +75,128 @@ My Grid:
    number of leaf elements  =          22
    leaf elements I own      =          22
    number of levels         =           4
-   degrees of freedom       =          17
-   degrees of freedom I own =          17
+   degrees of freedom       =          14
+   degrees of freedom I own =          14
    min and max degree       =           1          1
 
 Norms of error:
-   energy norm of error       1.1069751638E+00
-      reduced by              6.4778546699E-01
-   Linf norm of error         2.4748544174E-01
-      reduced by              4.2637128308E-01
-   L2 norm of error           8.3225178536E-02
-      reduced by              4.1591362988E-01
+   energy norm of error       1.1069681096E+00
+      reduced by              6.4778545916E-01
+   Linf norm of error         2.4748552755E-01
+      reduced by              4.2637143090E-01
+   L2 norm of error           8.3225540651E-02
+      reduced by              4.1591543953E-01
 
 My Grid:
-   number of vertices       =          36
-   number of vertices I own =          36
-   number of elements       =         100
-   number of leaf elements  =          54
-   leaf elements I own      =          54
-   number of levels         =           5
-   degrees of freedom       =          34
-   degrees of freedom I own =          34
+   number of vertices       =          44
+   number of vertices I own =          44
+   number of elements       =         128
+   number of leaf elements  =          68
+   leaf elements I own      =          68
+   number of levels         =           6
+   degrees of freedom       =          38
+   degrees of freedom I own =          38
    min and max degree       =           1          1
 
 Norms of error:
-   energy norm of error       6.8681343085E-01
-      reduced by              6.2044159011E-01
-   Linf norm of error         1.0177904489E-01
-      reduced by              4.1125265458E-01
-   L2 norm of error           3.2296004032E-02
-      reduced by              3.8805568940E-01
+   energy norm of error       6.1055473460E-01
+      reduced by              5.5155584816E-01
+   Linf norm of error         7.5517958873E-02
+      reduced by              3.0514090913E-01
+   L2 norm of error           2.7583612318E-02
+      reduced by              3.3143205922E-01
 
 My Grid:
-   number of vertices       =          72
-   number of vertices I own =          72
-   number of elements       =         232
-   number of leaf elements  =         120
-   leaf elements I own      =         120
+   number of vertices       =          76
+   number of vertices I own =          76
+   number of elements       =         244
+   number of leaf elements  =         126
+   leaf elements I own      =         126
    number of levels         =           7
    degrees of freedom       =          68
    degrees of freedom I own =          68
    min and max degree       =           1          1
 
 Norms of error:
-   energy norm of error       5.0624907756E-01
-      reduced by              7.3709839503E-01
-   Linf norm of error         6.4954736285E-02
-      reduced by              6.3819361202E-01
-   L2 norm of error           1.6290504724E-02
-      reduced by              5.0441239441E-01
+   energy norm of error       4.9220226179E-01
+      reduced by              8.0615583484E-01
+   Linf norm of error         6.4924781548E-02
+      reduced by              8.5972638186E-01
+   L2 norm of error           1.5865269408E-02
+      reduced by              5.7517011278E-01
 
 My Grid:
-   number of vertices       =         144
-   number of vertices I own =         144
-   number of elements       =         494
-   number of leaf elements  =         251
-   leaf elements I own      =         251
+   number of vertices       =         158
+   number of vertices I own =         158
+   number of elements       =         540
+   number of leaf elements  =         274
+   leaf elements I own      =         274
    number of levels         =           8
-   degrees of freedom       =         137
-   degrees of freedom I own =         137
+   degrees of freedom       =         146
+   degrees of freedom I own =         146
    min and max degree       =           1          1
 
 Norms of error:
-   energy norm of error       3.6057360883E-01
-      reduced by              7.1224546337E-01
-   Linf norm of error         3.8753550280E-02
-      reduced by              5.9662393378E-01
-   L2 norm of error           1.0446100775E-02
-      reduced by              6.4123862042E-01
+   energy norm of error       3.3631116420E-01
+      reduced by              6.8327838026E-01
+   Linf norm of error         2.1338435941E-02
+      reduced by              3.2866396208E-01
+   L2 norm of error           8.8117049781E-03
+      reduced by              5.5540846812E-01
 
 My Grid:
-   number of vertices       =         288
-   number of vertices I own =         288
-   number of elements       =        1056
-   number of leaf elements  =         532
-   leaf elements I own      =         532
+   number of vertices       =         338
+   number of vertices I own =         338
+   number of elements       =        1220
+   number of leaf elements  =         614
+   leaf elements I own      =         614
    number of levels         =           9
-   degrees of freedom       =         279
-   degrees of freedom I own =         279
+   degrees of freedom       =         318
+   degrees of freedom I own =         318
    min and max degree       =           1          1
 
 Norms of error:
-   energy norm of error       2.6071189090E-01
-      reduced by              7.2304762333E-01
-   Linf norm of error         1.6544214194E-02
-      reduced by              4.2690834968E-01
-   L2 norm of error           6.1926894845E-03
-      reduced by              5.9282306555E-01
+   energy norm of error       2.3617571012E-01
+      reduced by              7.0225355346E-01
+   Linf norm of error         1.5377229919E-02
+      reduced by              7.2063528751E-01
+   L2 norm of error           4.4811105696E-03
+      reduced by              5.0854069454E-01
 
 My Grid:
-   number of vertices       =         500
-   number of vertices I own =         500
-   number of elements       =        1860
-   number of leaf elements  =         934
-   leaf elements I own      =         934
+   number of vertices       =         556
+   number of vertices I own =         556
+   number of elements       =        2064
+   number of leaf elements  =        1036
+   leaf elements I own      =        1036
    number of levels         =          10
-   degrees of freedom       =         486
-   degrees of freedom I own =         486
+   degrees of freedom       =         534
+   degrees of freedom I own =         534
    min and max degree       =           1          1
 
 Norms of error:
-   energy norm of error       1.9503424165E-01
-      reduced by              7.4808341490E-01
-   Linf norm of error         1.0165064011E-02
-      reduced by              6.1441806132E-01
-   L2 norm of error           3.0854732166E-03
-      reduced by              4.9824445814E-01
+   energy norm of error       1.8193381185E-01
+      reduced by              7.7033244340E-01
+   Linf norm of error         7.4528774751E-03
+      reduced by              4.8466970411E-01
+   L2 norm of error           2.7504091817E-03
+      reduced by              6.1377846830E-01
 
 My Grid:
-   number of vertices       =         500
-   number of vertices I own =         500
-   number of elements       =        1860
-   number of leaf elements  =         934
-   leaf elements I own      =         934
+   number of vertices       =         556
+   number of vertices I own =         556
+   number of elements       =        2064
+   number of leaf elements  =        1036
+   leaf elements I own      =        1036
    number of levels         =          10
-   degrees of freedom       =         486
-   degrees of freedom I own =         486
+   degrees of freedom       =         534
+   degrees of freedom I own =         534
    min and max degree       =           1          1
 
 Norms of error:
-   energy norm of error       1.9503424165E-01
-   Linf norm of error         1.0165064011E-02
-   L2 norm of error           3.0854732166E-03
+   energy norm of error       1.8193381185E-01
+   Linf norm of error         7.4528774751E-03
+   L2 norm of error           2.7504091817E-03
 
 ---------------------------------------------------------
 phaml_solve_pde complete

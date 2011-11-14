@@ -6,7 +6,7 @@ THISDIR="test_multiple"
 echo "PHAML TEST:"
 echo "PHAML TEST: $THISDIR: tests of multiple PDEs that communicate"
 
-if [ $PHAML_PARALLEL = "sequential" -o $PHAML_PARALLEL = "openmp" ]
+if [ $PHAML_PARALLEL = "sequential" -o $PHAML_PARALLEL = "openmp" -o $PHAML_PARALLEL = "hybrid_spawn" ]
 then
    echo "PHAML TEST:"
    echo "PHAML TEST: PHAML compiled for sequential or OpenMP; cannot have multiple PDEs"

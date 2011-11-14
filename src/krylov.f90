@@ -11,7 +11,7 @@
 ! the United States.                                                  !
 !                                                                     !
 !     William F. Mitchell                                             !
-!     Mathematical and Computational Sciences Division                !
+!     Applied and Computational Mathematics Division                  !
 !     National Institute of Standards and Technology                  !
 !     william.mitchell@nist.gov                                       !
 !     http://math.nist.gov/phaml                                      !
@@ -345,22 +345,28 @@ elseif (info < 0) then
    stop
 endif
 
+! save the number of iterations
+
+loc_linsys%solver_niter = iter
+
 ! Scatter the solution to the other processors
 
 call start_watch((/cpsolve,ctsolve/))
 if (loc_still_sequential) then
    do p=2,nproc
-      call phaml_send(loc_procs,p,(/QUIT/),1,solution,neq,3000)
+      call phaml_send(loc_procs,p,(/QUIT,loc_linsys%solver_niter/),2,solution, &
+                      neq,3000)
    end do
 else
    icount = myneq
    do p=2,nproc
-      call phaml_send(loc_procs,p,(/QUIT/),1, &
+      call phaml_send(loc_procs,p,(/QUIT,loc_linsys%solver_niter/),2, &
                      solution(icount+1:icount+each_rhs(p)%n),each_rhs(p)%n,3000)
       icount = icount + each_rhs(p)%n
    end do
 endif
-call phaml_send(loc_procs,MASTER,(/QUIT/),1,(/0.0_my_real/),0,3000)
+call phaml_send(loc_procs,MASTER,(/QUIT,loc_linsys%solver_niter/),2, &
+                (/0.0_my_real/),0,3000)
 call stop_watch((/cpsolve,ctsolve/))
 
 ! Copy this processor's part of the solution, getting Dirichlet points from grid
@@ -640,6 +646,10 @@ do
 
    case (QUIT)
 
+! save number of iterations
+
+      loc_linsys%solver_niter = irecv(2)
+
 ! copy solution to linsys, getting Dirichlet points from grid
 
       icount = 0
@@ -725,6 +735,11 @@ do
       deallocate(irecv,stat=astat)
       if (associated(rrecv)) deallocate(rrecv,stat=astat)
    case (QUIT)
+
+! save number of iterations
+
+      loc_linsys%solver_niter = irecv(2)
+
       deallocate(irecv,stat=astat)
       if (associated(rrecv)) deallocate(rrecv,stat=astat)
       exit
@@ -985,7 +1000,7 @@ real(my_real), allocatable :: x(:), r(:), p(:), q(:), &
                  holdsoln(:), holdrhs(:)
 real(my_real) :: rho, oldrho, alpha, beta, normr, pdotq, tol, normrhs, &
                  last_time
-integer :: loop, i, j, neq, ni, nr, lev
+integer :: loop, i, j, neq, ni, nr, lev, astat
 logical :: dp
 type(io_options) :: io_cntl_noprint
 !----------------------------------------------------
@@ -1000,7 +1015,7 @@ if (my_proc(procs) == MASTER) then
       do
          loop = loop+1
          call phaml_recv(procs,i,recv_int,ni,recv_real,nr,3040+loop)
-         if (recv_int(1) == 0) exit
+         if (recv_int(1) <= 0) exit
          if (loop == 1) then
             write(outunit,"(A)")
             write(outunit,"(A)") "L2 norm of linear system residual"
@@ -1015,15 +1030,23 @@ if (my_proc(procs) == MASTER) then
          if (associated(recv_int)) deallocate(recv_int)
          if (associated(recv_real)) deallocate(recv_real)
       end do
-      if (associated(recv_int)) deallocate(recv_int)
-      if (associated(recv_real)) deallocate(recv_real)
+   else
+      call phaml_recv(procs,i,recv_int,ni,recv_real,nr,3040)
    endif
+   linsys%solver_niter = -recv_int(1)
+   if (associated(recv_int)) deallocate(recv_int)
+   if (associated(recv_real)) deallocate(recv_real)
    return
 endif
 
 allocate(x(linsys%neq), r(linsys%neq), p(linsys%neq), q(linsys%neq), &
          myr(linsys%neq), myp(linsys%neq), myq(linsys%neq), &
-         holdsoln(linsys%neq), holdrhs(linsys%neq))
+         holdsoln(linsys%neq), holdrhs(linsys%neq),stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("memory allocation failed in phaml_cg")
+   return
+endif
 
 ! handy constants
 
@@ -1240,12 +1263,20 @@ do
 
 end do
 
+! save the number of iterations
+
+linsys%solver_niter = loop-1
+
 ! tell the master we're done
 
-if (io_cntl%print_error_when == FREQUENTLY .or. &
-    io_cntl%print_error_when == TOO_MUCH) then
-   if (my_proc(procs) == 1) then
-      call phaml_send(procs,MASTER,(/0/),1,(/0.0_my_real/),0,3040+loop+1)
+if (my_proc(procs) == 1) then
+   if (io_cntl%print_error_when == FREQUENTLY .or. &
+       io_cntl%print_error_when == TOO_MUCH) then
+      call phaml_send(procs,MASTER,(/-linsys%solver_niter/),1, &
+                      (/0.0_my_real/),0,3040+loop+1)
+   else
+      call phaml_send(procs,MASTER,(/-linsys%solver_niter/),1, &
+                      (/0.0_my_real/),0,3040)
    endif
 endif
 

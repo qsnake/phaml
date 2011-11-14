@@ -11,7 +11,7 @@
 ! the United States.                                                  !
 !                                                                     !
 !     William F. Mitchell                                             !
-!     Mathematical and Computational Sciences Division                !
+!     Applied and Computational Mathematics Division                  !
 !     National Institute of Standards and Technology                  !
 !     william.mitchell@nist.gov                                       !
 !     http://math.nist.gov/phaml                                      !
@@ -25,7 +25,7 @@ character(len=*) name
 integer l, ierr
 
 integer, allocatable :: int_name(:)
-integer i, nchar
+integer i, nchar, astat
 
 interface
 !NAS$ ALIEN "C mpi_myc_get_processor_name"
@@ -34,7 +34,11 @@ interface
    end subroutine mpi_myc_get_processor_name
 end interface
 
-allocate(int_name(len(name)))
+allocate(int_name(len(name)),stat=astat)
+if (astat /= 0) then
+   print *,"allocation failed in mpi_my_get_processor_name"
+   stop
+endif
 nchar = len(name)
 call mpi_myc_get_processor_name(int_name, nchar, l, ierr)
 name = " "
