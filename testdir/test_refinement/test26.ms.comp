@@ -1,9 +1,10 @@
 ---------------------------------------------------------
-           PHAML   Version 1.9.1
+           PHAML   Version 1.11.0
 
 Output from the master process
   PDE id is     0
   Number of slave processors is     4
+  Number of OpenMP threads is       1
 
 Subroutine phaml_solve_pde parameters:
   max_elem           infinity
@@ -17,6 +18,10 @@ Subroutine phaml_solve_pde parameters:
   task               BALANCE_REFINE_SOLVE
   solve_init         true
   system_size                 1
+  pde_has_first_order_terms  false
+  pde_has_cross_derivative   false
+  laplacian_operator         true
+  isosceles_right_triangles  true
   print_grid_when    PHASES
   print_grid_who     MASTER
   print_linsys_when  NEVER
@@ -64,24 +69,24 @@ Total Grid:
    min and max degree      =           1          1
 
 Total Grid:
-   number of vertices      =         222
-   number of leaf elements =         368
+   number of vertices      =         171
+   number of leaf elements =         266
    number of levels        =          10
-   degrees of freedom      =         222
+   degrees of freedom      =         171
    min and max degree      =           1          1
 
 Total Grid:
-   number of vertices      =         710
-   number of leaf elements =        1274
+   number of vertices      =         739
+   number of leaf elements =        1330
    number of levels        =          12
-   degrees of freedom      =         710
+   degrees of freedom      =         739
    min and max degree      =           1          1
 
 Total Grid:
-   number of vertices      =         710
-   number of leaf elements =        1274
+   number of vertices      =         739
+   number of leaf elements =        1330
    number of levels        =          12
-   degrees of freedom      =         710
+   degrees of freedom      =         739
    min and max degree      =           1          1
 
 ---------------------------------------------------------

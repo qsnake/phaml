@@ -39,15 +39,16 @@ logical :: new_comm = .false.  ! TEMP090128 testing new forms of communication
 
 ! Note: only single and double precision are supported (not quad or other
 ! precisions) because BLAS and LAPACK only have single and double precision.
-! Further, if you use MUMPS then only double is supported.
 
 integer, parameter :: my_real = kind(1.0d0)
+
+real(my_real), save, allocatable :: charge_density(:) ! TEMP110525
 
 ! save on memory by using a compiler specific small logical kind.
 ! use default kind when in doubt
 
-!integer, parameter :: small_logical = kind(.false.)
-integer, parameter :: small_logical = 1   ! Works on many compilers
+integer, parameter :: small_logical = kind(.false.)
+!integer, parameter :: small_logical = 1   ! Works on many compilers
 
 ! quadruple precision real, if available, double precision otherwise.  This
 ! is used when computing barycentric coordinates while trying to find a
@@ -69,7 +70,7 @@ character(len=5), parameter :: scratch = "/tmp/"
 
 ! version number
 
-character(len=5), parameter :: version_number = "1.9.1"
+character(len=6), parameter :: version_number = "1.11.0"
 
 ! termination codes
 
@@ -148,8 +149,9 @@ logical :: warn = .true.
 ! data separators for messages to graphics processes
 
 integer, parameter :: END_OF_ELEMENTS  = -101, &
-                      END_OF_EDGES     = -102, &
-                      END_OF_VERTICES  = -103
+                      END_OF_FACES     = -102, &
+                      END_OF_EDGES     = -103, &
+                      END_OF_VERTICES  = -104
 
 ! values for selecting which clocks
 
@@ -194,7 +196,7 @@ integer, parameter :: HP_BIGGER_ERRIND  =  1, &
                       HP_NLP            = 14, &
                       HP_STEEPEST_SLOPE = 15
 
-! selection of rule for edge degree
+! selection of rule for edge/face degree
 
 integer, parameter :: MINIMUM_RULE = 1, &
                       MAXIMUM_RULE = 2
@@ -211,26 +213,24 @@ integer, parameter :: MG_SOLVER               = 1, &
                       GMRES_SOLVER            = 3, &
                       LAPACK_INDEFINITE_SOLVER= 4, &
                       LAPACK_SPD_SOLVER       = 5, &
-                      MUMPS_NONSYM_SOLVER     = 10, &
-                      MUMPS_SPD_SOLVER        = 11, &
-                      MUMPS_GEN_SOLVER        = 12, &
-                      SUPERLU_SOLVER          = 13, &
-                      HYPRE_BOOMERAMG_SOLVER  = 15, &
-                      HYPRE_PCG_SOLVER        = 16, &
-                      HYPRE_GMRES_SOLVER      = 17, &
-                      PETSC_RICHARDSON_SOLVER = 21, &
-                      PETSC_CHEBYCHEV_SOLVER  = 22, &
-                      PETSC_CG_SOLVER         = 23, &
-                      PETSC_GMRES_SOLVER      = 24, &
-                      PETSC_TCQMR_SOLVER      = 25, &
-                      PETSC_BCGS_SOLVER       = 26, &
-                      PETSC_CGS_SOLVER        = 27, &
-                      PETSC_TFQMR_SOLVER      = 28, &
-                      PETSC_CR_SOLVER         = 29, &
-                      PETSC_LSQR_SOLVER       = 30, &
-                      PETSC_BICG_SOLVER       = 31, &
-                      ARPACK_SOLVER           = 41, &
-                      BLOPEX_SOLVER           = 42
+                      HYPRE_BOOMERAMG_SOLVER  = 10, &
+                      HYPRE_PCG_SOLVER        = 11, &
+                      HYPRE_GMRES_SOLVER      = 12, &
+                      PETSC_RICHARDSON_SOLVER = 13, &
+                      PETSC_CHEBYCHEV_SOLVER  = 14, &
+                      PETSC_CG_SOLVER         = 15, &
+                      PETSC_GMRES_SOLVER      = 16, &
+                      PETSC_TCQMR_SOLVER      = 17, &
+                      PETSC_BCGS_SOLVER       = 18, &
+                      PETSC_CGS_SOLVER        = 19, &
+                      PETSC_TFQMR_SOLVER      = 20, &
+                      PETSC_CR_SOLVER         = 21, &
+                      PETSC_LSQR_SOLVER       = 22, &
+                      PETSC_BICG_SOLVER       = 23, &
+                      PETSC_MUMPS_GEN_SOLVER  = 24, &
+                      PETSC_MUMPS_SPD_SOLVER  = 25, &
+                      PETSC_SUPERLU_SOLVER    = 26, &
+                      DEFAULT_SOLVER          = 27
 
 ! choices for preconditioner
 
@@ -248,7 +248,21 @@ integer, parameter :: NO_PRECONDITION              = 1, &
                       PETSC_ASM_PRECONDITION       = 17, &
                       HYPRE_BOOMERAMG_PRECONDITION = 21, &
                       HYPRE_PARASAILS_PRECONDITION = 22, &
-                      HYPRE_DS_PRECONDITION        = 23
+                      HYPRE_DS_PRECONDITION        = 23, &
+                      DEFAULT_PRECONDITION         = 24
+
+! choices for eigensolver
+
+integer, parameter :: SLEPC_POWER             = 1, &
+                      SLEPC_SUBSPACE          = 2, &
+                      SLEPC_ARNOLDI           = 3, &
+                      SLEPC_LANCZOS           = 4, &
+                      SLEPC_KRYLOV_SCHUR      = 5, &
+                      SLEPC_GEN_DAVIDSON      = 6, &
+                      SLEPC_JACOBI_DAVIDSON   = 7, &
+                      SLEPC_LAPACK            = 8, &
+                      SLEPC_ARPACK            = 9, &
+                      SLEPC_BLOPEX            = 10
 
 ! multigrid choices
 
@@ -270,23 +284,17 @@ integer, parameter :: BALANCE_NONE     = 1, &
 ! refinement termination choices
 
 integer, parameter :: DOUBLE_NVERT        = 1, &
-                      DOUBLE_NVERT_SMOOTH = 2, &
                       DOUBLE_NELEM        = 3, &
-                      DOUBLE_NELEM_SMOOTH = 4, &
                       DOUBLE_NEQ          = 5, &
-                      DOUBLE_NEQ_SMOOTH   = 6, &
                       HALVE_ERREST        = 7, &
                       KEEP_NVERT          = 8, &
-                      KEEP_NVERT_SMOOTH   = 9, &
                       KEEP_NELEM          = 10, &
-                      KEEP_NELEM_SMOOTH   = 11, &
                       KEEP_NEQ            = 12, &
-                      KEEP_NEQ_SMOOTH     = 13, &
                       KEEP_ERREST         = 14, &
                       ONE_REF             = 15, &
                       ONE_REF_HALF_ERRIND = 16
 
-! equation/vertex/edge types
+! equation/vertex/edge/face types
 
 integer, parameter :: INTERIOR  = 1, &
                       DIRICHLET = -2, &  ! must be negative
@@ -333,20 +341,29 @@ integer, parameter :: SCALE_LINF = 1, &
                       SCALE_L2   = 2, &
                       SCALE_M    = 3
 
-! choices for which side of lambda0 to find eigenvalues
+! choices for the spectral transformation
 
-integer, parameter :: EIGEN_LEFT  = 1, &
-                      EIGEN_RIGHT = 2, &
-                      EIGEN_BOTH  = 3
-
-! choices for the transformation for interior eigenvalues
-
-integer, parameter :: SHIFT_INVERT = 1, &
-                      SHIFT_SQUARE = 2
+integer, parameter :: ST_NONE         = 1, &
+                      ST_SHIFT_ORIGIN = 2, &
+                      ST_FOLD         = 3, &
+                      ST_SHIFT_INVERT = 4, &
+                      ST_CAYLEY       = 5
 
 ! message tag for error handling
 
 integer, parameter :: ERR_TAG = 16000
+
+! types of elements
+
+integer, parameter :: TRIANGULAR_ELEMENT  = 1, &
+                      TETRAHEDRAL_ELEMENT = 2
+
+! format for saving a grid
+
+integer, parameter :: GRIDFILE_POLY      = 1, &
+                      GRIDFILE_POLY_SOLN = 2, &
+                      GRIDFILE_MSH       = 3, &
+                      GRIDFILE_MSH_SOLN  = 4
 
 !----------------------------------------------------
 ! Types defined are :
@@ -358,6 +375,7 @@ type io_options
               print_error_when,  print_error_who, &
               print_error_what,  print_errest_what, &
               print_time_when,   print_time_who,  &
+              print_eval_when,   print_eval_who, &
               draw_grid_when
    logical :: pause_after_draw
 end type io_options
@@ -369,6 +387,7 @@ integer, save :: ierr = 0               ! an error code flag
 logical, save :: grid_changed = .false. ! for determining when to send graphics
 integer, save :: my_pde_id              ! id for multiple pdes
 integer, save :: outunit, errunit       ! I/O unit numbers
+integer, save :: global_element_kind    ! kind of elements, set during create
 logical, save :: crank_nicholson=.false.! undocumented feature for using Crank-Nicholson
                                         ! for time-dependent Schroedinger equation
 logical, save :: charged_particles=.false. ! undocumented feature for equations
@@ -379,6 +398,15 @@ integer, save :: convfileunit = 21      ! unit to attach to convergence file
 integer, save :: tds_scale = 0          ! undocumented feature for special
                                         ! scaling of graphics for time
                                         ! dependent Schroedinger
+integer, save, allocatable :: tags(:)   ! undocumented feature to make the tags
+                                        ! of the current element available to
+                                        ! pde_coefs
+
+! Undocumented feature to make the grid and current element lid available to
+! pde_coefs to, for example, access tags.  But don't tell anyone!
+! pde_coefs need to use both global and grid_util.
+
+integer, save :: secret_elem
 
 ! TEMP071217 to keep desired initial grid with battery example.  The battery
 !            main program changes it to .true.
@@ -436,5 +464,33 @@ end do
 call destroy_watch(w)
 
 end subroutine my_pause
+
+!        -------
+function get_lun()
+!        -------
+
+!----------------------------------------------------
+! This routine returns an available logical unit number for i/o
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+
+integer :: get_lun
+!----------------------------------------------------
+! Local variables:
+
+logical :: exists, opened
+!----------------------------------------------------
+! Begin executable code
+
+get_lun = 11
+do
+   inquire(unit=get_lun,exist=exists,opened=opened)
+   if (exists .and. .not. opened) exit
+   get_lun = get_lun + 1
+end do
+
+end function get_lun
 
 end module global

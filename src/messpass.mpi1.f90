@@ -36,21 +36,22 @@ use hash_mod
 use hash_eq_mod
 use stopwatch
 use petsc_init_mod
+use slepc_init_mod
+use omp_lib
 
 implicit none
 private
 public proc_info, init_comm, terminate_comm, increase_universe, &
        decrease_universe, phaml_send, phaml_recv, phaml_alltoall, &
        phaml_global_max, phaml_global_min, phaml_global_sum, PARALLEL, &
-       phaml_barrier, pause_until_enter, warning, fatal, &
+       phaml_barrier, phaml_barrier_master, pause_until_enter, warning, fatal, &
        my_proc, num_proc, log_nproc, hostname, graphics_proc, &
        this_processors_procs, pack_procs_size, pack_procs, unpack_procs, &
        cleanup_unpack_procs, slaves_communicator, max_real_buffer, &
        sequential_send, sequential_recv, &
        GRAPHICS_TERMINATE, GRAPHICS_INIT, GRAPHICS_GRID, &
-       GRAPHICS_CLOSE, &
-       NORMAL_SPAWN, DEBUG_SLAVE, DEBUG_GRAPHICS, DEBUG_BOTH, &
-       HOSTLEN
+       GRAPHICS_CLOSE, NORMAL_SPAWN, DEBUG_SLAVE, DEBUG_GRAPHICS, DEBUG_BOTH, &
+       VTUNE_SLAVE, VTUNE_GRAPHICS, VTUNE_BOTH, HOSTLEN
 
 !----------------------------------------------------
 ! The following types are defined:
@@ -90,7 +91,10 @@ integer, parameter :: GRAPHICS_TERMINATE = 1, &
 integer, parameter :: NORMAL_SPAWN       = 1, &
                       DEBUG_SLAVE        = 2, &
                       DEBUG_GRAPHICS     = 3, &
-                      DEBUG_BOTH         = 4
+                      DEBUG_BOTH         = 4, &
+                      VTUNE_SLAVE        = 5, &
+                      VTUNE_GRAPHICS     = 6, &
+                      VTUNE_BOTH         = 7
 
 logical, parameter :: print_comm = .false. ! for debugging and tuning
 !----------------------------------------------------
@@ -278,7 +282,7 @@ contains
 !          ---------
 subroutine init_comm(procs,spawn_form,i_draw_grid,master_draws_grid, &
                      graphics_host,output_unit,error_unit,system_size,eq_type, &
-                     pde_id,nproc,max_blen,triangle_files,update_umod, &
+                     pde_id,nproc,nthread,max_blen,triangle_files,update_umod, &
                      debug_command,display)
 !          ---------
 
@@ -298,7 +302,7 @@ logical, intent(inout) :: i_draw_grid, master_draws_grid
 !(next two are intent(in) for master, intent(out) for slaves and graphics)
 character(len=*), intent(inout) :: graphics_host
 integer, intent(inout) :: output_unit, error_unit, pde_id, system_size, eq_type
-integer, intent(in) :: nproc
+integer, intent(in) :: nproc, nthread
 real(my_real), intent(inout) :: max_blen
 character(len=*), intent(inout) :: triangle_files
 logical, intent(inout) :: update_umod
@@ -308,7 +312,8 @@ character(len=*), intent(in), optional :: debug_command, display
 !----------------------------------------------------
 ! Local variables:
 
-integer :: from_proc,ni,nr,temp,proc,ngraph,i,j,info,my_type,allocstat
+integer :: from_proc,ni,nr,temp,proc,ngraph,i,j,info,my_type,allocstat, &
+           loc_nthread
 logical :: i_have_graphics
 integer, pointer :: int_hostname(:)
 integer, pointer :: irecv(:)
@@ -394,7 +399,8 @@ if (procs%my_proc == MASTER) then ! I am the master process
    else
       isend(4) = 0
    endif
-   isend(5) = 0   ! not used
+   loc_nthread = nthread
+   isend(5) = nthread
    isend(6) = 0   ! not used
    isend(7) = pde_id
    isend(8) = spawn_form
@@ -428,6 +434,7 @@ else ! I am either a slave or a graphics server
    procs%nproc = irecv(2)
    i_draw_grid = irecv(3)==1
    master_draws_grid = irecv(4)==1
+   loc_nthread = irecv(5)
    pde_id = irecv(7)
    spawn_form = irecv(8)
    output_unit = irecv(9)
@@ -452,6 +459,8 @@ else ! I am either a slave or a graphics server
       procs%log_nproc = procs%log_nproc + 1
       temp = temp/2
    end do
+
+   call omp_set_num_threads(loc_nthread)
 
 endif
 
@@ -506,7 +515,7 @@ if (my_type == MASTER .or. my_type == SLAVES) then
       else
          isend(4) = 0
       endif
-      isend(5) = 0   ! not used
+      isend(5) = loc_nthread
       isend(6) = 0   ! not used
       isend(7) = pde_id
       isend(8) = spawn_form
@@ -587,6 +596,7 @@ endif
 ! Initialize PETSc
 
 if (my_type == SLAVES) then
+   call slepc_init(procs%slaves)
    call petsc_init(procs%slaves)
 endif
 
@@ -652,6 +662,7 @@ else
       imess(1)=GRAPHICS_TERMINATE
       call phaml_send(procs,procs%graphics_proc,imess,1,rmess,0,101)
    endif
+   call slepc_finalize
    call petsc_finalize ! terminate PETSc; only slaves call petsc_init
    call mpi_finalize(info) ! get out of MPI
 endif
@@ -2126,6 +2137,52 @@ else
 endif
 return
 end subroutine phaml_barrier
+
+!          --------------------
+subroutine phaml_barrier_master(procs)
+!          --------------------
+
+!----------------------------------------------------
+! This routine waits until all processors (including master) get to it
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+type(proc_info), intent(in) :: procs
+
+!----------------------------------------------------
+! Local variables:
+
+integer :: i, p, no_int(1), ni, nr, allocstat
+real(my_real) :: no_reals(1)
+integer, pointer :: recv_int(:)
+real(my_real), pointer :: recv_real(:)
+!----------------------------------------------------
+! Begin executable code
+
+! master waits for a message from all others and then sends them one
+
+if (procs%my_proc == MASTER) then
+   do i=1,procs%nproc
+      call phaml_recv(procs,p,recv_int,ni,recv_real,nr,41)
+      if (associated(recv_int)) deallocate(recv_int,stat=allocstat)
+      if (associated(recv_real)) deallocate(recv_real,stat=allocstat)
+   end do
+   do i=1,procs%nproc
+      call phaml_send(procs,i,no_int,0,no_reals,0,42)
+   end do
+
+! other processors send a message to the master and wait for a reply
+
+else
+   call phaml_send(procs,MASTER,no_int,0,no_reals,0,41)
+   call phaml_recv(procs,p,recv_int,ni,recv_real,nr,42)
+   if (associated(recv_int)) deallocate(recv_int,stat=allocstat)
+   if (associated(recv_real)) deallocate(recv_real,stat=allocstat)
+
+endif
+return
+end subroutine phaml_barrier_master
 
 !          -----------------
 subroutine pause_until_enter(procs,really_pause,just_one,dont_pausewatch)

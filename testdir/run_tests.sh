@@ -42,6 +42,9 @@ shift
 PHAML_LAPACK=$1
 export PHAML_LAPACK
 shift
+PHAML_SLEPC=$1
+export PHAML_SLEPC
+shift
 PHAML_ARPACK=$1
 export PHAML_ARPACK
 shift

@@ -62,7 +62,7 @@ contains
 !          ------
 subroutine refine(grid,procs,refine_control,solver_control,io_control, &
                   lb,still_sequential,init_nvert,init_nelem,init_dof,loop, &
-                  partition_method,balance_what,predictive,no_time)
+                  partition_method,balance_what,predictive,stalled,no_time)
 !          ------
 
 !----------------------------------------------------
@@ -82,6 +82,7 @@ type(Zoltan_Struct), pointer :: lb
 integer, intent(in) :: init_nvert, init_nelem, init_dof, loop, &
                        partition_method,balance_what
 logical, intent(in) :: still_sequential, predictive
+logical, intent(out) :: stalled
 logical, intent(in), optional :: no_time
 
 !----------------------------------------------------
@@ -111,26 +112,31 @@ if (refine_control%reftype == HP_ADAPTIVE .and. &
      refine_control%hp_strategy == HP_REFSOLN_ELEM)) then
    call refine_refsoln(grid,procs,refine_control,solver_control, &
                        io_control,still_sequential)
+   stalled = .false.
 
 ! NLP also has it's own routine
 
 elseif (refine_control%reftype == HP_ADAPTIVE .and. &
         refine_control%hp_strategy == HP_NLP) then
-   call refine_nlp(grid,procs,refine_control,still_sequential)
+   call refine_nlp(grid,procs,refine_control,solver_control,still_sequential)
+   stalled = .false.
 
 ! uniform refinement
 
 elseif (refine_control%reftype == P_UNIFORM) then
    call refine_uniform_p(grid,refine_control)
+   stalled = .false.
 elseif (refine_control%reftype == H_UNIFORM) then
-   call refine_uniform_h(grid,refine_control)
+   call refine_uniform_h(grid,refine_control,solver_control)
+   stalled = .false.
 
 ! all other adaptive refinements
 
 else
    call refine_adaptive(grid,procs,refine_control,solver_control,io_control, &
                         lb,still_sequential,init_nvert,init_nelem,init_dof, &
-                        loop,partition_method,balance_what,predictive,no_time)
+                        loop,partition_method,balance_what,predictive, &
+                        stalled,no_time)
 
 endif
 

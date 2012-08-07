@@ -1,9 +1,10 @@
 ---------------------------------------------------------
-           PHAML   Version 1.9.1
+           PHAML   Version 1.11.0
 
 Output from the master process
   PDE id is     0
   Number of slave processors is     4
+  Number of OpenMP threads is       1
 
 Subroutine phaml_solve_pde parameters:
   max_elem           infinity
@@ -17,6 +18,10 @@ Subroutine phaml_solve_pde parameters:
   task               BALANCE_REFINE_SOLVE
   solve_init         true
   system_size                 1
+  pde_has_first_order_terms  false
+  pde_has_cross_derivative   false
+  laplacian_operator         true
+  isosceles_right_triangles  true
   print_grid_when    PHASES
   print_grid_who     MASTER_ALL
   print_linsys_when  NEVER
@@ -34,7 +39,7 @@ Subroutine phaml_solve_pde parameters:
   errtype            ABSOLUTE_ERROR
   reftype            H_ADAPTIVE
   edge_rule          MINIMUM_RULE
-  refterm            DOUBLE_NEQ_SMOOTH
+  refterm            DOUBLE_NEQ
   derefine           true
   partition_method   ZOLTAN_REFTREE
   prebalance         BALANCE_ELEMENTS
@@ -127,13 +132,13 @@ Total Grid:
 
 Individual Grids:
    number of vertices       =          78         78         78         78
-   number of vertices I own =          42         31         39         33
+   number of vertices I own =          42         31         42         30
    number of elements       =         264        264        264        264
    number of leaf elements  =         136        136        136        136
-   leaf elements I own      =          64         64         62         66
+   leaf elements I own      =          64         64         64         64
    number of levels         =           6          6          6          6
    degrees of freedom       =          78         78         78         78
-   degrees of freedom I own =          42         31         39         33
+   degrees of freedom I own =          42         31         42         30
    min degree               =           1          1          1          1
    max degree               =           1          1          1          1
 
@@ -145,14 +150,14 @@ Total Grid:
    min and max degree      =           1          1
 
 Individual Grids:
-   number of vertices       =         131        131        130        132
-   number of vertices I own =          78         67         73         71
-   number of elements       =         456        456        454        458
-   number of leaf elements  =         232        232        231        233
-   leaf elements I own      =         128        128        124        132
+   number of vertices       =         131        131        131        131
+   number of vertices I own =          78         67         78         66
+   number of elements       =         456        456        456        456
+   number of leaf elements  =         232        232        232        232
+   leaf elements I own      =         128        128        128        128
    number of levels         =           7          7          7          7
-   degrees of freedom       =         131        131        130        132
-   degrees of freedom I own =          78         67         73         71
+   degrees of freedom       =         131        131        131        131
+   degrees of freedom I own =          78         67         78         66
    min degree               =           1          1          1          1
    max degree               =           1          1          1          1
 
@@ -164,14 +169,14 @@ Total Grid:
    min and max degree      =           1          1
 
 Individual Grids:
-   number of vertices       =         388        388        380        394
-   number of vertices I own =         286        259        272        272
-   number of elements       =        1448       1448       1422       1466
-   number of leaf elements  =         728        728        715        737
-   leaf elements I own      =         512        512        496        528
+   number of vertices       =         388        388        388        388
+   number of vertices I own =         286        259        286        258
+   number of elements       =        1448       1448       1448       1448
+   number of leaf elements  =         728        728        728        728
+   leaf elements I own      =         512        512        512        512
    number of levels         =           9          9          9          9
-   degrees of freedom       =         388        388        380        394
-   degrees of freedom I own =         286        259        272        272
+   degrees of freedom       =         388        388        388        388
+   degrees of freedom I own =         286        259        286        258
    min degree               =           1          1          1          1
    max degree               =           1          1          1          1
 
@@ -183,14 +188,14 @@ Total Grid:
    min and max degree      =           1          1
 
 Individual Grids:
-   number of vertices       =         388        388        380        394
-   number of vertices I own =         286        259        272        272
-   number of elements       =        1448       1448       1422       1466
-   number of leaf elements  =         728        728        715        737
-   leaf elements I own      =         512        512        496        528
+   number of vertices       =         388        388        388        388
+   number of vertices I own =         286        259        286        258
+   number of elements       =        1448       1448       1448       1448
+   number of leaf elements  =         728        728        728        728
+   leaf elements I own      =         512        512        512        512
    number of levels         =           9          9          9          9
-   degrees of freedom       =         388        388        380        394
-   degrees of freedom I own =         286        259        272        272
+   degrees of freedom       =         388        388        388        388
+   degrees of freedom I own =         286        259        286        258
    min degree               =           1          1          1          1
    max degree               =           1          1          1          1
 

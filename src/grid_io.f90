@@ -34,13 +34,14 @@ use grid_util
 use stopwatch
 use zoltan_interf
 use error_estimators
+use sort_mod
 !----------------------------------------------------
 
 implicit none
 private
-public draw_grid, print_element, print_vertex, print_edge, &
+public draw_grid, print_element, print_vertex, print_edge, print_face, &
        print_all_elements, print_all_vertices, print_all_edges, &
-       print_entire_grid, print_grid_info
+       print_all_faces, print_entire_grid, print_grid_info, store_grid
 
 contains
 
@@ -75,6 +76,46 @@ end do
 end subroutine print_all_elements
 
 !          ---------------
+subroutine print_all_faces(grid)
+!          ---------------
+
+!----------------------------------------------------
+! This subroutine prints the data structure for all the faces
+!----------------------------------------------------
+ 
+!----------------------------------------------------
+! Dummy arguments
+ 
+type (grid_type), intent(in) :: grid
+!----------------------------------------------------
+! Local variables
+
+integer :: lev, elem, face, i
+logical :: printed(grid%biggest_face)
+
+!----------------------------------------------------
+! Begin executable code
+
+! go through elements and print any faces that haven't already been printed
+
+printed = .false.
+do lev=1,grid%nlev
+   elem = grid%head_level_elem(lev)
+   do while (elem /= END_OF_LIST)
+      do i=1,FACES_PER_ELEMENT
+         face = grid%element(elem)%face(i)
+         if (.not. printed(face)) then
+            call print_face(grid,face)
+            printed(face) = .true.
+         endif
+      end do
+      elem = grid%element(elem)%next
+   end do
+end do
+
+end subroutine print_all_faces
+
+!          ---------------
 subroutine print_all_edges(grid)
 !          ---------------
 
@@ -90,7 +131,7 @@ type (grid_type), intent(in) :: grid
 ! Local variables
 
 integer :: lev, elem, edge, i
-logical :: printed(size(grid%edge))
+logical :: printed(grid%biggest_edge)
 
 !----------------------------------------------------
 ! Begin executable code
@@ -129,15 +170,22 @@ type (grid_type), intent(in) :: grid
 !----------------------------------------------------
 ! Local variables
 
-integer lev, vert
+integer lev, vert, elem, ivert
+logical :: visited_vert(grid%biggest_vert)
 !----------------------------------------------------
 ! Begin executable code
 
+visited_vert = .false.
 do lev=1,grid%nlev
-   vert = grid%head_level_vert(lev)
-   do while (vert /= END_OF_LIST)
-      call print_vertex(grid,vert)
-      vert = grid%vertex(vert)%next
+   elem = grid%head_level_elem(lev)
+   do while (elem /= END_OF_LIST)
+      do ivert=1,VERTICES_PER_ELEMENT
+         vert = grid%element(elem)%vertex(ivert)
+         if (visited_vert(vert)) cycle
+         visited_vert(vert) = .true.
+         call print_vertex(grid,vert)
+      end do
+      elem = grid%element(elem)%next
    end do
 end do
 
@@ -160,6 +208,7 @@ type (grid_type), intent(in) :: grid
 
 call print_all_vertices(grid)
 call print_all_edges(grid)
+if (global_element_kind == TETRAHEDRAL_ELEMENT) call print_all_faces(grid)
 call print_all_elements(grid)
 
 end subroutine print_entire_grid
@@ -185,9 +234,17 @@ write(outunit,"(A)") '--------------------'
 write(outunit,"(A,I11)") 'Element number ',elem
 write(outunit,"(A)") '--------------------'
 call hash_print_key(grid%element(elem)%gid,outunit,"Global ID: ")
-write(outunit,"(A,3I11)") 'Vertices:  ',grid%element(elem)%vertex
-write(outunit,"(A,3I11)") 'Edges:     ',grid%element(elem)%edge
-call hash_print_key(grid%element(elem)%mate,outunit,"Mate GID: ")
+write(outunit,"(A,4I11)") 'Vertices:  ',grid%element(elem)%vertex
+write(outunit,"(A,6I11)") 'Edges:     ',grid%element(elem)%edge
+if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+   write(outunit,"(A,4I11)") 'Faces:     ',grid%element(elem)%face
+   call hash_print_key(grid%element(elem)%neighbor_hint,outunit,"Neighbor hint: ")
+   write(outunit,"(A,I11)") 'Refinement edge: ',grid%element(elem)%refinement_edge
+   write(outunit,"(2A)") 'Type: ',grid%element(elem)%type
+end if
+if (global_element_kind == TRIANGULAR_ELEMENT) then
+   call hash_print_key(grid%element(elem)%mate,outunit,"Mate GID: ")
+endif
 write(outunit,"(A,I11)") 'Level:     ',grid%element(elem)%level
 write(outunit,"(A,I11)") 'Degree:    ',grid%element(elem)%degree
 if (associated(grid%element(elem)%solution)) then
@@ -209,10 +266,59 @@ write(outunit,"(A,L1)") 'Owner:     ',grid%element(elem)%iown
 write(outunit,"(A,2I11)") 'Next/Prev: ',grid%element(elem)%next,grid%element(elem)%previous
 write(outunit,"(A,2I11)") 'In/Out:    ',grid%element(elem)%in,grid%element(elem)%out
 if (grid%element(elem)%level == 1) then
-   write(outunit,"(A,3I11)") 'Neighbors: ',grid%initial_neighbor(:,elem)
+   write(outunit,"(A,4I11)") 'Neighbors: ',grid%initial_neighbor(:,elem)
 endif
+write(outunit,"(A,100I11)") 'Tags:      ',grid%element(elem)%tags
 
 end subroutine print_element
+
+!          ----------
+subroutine print_face(grid,face)
+!          ----------
+
+!----------------------------------------------------
+! This subroutine prints the data structure for face face
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+
+type (grid_type), intent(in) :: grid
+integer, intent(in) :: face
+
+!----------------------------------------------------
+! Begin executable code
+
+write(outunit,"(A)") '------------------'
+write(outunit,"(A,I11)") 'Face number ',face
+write(outunit,"(A)") '------------------'
+call hash_print_key(grid%face(face)%gid,outunit,"Global ID: ")
+write(outunit,"(A,3I11)") 'Vertices:           ',grid%face(face)%vertex
+write(outunit,"(A,3I11)") 'Edges:              ',grid%face(face)%edge
+if (associated(grid%face(face)%solution)) then
+   write(outunit,"(SS,1P,A,100E18.10E2)") 'Solution:           ',grid%face(face)%solution
+else
+   write(outunit,"(A)") 'Solution:           disassociated'
+endif
+if (associated(grid%face(face)%exact)) then
+   write(outunit,"(SS,1P,A,100E18.10E2)") 'Exact:              ',grid%face(face)%exact
+else
+   write(outunit,"(A)") 'Exact:              disassociated'
+endif
+if (associated(grid%face(face)%oldsoln)) then
+   write(outunit,"(SS,1P,A,100E18.10E2)") 'Oldsoln:            ',grid%face(face)%oldsoln
+else
+   write(outunit,"(A)") 'Oldsoln:            disassociated'
+endif
+write(outunit,"(A,I11)") 'Bmark:              ',grid%face(face)%bmark
+write(outunit,"(A,100I11)") 'Type:               ',grid%face_type(face,:)
+write(outunit,"(A,I11)") 'Degree:             ',grid%face(face)%degree
+write(outunit,"(A,I11)") 'Associated element: ',grid%face(face)%assoc_elem
+write(outunit,"(A,I11)") 'Marked edge:        ',grid%face(face)%marked_edge
+write(outunit,"(A,I11)") 'Next:               ',grid%face(face)%next
+write(outunit,"(A,100I11)") 'Tags:               ',grid%face(face)%tags
+
+end subroutine print_face
 
 !          ----------
 subroutine print_edge(grid,edge)
@@ -256,8 +362,8 @@ write(outunit,"(A,100I11)") 'Type:               ',grid%edge_type(edge,:)
 write(outunit,"(A,I11)") 'Degree:             ',grid%edge(edge)%degree
 write(outunit,"(A,I11)") 'Associated element: ',grid%edge(edge)%assoc_elem
 write(outunit,"(A,I11)") 'Next:               ',grid%edge(edge)%next
+write(outunit,"(A,100I11)") 'Tags:               ',grid%edge(edge)%tags
 
-return
 end subroutine print_edge
 
 !          ------------
@@ -281,7 +387,7 @@ write(outunit,"(A)") '--------------------'
 write(outunit,"(A,I11)") 'Vertex number ',vert
 write(outunit,"(A)") '--------------------'
 call hash_print_key(grid%vertex(vert)%gid,outunit,"Global ID: ")
-write(outunit,"(SS,1P,A,2E18.10E2)") 'Coordinates:        ',grid%vertex(vert)%coord
+write(outunit,"(SS,1P,A,3E18.10E2)") 'Coordinates:        ',grid%vertex(vert)%coord
 write(outunit,"(SS,1P,A,100E18.10E2)") 'Solution:           ',grid%vertex_solution(vert,:,:)
 if (associated(grid%vertex_exact)) then
    write(outunit,"(SS,1P,A,100E18.10E2)") 'Exact:              ',grid%vertex_exact(vert,:,:)
@@ -296,7 +402,8 @@ endif
 write(outunit,"(A,I11)") 'Bmark:              ',grid%vertex(vert)%bmark
 write(outunit,"(A,100I11)") 'Type:               ',grid%vertex_type(vert,:)
 write(outunit,"(A,I11)") 'Associated element: ',grid%vertex(vert)%assoc_elem
-write(outunit,"(A,2I11)") 'Next/Previous:      ',grid%vertex(vert)%next,grid%vertex(vert)%previous
+write(outunit,"(A,I11)") 'Next:               ',grid%vertex(vert)%next
+write(outunit,"(A,100I11)") 'Tags:               ',grid%vertex(vert)%tags
 
 return
 end subroutine print_vertex
@@ -519,7 +626,7 @@ type(Zoltan_Struct), pointer :: lb
 !----------------------------------------------------
 ! Local variables:
 
-integer :: ni, nr, astat
+integer :: ni, nr, astat, markers
 integer, pointer :: imess(:)
 real (my_real), pointer :: rmess(:)
 integer :: imess1(1)
@@ -551,15 +658,15 @@ if (my_proc(procs) /= MASTER) then
 
       if (partition_method == ZOLTAN_REFTREE) then
 
-         allocate(hold_next(size(grid%element)), &
-                  hold_prev(size(grid%element)),stat=astat)
+         allocate(hold_next(grid%biggest_elem), &
+                  hold_prev(grid%biggest_elem),stat=astat)
          if (astat /= 0) then
             ierr = ALLOC_FAILED
             call fatal("allocation failed in draw_grid",procs=procs)
             return
          endif
-         hold_next = grid%element%next
-         hold_prev = grid%element%previous
+         hold_next = grid%element(1:grid%biggest_elem)%next
+         hold_prev = grid%element(1:grid%biggest_elem)%previous
          hold_head = grid%head_level_elem(1)
 
          call child_order_from_zoltan(grid,procs,lb,partition_method, &
@@ -568,13 +675,21 @@ if (my_proc(procs) /= MASTER) then
 
 ! if slaves are plotting, send the grid to the graphics process
 
+      select case (global_element_kind)
+      case (TRIANGULAR_ELEMENT)
+         markers = 3
+      case (TETRAHEDRAL_ELEMENT)
+         markers = 4
+      end select
       if (i_draw) then
-         allocate(imess(3+scalar_imess_size(grid) + &
+         allocate(imess(markers+scalar_imess_size(grid) + &
                         elem_imess_size(grid)*grid%nelem + &
+                        face_imess_size(grid)*grid%nface + &
                         edge_imess_size(grid)*grid%nedge + &
                         vert_imess_size(grid)*grid%nvert), &
                   rmess(scalar_rmess_size(grid) + &
                         elem_rmess_size(grid)*grid%nelem + &
+                        face_rmess_size(grid)*grid%nface + &
                         edge_rmess_size(grid)*grid%nedge + &
                         vert_rmess_size(grid)*grid%nvert), &
                   stat=astat)
@@ -596,12 +711,14 @@ if (my_proc(procs) /= MASTER) then
 ! if master is plotting, send the grid to the master
 
       if (master_draws) then
-         allocate(imess(3+scalar_imess_size(grid) + &
+         allocate(imess(markers+scalar_imess_size(grid) + &
                         elem_imess_size(grid)*grid%nelem + &
+                        face_imess_size(grid)*grid%nface + &
                         edge_imess_size(grid)*grid%nedge + &
                         vert_imess_size(grid)*grid%nvert), &
                   rmess(scalar_rmess_size(grid) + &
                         elem_rmess_size(grid)*grid%nelem + &
+                        face_rmess_size(grid)*grid%nface + &
                         edge_rmess_size(grid)*grid%nedge + &
                         vert_rmess_size(grid)*grid%nvert), &
                   stat=astat)
@@ -621,8 +738,8 @@ if (my_proc(procs) /= MASTER) then
 ! if using ZOLTAN_REFTREE, restore the level-by-level element linked list
 
       if (partition_method == ZOLTAN_REFTREE) then
-         grid%element%next = hold_next
-         grid%element%previous = hold_prev
+         grid%element(1:grid%biggest_elem)%next = hold_next
+         grid%element(1:grid%biggest_elem)%previous = hold_prev
          grid%head_level_elem(1) = hold_head
          deallocate(hold_next, hold_prev, stat=astat)
       endif
@@ -717,12 +834,14 @@ integer, intent(out) :: ni,nr
 !----------------------------------------------------
 ! Local variables:
 
-logical(small_logical), allocatable :: sendit(:), sendite(:), seen_edge(:)
+logical(small_logical), allocatable :: sendit(:), sendite(:), senditf(:), &
+                                       seen_face(:), seen_edge(:)
 character(len=HOSTLEN) :: host
 integer :: i,k,ind,lev,elem,edge,rind,vert,elem_per_proc,edge_per_proc, &
            vert_per_proc,nproc,my_processor,melem,medge,mvert,astat,ssize, &
-           neigh_lid(EDGES_PER_ELEMENT)
+           neigh_lid(NEIGHBORS_PER_ELEMENT),mface,face_per_proc,face,ivert
 type(hash_key) :: boundary_gid
+logical :: visited_vert(grid%biggest_vert)
 
 !----------------------------------------------------
 ! Begin executable code
@@ -741,46 +860,64 @@ if (still_sequential .and. for_master .and. my_processor/=1) return
 ! master as all that I own or have a descendent that I own
 
 if (for_master) then
-   allocate(sendit(size(grid%element)),sendite(size(grid%edge)),stat=astat)
+   allocate(sendit(grid%biggest_elem),sendite(grid%biggest_edge),stat=astat)
    if (astat /= 0) then
       ierr = ALLOC_FAILED
       call fatal("allocation failed in pack grid",procs=procs)
       return
    endif
-   call set_sendit(grid,sendit,sendite,my_processor)
+   if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+      allocate(senditf(grid%biggest_face),stat=astat)
+   else
+      allocate(senditf(0),stat=astat)
+      if (astat /= 0) then
+         ierr = ALLOC_FAILED
+         call fatal("allocation failed in pack grid",procs=procs)
+         return
+      endif
+   endif
+   call set_sendit(grid,sendit,sendite,senditf,my_processor)
 endif
 
 ! pack the command number
 
 imess(1) = GRAPHICS_GRID
 
-! determine the dimension for elements, edges and vertices needed on
+! determine the dimension for elements, faces, edges and vertices needed on
 ! the graphics server
 
 melem = 0
+mface = 0
 medge = 0
 mvert = 0
 do lev=1,grid%nlev
    elem = grid%head_level_elem(lev)
    do while (elem /= END_OF_LIST)
       melem = max(melem,elem)
+      do i=1,VERTICES_PER_ELEMENT
+         mvert = max(mvert,grid%element(elem)%vertex(i))
+      end do
       do i=1,EDGES_PER_ELEMENT
          medge = max(medge,grid%element(elem)%edge(i))
       end do
+      do i=1,FACES_PER_ELEMENT
+         mface = max(mface,grid%element(elem)%face(i))
+      end do
       elem = grid%element(elem)%next
-   end do
-   vert = grid%head_level_vert(lev)
-   do while (vert /= END_OF_LIST)
-      mvert = max(mvert,vert)
-      vert = grid%vertex(vert)%next
    end do
 end do
 
-if (for_master) then
+if (for_master .and. nproc > 1) then
    if (still_sequential) then
       elem_per_proc=10**int(log10(real(melem,my_real))+1)
       edge_per_proc=10**int(log10(real(medge,my_real))+1)
       vert_per_proc=10**int(log10(real(mvert,my_real))+1)
+      select case (global_element_kind)
+      case (TRIANGULAR_ELEMENT)
+         face_per_proc = 0
+      case (TETRAHEDRAL_ELEMENT)
+         face_per_proc=10**int(log10(real(mface,my_real))+1)
+      end select
    else
       elem_per_proc = &
               10**int(log10(phaml_global_max(procs,real(melem,my_real),730))+1)
@@ -788,6 +925,13 @@ if (for_master) then
               10**int(log10(phaml_global_max(procs,real(medge,my_real),735))+1)
       vert_per_proc = &
               10**int(log10(phaml_global_max(procs,real(mvert,my_real),740))+1)
+      select case (global_element_kind)
+      case (TRIANGULAR_ELEMENT)
+         face_per_proc = 0
+      case (TETRAHEDRAL_ELEMENT)
+         face_per_proc = &
+              10**int(log10(phaml_global_max(procs,real(mface,my_real),736))+1)
+      end select
    endif
    imess(2) = (nproc+1)*elem_per_proc
    imess(3) = (nproc+1)*edge_per_proc
@@ -804,7 +948,19 @@ imess(6) = size(grid%vertex_solution,3)
 
 imess(7) = nproc
 imess(8) = my_processor
-ind = 8
+
+select case (global_element_kind)
+case (TRIANGULAR_ELEMENT)
+   ind = 8
+case (TETRAHEDRAL_ELEMENT)
+   if (for_master .and. nproc > 1) then
+      imess(9) = (nproc+1)*face_per_proc
+   else
+      imess(9) = mface
+   endif
+   ind = 9
+end select
+
 host = hostname(procs)
 do i=1,HOSTLEN
    imess(ind+ i) = ichar(host(i:i))
@@ -832,7 +988,11 @@ do lev=1,grid%nlev
             elem = grid%element(elem)%next
             cycle
          endif
-         imess(ind+1) = elem + my_processor*elem_per_proc
+         if (nproc > 1) then
+            imess(ind+1) = elem + my_processor*elem_per_proc
+         else
+            imess(ind+1) = elem
+         endif
       else
          imess(ind+1) = elem
       endif
@@ -846,9 +1006,11 @@ do lev=1,grid%nlev
       ind = ind + 1
       call hash_pack_key(grid%element(elem)%gid,imess,ind+1)
       ind = ind + KEY_SIZE
-      rmess(rind+1) = maxval(grid%element_errind(elem,:))
-      rmess(rind+2) = grid%element(elem)%work
-      rind = rind + 2
+      if (global_element_kind == TRIANGULAR_ELEMENT) then
+         rmess(rind+1) = maxval(grid%element_errind(elem,:))
+         rmess(rind+2) = grid%element(elem)%work
+         rind = rind + 2
+      endif
       if (ssize /= 0) then
          rmess(rind+1:rind+ssize) = reshape(grid%element(elem)%solution,(/ssize/))
          rind = rind + ssize
@@ -872,18 +1034,25 @@ do lev=1,grid%nlev
                            ind+1+(i-1)*KEY_SIZE)
       end do
       ind = ind + EDGES_PER_ELEMENT*KEY_SIZE
+      do i=1,FACES_PER_ELEMENT
+         call hash_pack_key(grid%face(grid%element(elem)%face(i))%gid,imess, &
+                           ind+1+(i-1)*KEY_SIZE)
+      end do
+      ind = ind + FACES_PER_ELEMENT*KEY_SIZE
       imess(ind+1) = grid%element(elem)%degree
       ind = ind + 1
       imess(ind+1) = grid%element(elem)%level
       ind = ind + 1
-      call hash_pack_key(grid%vertex(grid%element(elem)%in)%gid,imess, &
-                         ind+1)
-      ind = ind + KEY_SIZE
-      call hash_pack_key(grid%vertex(grid%element(elem)%out)%gid,imess, &
-                         ind+1)
-      ind = ind + KEY_SIZE
-      imess(ind+1:ind+MAX_CHILD) = grid%element(elem)%order
-      ind = ind + MAX_CHILD
+      if (global_element_kind == TRIANGULAR_ELEMENT) then
+         call hash_pack_key(grid%vertex(grid%element(elem)%in)%gid,imess, &
+                            ind+1)
+         ind = ind + KEY_SIZE
+         call hash_pack_key(grid%vertex(grid%element(elem)%out)%gid,imess, &
+                            ind+1)
+         ind = ind + KEY_SIZE
+         imess(ind+1:ind+MAX_CHILD) = grid%element(elem)%order
+         ind = ind + MAX_CHILD
+      endif
       if (grid%element(elem)%isleaf) then
          imess(ind+1) = 1
       else
@@ -896,22 +1065,157 @@ do lev=1,grid%nlev
          imess(ind+1) = 0
       endif
       ind = ind + 1
-      neigh_lid = get_neighbors(elem,grid)
-      do i=1,EDGES_PER_ELEMENT
-         if (neigh_lid(i) == BOUNDARY) then
-            call hash_pack_key(boundary_gid,imess,ind+1+(i-1)*KEY_SIZE)
-         else
-            call hash_pack_key(grid%element(neigh_lid(i))%gid,imess, &
-                               ind+1+(i-1)*KEY_SIZE)
-         endif
-      end do
-      ind = ind + EDGES_PER_ELEMENT*KEY_SIZE
+      if (global_element_kind == TRIANGULAR_ELEMENT) then
+         neigh_lid = get_neighbors(elem,grid)
+         do i=1,NEIGHBORS_PER_ELEMENT
+            if (neigh_lid(i) == BOUNDARY) then
+               call hash_pack_key(boundary_gid,imess,ind+1+(i-1)*KEY_SIZE)
+            else
+               call hash_pack_key(grid%element(neigh_lid(i))%gid,imess, &
+                                  ind+1+(i-1)*KEY_SIZE)
+            endif
+         end do
+         ind = ind + NEIGHBORS_PER_ELEMENT*KEY_SIZE
+      endif
       elem = grid%element(elem)%next
    end do
 end do
 
 imess(ind+1) = END_OF_ELEMENTS
 ind = ind+1
+
+! pack the vertices
+
+visited_vert = .false.
+do lev=1,grid%nlev
+   elem = grid%head_level_elem(lev)
+   do while (elem /= END_OF_LIST)
+      do ivert=1,VERTICES_PER_ELEMENT
+         vert = grid%element(elem)%vertex(ivert)
+         if (visited_vert(vert)) cycle
+         visited_vert(vert) = .true.
+         if (for_master) then
+            if (.not. grid%element(grid%vertex(vert)%assoc_elem)%iown) cycle
+            if (nproc > 1) then
+               imess(ind+1) = vert + vert_per_proc*my_processor
+               imess(ind+2) = grid%vertex(vert)%assoc_elem + &
+                              my_processor*elem_per_proc
+            else
+               imess(ind+1) = vert
+               imess(ind+2) = grid%vertex(vert)%assoc_elem
+            endif
+         else
+            imess(ind+1) = vert
+            imess(ind+2) = grid%vertex(vert)%assoc_elem
+         endif
+         ind = ind + 2
+         call hash_pack_key(grid%vertex(vert)%gid,imess,ind+1)
+         ind = ind + KEY_SIZE
+         rmess(rind+1) = grid%vertex(vert)%coord%x
+         rmess(rind+2) = grid%vertex(vert)%coord%y
+         rind = rind + 2
+         if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+            rmess(rind+1) = zcoord(grid%vertex(vert)%coord)
+            rind = rind + 1
+         endif
+         rmess(rind+1:rind+grid%nsoln) = reshape(grid%vertex_solution(vert,:,:), &
+                                                 (/grid%nsoln/))
+         rind = rind + grid%nsoln
+         if (associated(grid%vertex_exact)) then
+            where (reshape(grid%vertex_exact(vert,:,:),(/grid%nsoln/)) == huge(0.0_my_real))
+               rmess(rind+1:rind+grid%nsoln) = 0.0_my_real
+            elsewhere
+               rmess(rind+1:rind+grid%nsoln) = reshape(grid%vertex_exact(vert,:,:), &
+                                                       (/grid%nsoln/))
+            endwhere
+         else
+            rmess(rind+1:rind+grid%nsoln) = 0.0_my_real
+         endif
+         rind = rind + grid%nsoln
+      end do
+      elem = grid%element(elem)%next
+   end do
+end do
+imess(ind+1) = END_OF_VERTICES
+ind = ind+1
+
+! pack the faces
+
+if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+   allocate(seen_face(mface),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("allocation failed in pack grid",procs=procs)
+      return
+   endif
+   seen_face = .false.
+
+   do lev=1,grid%nlev
+      elem = grid%head_level_elem(lev)
+      do while (elem /= END_OF_LIST)
+         do k=1,FACES_PER_ELEMENT
+            face = grid%element(elem)%face(k)
+            if (seen_face(face)) cycle
+            seen_face(face) = .true.
+            if (associated(grid%face(face)%solution)) then
+               ssize = size(grid%face(face)%solution)
+            else
+               ssize = 0
+            endif
+            if (for_master) then
+               if (.not. senditf(face)) cycle
+               if (nproc > 1) then
+                  imess(ind+1) = face + face_per_proc*my_processor
+                  imess(ind+2) = ssize
+                  imess(ind+3) = grid%face(face)%assoc_elem + &
+                                 my_processor*elem_per_proc
+               else
+                  imess(ind+1) = face
+                  imess(ind+2) = ssize
+                  imess(ind+3) = grid%face(face)%assoc_elem
+               endif
+            else
+               imess(ind+1) = face
+               imess(ind+2) = ssize
+               imess(ind+3) = grid%face(face)%assoc_elem
+            endif
+            ind = ind + 3
+            call hash_pack_key(grid%face(face)%gid,imess,ind+1)
+            ind = ind + KEY_SIZE
+            call hash_pack_key(grid%vertex(grid%face(face)%vertex(1))%gid, &
+                               imess,ind+1)
+            ind = ind + KEY_SIZE
+            call hash_pack_key(grid%vertex(grid%face(face)%vertex(2))%gid, &
+                               imess,ind+1)
+            ind = ind + KEY_SIZE
+            call hash_pack_key(grid%vertex(grid%face(face)%vertex(3))%gid, &
+                               imess,ind+1)
+            ind = ind + KEY_SIZE
+            imess(ind+1) = grid%face(face)%degree
+            ind = ind + 1
+            if (ssize /= 0) then
+               rmess(rind+1:rind+ssize) = reshape(grid%face(face)%solution,(/ssize/))
+               rind = rind + ssize
+               if (grid%have_true) then
+                  rmess(rind+1:rind+ssize) = reshape(grid%face(face)%exact,(/ssize/))
+               else
+                  rmess(rind+1:rind+ssize) = 0.0_my_real
+               endif
+               where (rmess(rind+1:rind+ssize) == huge(0.0_my_real))
+                  rmess(rind+1:rind+ssize) = 0.0_my_real
+               endwhere
+               rind = rind + ssize
+            endif
+         end do
+         elem = grid%element(elem)%next
+      end do
+   end do
+
+   deallocate(seen_face,stat=astat)
+   imess(ind+1) = END_OF_FACES
+   ind = ind+1
+
+endif
 
 ! pack the edges
 
@@ -937,9 +1241,16 @@ do lev=1,grid%nlev
          endif
          if (for_master) then
             if (.not. sendite(edge)) cycle
-            imess(ind+1) = edge + edge_per_proc*my_processor
-            imess(ind+2) = ssize
-            imess(ind+3) = grid%edge(edge)%assoc_elem +my_processor*elem_per_proc
+            if (nproc > 1) then
+               imess(ind+1) = edge + edge_per_proc*my_processor
+               imess(ind+2) = ssize
+               imess(ind+3) = grid%edge(edge)%assoc_elem + &
+                              my_processor*elem_per_proc
+            else
+               imess(ind+1) = edge
+               imess(ind+2) = ssize
+               imess(ind+3) = grid%edge(edge)%assoc_elem
+            endif
          else
             imess(ind+1) = edge
             imess(ind+2) = ssize
@@ -947,6 +1258,12 @@ do lev=1,grid%nlev
          endif
          ind = ind + 3
          call hash_pack_key(grid%edge(edge)%gid,imess,ind+1)
+         ind = ind + KEY_SIZE
+         call hash_pack_key(grid%vertex(grid%edge(edge)%vertex(1))%gid, &
+                            imess,ind+1)
+         ind = ind + KEY_SIZE
+         call hash_pack_key(grid%vertex(grid%edge(edge)%vertex(2))%gid, &
+                            imess,ind+1)
          ind = ind + KEY_SIZE
          imess(ind+1) = grid%edge(edge)%degree
          ind = ind + 1
@@ -970,48 +1287,6 @@ end do
 
 deallocate(seen_edge,stat=astat)
 imess(ind+1) = END_OF_EDGES
-ind = ind+1
-
-! pack the vertices
-
-do lev=1,grid%nlev
-   vert = grid%head_level_vert(lev)
-   do while (vert /= END_OF_LIST)
-      if (for_master) then
-         if (.not. grid%element(grid%vertex(vert)%assoc_elem)%iown) then
-            vert = grid%vertex(vert)%next
-            cycle
-         endif
-         imess(ind+1) = vert + vert_per_proc*my_processor
-         imess(ind+2) = grid%vertex(vert)%assoc_elem +my_processor*elem_per_proc
-      else
-         imess(ind+1) = vert
-         imess(ind+2) = grid%vertex(vert)%assoc_elem
-      endif
-      ind = ind + 2
-      call hash_pack_key(grid%vertex(vert)%gid,imess,ind+1)
-      ind = ind + KEY_SIZE
-      rmess(rind+1) = grid%vertex(vert)%coord%x
-      rmess(rind+2) = grid%vertex(vert)%coord%y
-      rind = rind + 2
-      rmess(rind+1:rind+grid%nsoln) = reshape(grid%vertex_solution(vert,:,:), &
-                                              (/grid%nsoln/))
-      rind = rind + grid%nsoln
-      if (associated(grid%vertex_exact)) then
-         where (reshape(grid%vertex_exact(vert,:,:),(/grid%nsoln/)) == huge(0.0_my_real))
-            rmess(rind+1:rind+grid%nsoln) = 0.0_my_real
-         elsewhere
-            rmess(rind+1:rind+grid%nsoln) = reshape(grid%vertex_exact(vert,:,:), &
-                                                    (/grid%nsoln/))
-         endwhere
-      else
-         rmess(rind+1:rind+grid%nsoln) = 0.0_my_real
-      endif
-      rind = rind + grid%nsoln
-      vert = grid%vertex(vert)%next
-   end do
-end do
-imess(ind+1) = END_OF_VERTICES
 
 ni = ind+1
 nr = rind
@@ -1023,7 +1298,7 @@ if (ni > size(imess) .or. nr > size(rmess)) then
    stop
 endif
 
-if (for_master) deallocate(sendit,sendite,stat=astat)
+if (for_master) deallocate(sendit,sendite,senditf,stat=astat)
 
 end subroutine pack_grid
 
@@ -1036,18 +1311,41 @@ end subroutine pack_grid
 
 integer function scalar_imess_size(grid)
 type(grid_type), intent(in) :: grid
-scalar_imess_size = 10 + HOSTLEN
+select case (global_element_kind)
+case (TRIANGULAR_ELEMENT)
+   scalar_imess_size = 10 + HOSTLEN
+case (TETRAHEDRAL_ELEMENT)
+   scalar_imess_size = 11 + HOSTLEN
+end select
 end function scalar_imess_size
 
 integer function elem_imess_size(grid)
 type(grid_type), intent(in) :: grid
-elem_imess_size = 6 + MAX_CHILD + &
-                 (3 + 2*EDGES_PER_ELEMENT + VERTICES_PER_ELEMENT)*KEY_SIZE
+select case (global_element_kind)
+case (TRIANGULAR_ELEMENT)
+   elem_imess_size = 6 + MAX_CHILD + &
+                    (3 + EDGES_PER_ELEMENT + VERTICES_PER_ELEMENT + &
+                     NEIGHBORS_PER_ELEMENT)*KEY_SIZE
+case (TETRAHEDRAL_ELEMENT)
+   elem_imess_size = 6 + &
+                    (1 + EDGES_PER_ELEMENT + VERTICES_PER_ELEMENT + &
+                     FACES_PER_ELEMENT)*KEY_SIZE
+end select
 end function elem_imess_size
+
+integer function face_imess_size(grid)
+type(grid_type), intent(in) :: grid
+select case (global_element_kind)
+case (TRIANGULAR_ELEMENT)
+   face_imess_size = 0
+case (TETRAHEDRAL_ELEMENT)
+   face_imess_size = 4 + 4*KEY_SIZE
+end select
+end function face_imess_size
 
 integer function edge_imess_size(grid)
 type(grid_type), intent(in) :: grid
-edge_imess_size = 4 + KEY_SIZE
+edge_imess_size = 4 + 3*KEY_SIZE
 end function edge_imess_size
 
 integer function vert_imess_size(grid)
@@ -1057,8 +1355,10 @@ end function vert_imess_size
 
 integer function scalar_rmess_size(grid)
 type(grid_type), intent(in) :: grid
-logical(small_logical) :: seen_edge(size(grid%edge))
-integer :: lev, elem, edge, i
+logical(small_logical) :: seen_face(grid%biggest_face), &
+                          seen_edge(grid%biggest_edge)
+integer :: lev, elem, face, edge, i
+seen_face = .false.
 seen_edge = .false.
 scalar_rmess_size = 0
 do lev=1,grid%nlev
@@ -1068,6 +1368,15 @@ do lev=1,grid%nlev
          scalar_rmess_size = scalar_rmess_size + &
                              2*size(grid%element(elem)%solution)
       endif
+      do i=1,FACES_PER_ELEMENT
+         face = grid%element(elem)%face(i)
+         if (seen_face(face)) cycle
+         seen_face(face) = .true.
+         if (associated(grid%face(face)%solution)) then
+            scalar_rmess_size = scalar_rmess_size + &
+                                2*size(grid%face(face)%solution)
+         endif
+      end do
       do i=1,EDGES_PER_ELEMENT
          edge = grid%element(elem)%edge(i)
          if (seen_edge(edge)) cycle
@@ -1084,8 +1393,18 @@ end function scalar_rmess_size
 
 integer function elem_rmess_size(grid)
 type(grid_type), intent(in) :: grid
-elem_rmess_size = 2
+select case (global_element_kind)
+case (TRIANGULAR_ELEMENT)
+   elem_rmess_size = 2
+case (TETRAHEDRAL_ELEMENT)
+   elem_rmess_size = 0
+end select
 end function elem_rmess_size
+
+integer function face_rmess_size(grid)
+type(grid_type), intent(in) :: grid
+face_rmess_size = 0
+end function face_rmess_size
 
 integer function edge_rmess_size(grid)
 type(grid_type), intent(in) :: grid
@@ -1094,7 +1413,12 @@ end function edge_rmess_size
 
 integer function vert_rmess_size(grid)
 type(grid_type), intent(in) :: grid
-vert_rmess_size = 2 + 2*grid%nsoln
+select case (global_element_kind)
+case (TRIANGULAR_ELEMENT)
+   vert_rmess_size = 2 + 2*grid%nsoln
+case (TETRAHEDRAL_ELEMENT)
+   vert_rmess_size = 3 + 2*grid%nsoln
+end select
 end function vert_rmess_size
 
 !          -----------
@@ -1170,7 +1494,12 @@ imess(1:scalar_imess_size(grid)) = recv(1)%imess(1:scalar_imess_size(grid))
 ! change the processor to this processor
 
 imess(8) = my_proc(procs)
-iind = 8
+select case (global_element_kind)
+case (TRIANGULAR_ELEMENT)
+   iind = 8
+case (TETRAHEDRAL_ELEMENT)
+   iind = 9
+end select
 host = hostname(procs)
 do i=1,HOSTLEN
    imess(iind+ i) = ichar(host(i:i))
@@ -1196,11 +1525,62 @@ do j=1,np
       rind = rind   + rsize + 2*ssize
       prind = prind + rsize + 2*ssize
    end do
-   recv(i)%iind = piind + 1 ! bookmark for when I copy the edges
+   recv(i)%iind = piind + 1 ! bookmark for when I copy the vertices
    recv(i)%rind = prind
 end do
 imess(iind+1) = END_OF_ELEMENTS
 iind = iind + 1
+
+! pack vertices from each processor
+
+isize = vert_imess_size(grid)
+rsize = vert_rmess_size(grid)
+
+do j=1,np
+   i = ord(j)
+   piind = recv(i)%iind
+   prind = recv(i)%rind
+   do while (recv(i)%imess(piind+1) /= END_OF_VERTICES)
+      imess(iind+1:iind+isize) = recv(i)%imess(piind+1:piind+isize)
+      iind = iind   + isize
+      piind = piind + isize
+      rmess(rind+1:rind+rsize) = recv(i)%rmess(prind+1:prind+rsize)
+      rind = rind   + rsize
+      prind = prind + rsize
+   end do
+   recv(i)%iind = piind + 1 ! bookmark for when I copy the faces or edges
+   recv(i)%rind = prind
+end do
+imess(iind+1) = END_OF_VERTICES
+iind = iind + 1
+
+! pack faces from each processor
+
+if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+
+   isize = face_imess_size(grid)
+   rsize = face_rmess_size(grid)
+
+   do j=1,np
+      i = ord(j)
+      piind = recv(i)%iind
+      prind = recv(i)%rind
+      do while (recv(i)%imess(piind+1) /= END_OF_FACES)
+         imess(iind+1:iind+isize) = recv(i)%imess(piind+1:piind+isize)
+         ssize = imess(iind+2)
+         iind = iind   + isize
+         piind = piind + isize
+         rmess(rind+1:rind+rsize+2*ssize) = recv(i)%rmess(prind+1:prind+rsize+2*ssize)
+         rind = rind   + rsize + 2*ssize
+         prind = prind + rsize + 2*ssize
+      end do
+      recv(i)%iind = piind + 1 ! bookmark for when I copy the edges
+      recv(i)%rind = prind
+   end do
+   imess(iind+1) = END_OF_FACES
+   iind = iind + 1
+
+endif
 
 ! pack edges from each processor
 
@@ -1220,24 +1600,9 @@ do j=1,np
       rind = rind   + rsize + 2*ssize
       prind = prind + rsize + 2*ssize
    end do
-   recv(i)%iind = piind + 1 ! bookmark for when I copy the vertices
-   recv(i)%rind = prind
 end do
 imess(iind+1) = END_OF_EDGES
-iind = iind + 1
 
-! pack vertices from each processor
-
-do j=1,np
-   i = ord(j)
-   piind = recv(i)%iind
-   prind = recv(i)%rind
-   imess(iind+1:iind+recv(i)%ni-1-piind) = recv(i)%imess(piind+1:recv(i)%ni-1)
-   rmess(rind+1:rind+recv(i)%nr-prind) = recv(i)%rmess(prind+1:recv(i)%nr)
-   iind = iind+recv(i)%ni-1-piind
-   rind = rind+recv(i)%nr-prind
-end do
-imess(iind+1) = END_OF_VERTICES
 ni = iind + 1
 nr = rind
 
@@ -1251,7 +1616,7 @@ return
 end subroutine merge_grids
 
 !          ----------
-subroutine set_sendit(grid,sendit,sendite,my_processor)
+subroutine set_sendit(grid,sendit,sendite,senditf,my_processor)
 !          ----------
 
 !----------------------------------------------------
@@ -1264,7 +1629,7 @@ subroutine set_sendit(grid,sendit,sendite,my_processor)
 ! Dummy arguments
 
 type(grid_type), intent(in) :: grid
-logical(small_logical), intent(inout) :: sendit(:), sendite(:)
+logical(small_logical), intent(inout) :: sendit(:), sendite(:), senditf(:)
 integer, intent(in) :: my_processor
 !----------------------------------------------------
 ! Local variables:
@@ -1273,15 +1638,28 @@ integer :: elem
 !----------------------------------------------------
 ! Begin executable code
 
+! TEMP3D as long as it is not parallel we send everything
+
+if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+   if (my_processor == 0 .or. my_processor == 1) then
+      sendit = .true.; sendite = .true.; senditf = .true.
+      return
+   else
+      call fatal("need to finish writing set_sendit_recur for 3D")
+      stop
+   endif
+endif
+
 elem = grid%head_level_elem(1)
 do while (elem /= END_OF_LIST)
-   call set_sendit_recur(grid,sendit,sendite,my_processor,elem)
+   call set_sendit_recur(grid,sendit,sendite,senditf,my_processor,elem)
    elem = grid%element(elem)%next
 end do
 end subroutine set_sendit
 
 !                    ----------------
-recursive subroutine set_sendit_recur(grid,sendit,sendite,my_processor,subroot)
+recursive subroutine set_sendit_recur(grid,sendit,sendite,senditf, &
+                                      my_processor,subroot)
 !                    ----------------
 
 !----------------------------------------------------
@@ -1292,12 +1670,12 @@ recursive subroutine set_sendit_recur(grid,sendit,sendite,my_processor,subroot)
 ! Dummy arguments
 
 type(grid_type), intent(in) :: grid
-logical(small_logical), intent(inout) :: sendit(:), sendite(:)
+logical(small_logical), intent(inout) :: sendit(:), sendite(:), senditf(:)
 integer, intent(in) :: my_processor, subroot
 !----------------------------------------------------
 ! Local variables:
 
-integer :: child(MAX_CHILD), i, allc(MAX_CHILD), edge, cedge
+integer :: child(MAX_CHILD), i, allc(MAX_CHILD), face, edge, cedge
 !----------------------------------------------------
 ! Begin executable code
 
@@ -1309,6 +1687,10 @@ if (child(1) == NO_CHILD) then
 ! for a leaf, return whether or not I own it
 
    sendit(subroot) = grid%element(subroot)%iown
+   do i=1,FACES_PER_ELEMENT
+      face = grid%element(subroot)%face(i)
+      senditf(face) = grid%element(grid%face(face)%assoc_elem)%iown
+   end do
    do i=1,EDGES_PER_ELEMENT
       edge = grid%element(subroot)%edge(i)
       sendite(edge) = grid%element(grid%edge(edge)%assoc_elem)%iown
@@ -1318,13 +1700,21 @@ else
 
 ! otherwise, see if any of the children are owned
 ! RESTRICTION bisected triangles; only the third edge needs children checked
+! TEMP 3D for tetrahedra, I need to know which edge is the bisection edge and
+!         which two faces are bisected and which edges and faces are the
+!         children of them
+   if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+      call fatal("need to finish writing set_sendit_recur for 3D")
+      stop
+   endif
 
    sendit(subroot) = .false.
    edge = grid%element(subroot)%edge(3)
    sendite(edge) = .false.
    do i=1,MAX_CHILD
       if (child(i) /= NO_CHILD) then
-         call set_sendit_recur(grid,sendit,sendite,my_processor,child(i))
+         call set_sendit_recur(grid,sendit,sendite,senditf,my_processor, &
+                               child(i))
          sendit(subroot) = sendit(subroot) .or. sendit(child(i))
          cedge = grid%element(child(i))%edge(2)
          if (sendite(cedge)) sendite(edge) = .true.
@@ -1520,5 +1910,818 @@ end do
 deallocate(order,stat=astat)
 
 end subroutine child_order_from_zoltan
+
+!          ----------
+subroutine store_grid(grid,procs,still_sequential,unit,fmt,comp,eigen)
+!          ----------
+
+!----------------------------------------------------
+! This routine calls the appropriate routine to save the grid to a file
+! in the requested format
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+
+type(grid_type), intent(in) :: grid
+type(proc_info), intent(in) :: procs
+logical, intent(in) :: still_sequential
+integer, intent(in) :: unit, fmt, comp, eigen
+!----------------------------------------------------
+! Local variables:
+
+!----------------------------------------------------
+! Begin executable code
+
+select case(fmt)
+case (GRIDFILE_POLY, GRIDFILE_POLY_SOLN)
+   if (global_element_kind == TRIANGULAR_ELEMENT) then
+      call store_grid_poly(grid,procs,still_sequential,unit,fmt,comp,eigen)
+   else
+      call warning("can only save a .poly file with triangular elements; grid not saved")
+      return
+   endif
+case (GRIDFILE_MSH, GRIDFILE_MSH_SOLN)
+   call store_grid_msh(grid,procs,still_sequential,unit,fmt,comp,eigen)
+case default
+   ierr = USER_INPUT_ERROR
+   call fatal("unknown format requested in store_grid")
+   stop
+end select
+
+end subroutine store_grid
+
+!          ---------------
+subroutine store_grid_poly(grid,procs,still_sequential,unit,fmt,comp,eigen)
+!          ---------------
+
+!----------------------------------------------------
+! This routine stores a triangle grid in triangle's .poly format.
+! If fmt is GRIDFILE_POLY_SOLN then one or more solutions are saved as
+! attributes of the vertices.  If comp is -1, all components are saved,
+! otherwise comp tells which component to save.  Same with eigen.
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+
+type(grid_type), intent(in) :: grid
+type(proc_info), intent(in) :: procs
+logical, intent(in) :: still_sequential
+integer, intent(in) :: unit, fmt, comp, eigen
+!----------------------------------------------------
+! Local variables:
+
+integer :: myproc, ni, nr, astat, i, lev, vert, errcode, proc, nsolut, &
+           ipoint, rpoint, elem, edge, nhole, hole, k, piece, ivert
+integer, allocatable :: vertlist(:), iperm(:), end_hole(:)
+logical :: iprint
+logical, allocatable :: seen_edge(:)
+character(len=28) :: fmat
+integer, allocatable, target :: isend(:)
+integer, pointer :: irecv(:)
+real(my_real) :: x1, y1, x2, y2
+real(my_real), allocatable, target :: rsend(:)
+real(my_real), pointer :: rrecv(:)
+logical :: visited_vert(grid%biggest_vert)
+!----------------------------------------------------
+! Begin executable code
+
+myproc = my_proc(procs)
+
+! TEMP requires one processor, but it is OK if it is still sequential
+
+if (num_proc(procs) > 1 .and. .not. still_sequential) then
+   print *,"only one processor if saving the grid as .poly"
+   stop
+endif
+if (myproc > 1) return
+
+! Slave 1 has the grid.  For each section, pack it into a message.  If the
+! compilation is sequential, then slave 1 sets recv to point to send and
+! prints.  If not, then slave 1 sends send to recv on the master and the
+! master prints.
+
+iprint = (parallel == SEQUENTIAL .and. myproc == 1) .or. &
+         (parallel /= SEQUENTIAL .and. myproc == MASTER)
+nullify(irecv,rrecv)
+
+! The description of triangle .poly and .node files says the vertices must
+! be in increasing order with no gaps.  Experimenting confirmed this must
+! be the case for showme and triangle to work correctly.  Make sure this
+! is met by 1) make a list of the vertices, 2) sort the vertices, and
+! 3) make sure the last vertex in the list is the length of the list
+
+if (myproc == 1) then
+
+   allocate(vertlist(grid%nvert),iperm(grid%nvert),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("allocation failed in store_grid_poly",procs=procs)
+      stop
+   endif
+
+   i = 0
+   visited_vert = .false.
+   do lev=1,grid%nlev
+      elem = grid%head_level_elem(lev)
+      do while (elem /= END_OF_LIST)
+         do ivert=1,VERTICES_PER_ELEMENT
+            vert = grid%element(elem)%vertex(ivert)
+            if (visited_vert(vert)) cycle
+            visited_vert(vert) = .true.
+            i = i + 1
+            vertlist(i) = vert
+         end do
+         elem = grid%element(elem)%next
+      end do
+   end do
+
+   call sort(vertlist,grid%nvert,iperm,1,errcode)
+
+   if (vertlist(iperm(grid%nvert)) == grid%nvert) then
+      call phaml_send(procs,MASTER,(/0/),1,(/0.0_my_real/),0,760)
+   else
+      call phaml_send(procs,MASTER,(/1/),1,(/0.0_my_real/),0,760)
+      deallocate(vertlist,iperm)
+      return
+   endif
+
+   deallocate(vertlist,iperm)
+
+else ! master
+
+   call phaml_recv(procs,proc,irecv,ni,rrecv,nr,760)
+   if (irecv(1) == 1) then
+      call warning("The list of vertex indices has gaps; cannot create a .poly file")
+      deallocate(irecv)
+      if (associated(rrecv)) deallocate(rrecv)
+      return
+   else
+      deallocate(irecv)
+      if (associated(rrecv)) deallocate(rrecv)
+   endif
+
+endif
+
+! number of solutions to include as attributes
+
+if (fmt == GRIDFILE_POLY_SOLN) then
+   nsolut = 1
+   if (comp == -1)  nsolut = nsolut*size(grid%vertex_solution,dim=2)
+   if (eigen == -1) nsolut = nsolut*size(grid%vertex_solution,dim=3)
+   if (nsolut > 997) then
+      call warning("Too many solutions per vertex in store_grid_msh", &
+                   "Solutions not included in grid file")
+      nsolut = 0
+   endif
+else
+   nsolut = 0
+endif
+
+! write the vertices
+
+if (myproc == 1) then
+   allocate(isend(2*grid%nvert+1),rsend((2+nsolut)*grid%nvert),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("allocation failed in store_grid_poly",procs=procs)
+      stop
+   endif
+   isend(1) = grid%nvert
+   ipoint = 1
+   rpoint = 0
+   do vert=1,grid%nvert
+      isend(ipoint+1) = vert
+      isend(ipoint+2) = grid%vertex(vert)%bmark
+      ipoint = ipoint + 2
+      rsend(rpoint+1) = grid%vertex(vert)%coord%x
+      rsend(rpoint+2) = grid%vertex(vert)%coord%y
+      rpoint = rpoint + 2
+      if (nsolut /= 0) then
+         if (comp == -1) then
+            if (eigen == -1) then
+               rsend(rpoint+1:rpoint+nsolut) = &
+                  reshape(grid%vertex_solution(vert,:,:),(/nsolut/))
+            else
+               rsend(rpoint+1:rpoint+nsolut) = &
+                  grid%vertex_solution(vert,:,eigen)
+            endif
+         else
+            if (eigen == -1) then
+               rsend(rpoint+1:rpoint+nsolut) = &
+                  grid%vertex_solution(vert,comp,:)
+            else
+               rsend(rpoint+1) = grid%vertex_solution(vert,comp,eigen)
+            endif
+         endif
+         rpoint = rpoint + nsolut
+      endif
+   end do
+   ni = ipoint
+   nr = rpoint
+   if (parallel == SEQUENTIAL) then
+      irecv => isend
+      rrecv => rsend
+   else
+      call phaml_send(procs,MASTER,isend,ni,rsend,nr,761)
+   endif
+else ! MASTER
+   call phaml_recv(procs,proc,irecv,ni,rrecv,nr,761)
+endif
+
+if (iprint) then
+   fmat = "(SS,1P,I11,    E21.13E2,I11)"
+   write(fmat(12:15),"(I3)") 2+nsolut
+   write(unit,"(I11,I2,I4,I2)") irecv(1),2,nsolut,1
+   ipoint = 1
+   rpoint = 0
+   do i=1,irecv(1)
+      write(unit,fmat) irecv(ipoint+1),rrecv(rpoint+1:rpoint+2+nsolut), &
+                       irecv(ipoint+2)
+      ipoint = ipoint + 2
+      rpoint = rpoint + 2+nsolut
+   end do
+endif
+
+if (parallel == SEQUENTIAL) then
+   nullify(irecv,rrecv)
+   deallocate(isend,rsend)
+else
+   if (allocated(isend)) deallocate(isend)
+   if (allocated(rsend)) deallocate(rsend)
+   if (associated(irecv)) deallocate(irecv)
+   if (associated(rrecv)) deallocate(rrecv)
+endif
+
+! The description of triangle .poly files does not say the edges must be
+! in increasing order with no gaps.  Experimenting with out-of-order edges
+! and gaps in the edge numbers showed that showme gives a warning but
+! displays correctly, and triangle works correctly but renumbers the edges
+! to be increasing and with no gaps.  So we might just as well renumber the
+! edges here by IDing the edge with a counter instead of the actual edge ID.
+
+! write the edges by going through the elements and writing any edge not
+! already written
+
+if (myproc == 1) then
+
+   allocate(isend(4*grid%nedge+1),seen_edge(grid%biggest_edge),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("allocation failed in store_grid_poly",procs=procs)
+      stop
+   endif
+   seen_edge = .false.
+
+   isend(1) = 0
+   ipoint = 1
+   do lev=1,grid%nlev
+      elem = grid%head_level_elem(lev)
+      do while (elem /= END_OF_LIST)
+         if (grid%element(elem)%isleaf) then
+            do i=1,EDGES_PER_ELEMENT
+               edge = grid%element(elem)%edge(i)
+               if (seen_edge(edge)) cycle
+               seen_edge(edge) = .true.
+               isend(1) = isend(1) + 1
+               isend(ipoint+1) = isend(1) ! new ID for the edge
+               isend(ipoint+2) = grid%edge(edge)%vertex(1)
+               isend(ipoint+3) = grid%edge(edge)%vertex(2)
+               isend(ipoint+4) = grid%edge(edge)%bmark
+               ipoint = ipoint + 4
+            end do
+         endif
+         elem = grid%element(elem)%next
+      end do
+   end do
+   deallocate(seen_edge)
+
+   ni = ipoint
+   if (parallel == SEQUENTIAL) then
+      irecv => isend
+   else
+      call phaml_send(procs,MASTER,isend,ni,(/0.0_my_real/),0,762)
+   endif
+else ! MASTER
+   call phaml_recv(procs,proc,irecv,ni,rrecv,nr,762)
+endif
+
+if (iprint) then
+   write(unit,"(I11,I2)") irecv(1),1
+   ipoint = 1
+   do i=1,irecv(1)
+      write(unit,"(4I11)") irecv(ipoint+1:ipoint+4)
+      ipoint = ipoint + 4
+   end do
+endif
+
+if (parallel == SEQUENTIAL) then
+   nullify(irecv)
+   deallocate(isend)
+else
+   if (allocated(isend)) deallocate(isend)
+   if (allocated(rsend)) deallocate(rsend)
+   if (associated(irecv)) deallocate(irecv)
+   if (associated(rrecv)) deallocate(rrecv)
+endif
+
+! write the holes
+
+! This requires that boundary_point and boundary_npiece are available.
+! For each hole compute a point inside the hole as the average of the
+! piece endpoints and midpoints.  This can fail if the hole is too concave.
+
+if (iprint) then
+
+! count the number of holes
+
+   nhole = 1
+   do while (my_boundary_npiece(nhole) > 0)
+      nhole = nhole + 1
+   end do
+   nhole = nhole - 1
+   allocate(end_hole(-1:nhole),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("memory allocation failed in store_grid_poly")
+      stop
+   endif
+   write(unit,"(I11)") nhole
+
+! get the piece that ends each hole, and
+! parameter limits
+
+   end_hole(-1) = 0
+   do hole=0,nhole
+      end_hole(hole) = end_hole(hole-1) + my_boundary_npiece(hole)
+   end do
+
+! compute the point for each hole
+
+   do hole=1,nhole
+      x2 = 0.0_my_real
+      y2 = 0.0_my_real
+      k = 0
+      do piece=end_hole(hole-1)+1,end_hole(hole)
+         call my_boundary_point(piece,grid%bp_start(piece),x1,y1)
+         x2 = x2 + x1
+         y2 = y2 + y1
+         call my_boundary_point(piece, &
+                                (grid%bp_start(piece)+grid%bp_finish(piece))/2,&
+                                x1,y1)
+         x2 = x2 + x1
+         y2 = y2 + y1
+         k = k+2
+      end do
+      x2 = x2/k
+      y2 = y2/k
+      write(unit,"(I11,SS,1P,2E21.13E2)") hole,x2,y2
+   end do
+
+   deallocate(end_hole)
+
+endif
+
+end subroutine store_grid_poly
+
+!          --------------
+subroutine store_grid_msh(grid,procs,still_sequential,unit,fmt,comp,eigen)
+!          --------------
+
+!----------------------------------------------------
+! This routine saves the grid in Gmsh's .msh format
+! This routine stores a tetrahedral grid in Gmsh's .msh format.
+! If fmt is GRIDFILE_MSH_SOLN then one or more solutions are saved as
+! a NodeData section.  If comp is -1, all components are saved,
+! otherwise comp tells which component to save.  Same with eigen.
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+
+type(grid_type), intent(in) :: grid
+type(proc_info), intent(in) :: procs
+logical, intent(in) :: still_sequential
+integer, intent(in) :: unit, fmt, comp, eigen
+!----------------------------------------------------
+! Local variables:
+
+integer :: i, myproc, proc, lev, vert, edge, face, elem, ntag, astat, ni, nr, &
+           ipoint, rpoint, nelement, nval, nsolut, itemp, ivert
+integer, allocatable, target :: isend(:)
+integer, pointer :: irecv(:)
+real(my_real), allocatable, target :: rsend(:)
+real(my_real), pointer :: rrecv(:)
+character(len=24) :: fmat
+logical :: iprint
+logical, allocatable :: seen_edge(:), seen_face(:)
+logical :: visited_vert(grid%biggest_vert)
+!----------------------------------------------------
+! Begin executable code
+
+myproc = my_proc(procs)
+
+! TEMP requires one processor, but it is OK if it is still sequential
+
+if (num_proc(procs) > 1 .and. .not. still_sequential) then
+   print *,"only one processor if saving the grid as .msh"
+   stop
+endif
+if (myproc > 1) return
+
+! Slave 1 has the grid.  For each section, pack it into a message.  If the
+! compilation is sequential, then slave 1 sets recv to point to send and
+! prints.  If not, then slave 1 sends send to recv on the master and the
+! master prints.
+
+iprint = (parallel == SEQUENTIAL .and. myproc == 1) .or. &
+         (parallel /= SEQUENTIAL .and. myproc == MASTER)
+nullify(irecv,rrecv)
+
+! mesh format
+
+if (iprint) then
+   write(unit,"(A)") "$MeshFormat"
+   write(unit,"(A)") "2.2 0 8"
+   write(unit,"(A)") "$EndMeshFormat"
+endif
+
+! nodes
+
+if (myproc == 1) then
+   allocate(isend(grid%nvert+1),rsend(3*grid%nvert),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("allocation failed in store_grid_msh",procs=procs)
+      stop
+   endif
+   isend(1) = grid%nvert
+   ipoint = 1
+   rpoint = 0
+   visited_vert = .false.
+   do lev=1,grid%nlev
+      elem = grid%head_level_elem(lev)
+      do while (elem /= END_OF_LIST)
+         do ivert=1,VERTICES_PER_ELEMENT
+            vert = grid%element(elem)%vertex(ivert)
+            if (visited_vert(vert)) cycle
+            visited_vert(vert) = .true.
+            isend(ipoint+1) = vert
+            ipoint = ipoint + 1
+            rsend(rpoint+1) = grid%vertex(vert)%coord%x
+            rsend(rpoint+2) = grid%vertex(vert)%coord%y
+            rsend(rpoint+3) = zcoord(grid%vertex(vert)%coord)
+            rpoint = rpoint + 3
+         end do
+         elem = grid%element(elem)%next
+      end do
+   end do
+   ni = ipoint
+   nr = rpoint
+   if (parallel == SEQUENTIAL) then
+      irecv => isend
+      rrecv => rsend
+   else
+      call phaml_send(procs,MASTER,isend,ni,rsend,nr,750)
+   endif
+else ! MASTER
+   call phaml_recv(procs,proc,irecv,ni,rrecv,nr,750)
+endif
+
+if (iprint) then
+   write(unit,"(A)") "$Nodes"
+   write(unit,"(I11)") irecv(1) ! grid%nvert
+   ipoint = 1
+   rpoint = 0
+   do i=2,irecv(1)+1
+      write(unit,"(SS,1P,I11,3E21.13E2)") irecv(ipoint+1),rrecv(rpoint+1:rpoint+3)
+      ipoint = ipoint + 1
+      rpoint = rpoint + 3
+   end do
+   write(unit,"(A)") "$EndNodes"
+endif
+
+if (parallel == SEQUENTIAL) then
+   nullify(irecv,rrecv)
+   deallocate(isend,rsend)
+else
+   if (allocated(isend)) deallocate(isend)
+   if (allocated(rsend)) deallocate(rsend)
+   if (associated(irecv)) deallocate(irecv)
+   if (associated(rrecv)) deallocate(rrecv)
+endif
+
+! elements
+
+if (MAX_TAG > 99) then
+   call warning("Only saving the first 99 tags in .msh file.")
+   ntag = 99
+elseif (MAX_TAG == 0) then
+   ntag = 1 ! if no tags, use 1 tag for bmark
+else
+   ntag = MAX_TAG
+endif
+
+if (myproc == 1) then
+   select case (global_element_kind)
+   case (TRIANGULAR_ELEMENT)
+      allocate(isend(grid%nvert*(4+ntag) + grid%nedge*(5+ntag) + &
+                     grid%nelem_leaf*(6+ntag)), stat=astat)
+   case (TETRAHEDRAL_ELEMENT)
+      allocate(isend(grid%nvert*(4+ntag) + grid%nedge*(5+ntag) + &
+                     grid%nface*(6+ntag) + grid%nelem_leaf*(7+ntag)), &
+               stat=astat)
+   end select
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("allocation failed in store_grid_msh",procs=procs)
+      stop
+   endif
+
+   nelement = 0
+   ipoint = 1
+
+! first the boundary points
+
+   visited_vert = .false.
+   do lev=1,grid%nlev
+      elem = grid%head_level_elem(lev)
+      do while (elem /= END_OF_LIST)
+         do ivert=1,VERTICES_PER_ELEMENT
+            vert = grid%element(elem)%vertex(ivert)
+            if (visited_vert(vert)) cycle
+            visited_vert(vert) = .true.
+            if (grid%vertex(vert)%bmark /= 0) then
+               nelement = nelement + 1
+               isend(ipoint+1) = vert
+               isend(ipoint+2) = 15   ! element type is 1-node point
+               isend(ipoint+3) = ntag
+               if (ntag /= 1) then
+                  isend(ipoint+4:ipoint+3+ntag) = grid%vertex(vert)%tags(1:ntag)
+               endif
+               isend(ipoint+4) = grid%vertex(vert)%bmark
+               ipoint = ipoint + 3+ntag
+               isend(ipoint+1) = vert
+               ipoint = ipoint + 1
+            endif
+         end do
+         elem = grid%element(elem)%next
+      end do
+   end do
+
+! then go through the elements adding the leaf elements and any boundary edges
+! and, in 3D, boundary faces not already added
+
+   allocate(seen_edge(grid%biggest_edge),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("allocation failed in store_grid_msh",procs=procs)
+      stop
+   endif
+   seen_edge = .false.
+   if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+      allocate(seen_face(grid%biggest_face),stat=astat)
+      if (astat /= 0) then
+         ierr = ALLOC_FAILED
+         call fatal("allocation failed in store_grid_msh",procs=procs)
+         stop
+      endif
+      seen_face = .false.
+   endif
+
+   do lev=1,grid%nlev
+      elem = grid%head_level_elem(lev)
+      do while (elem /= END_OF_LIST)
+         if (grid%element(elem)%isleaf) then
+! element
+            nelement = nelement + 1
+            isend(ipoint+1) = elem
+            select case (global_element_kind)
+            case (TRIANGULAR_ELEMENT)
+               isend(ipoint+2) = 2    ! 3-node triangle
+            case (TETRAHEDRAL_ELEMENT)
+               isend(ipoint+2) = 4    ! 4-node tetrahedron
+            end select
+            if (MAX_TAG == 0) then
+               isend(ipoint+3) = 0
+               ipoint = ipoint + 3
+            else
+               isend(ipoint+3) = ntag
+               isend(ipoint+4:ipoint+3+ntag) = grid%element(elem)%tags(1:ntag)
+               ipoint = ipoint + 3+ntag
+            endif
+            select case (global_element_kind)
+            case (TRIANGULAR_ELEMENT)
+               isend(ipoint+1:ipoint+3) = grid%element(elem)%vertex
+! orient triangles clockwise
+               if ((grid%vertex(isend(ipoint+2))%coord%x - &
+                    grid%vertex(isend(ipoint+1))%coord%x) * &
+                   (grid%vertex(isend(ipoint+3))%coord%y - &
+                    grid%vertex(isend(ipoint+1))%coord%y) - &
+                   (grid%vertex(isend(ipoint+3))%coord%x - &
+                    grid%vertex(isend(ipoint+1))%coord%x) * &
+                   (grid%vertex(isend(ipoint+2))%coord%y - &
+                    grid%vertex(isend(ipoint+1))%coord%y) > 0.0_my_real) then
+                  itemp = isend(ipoint+1)
+                  isend(ipoint+1) = isend(ipoint+2)
+                  isend(ipoint+2) = itemp
+               endif
+               ipoint = ipoint + 3
+            case (TETRAHEDRAL_ELEMENT)
+               isend(ipoint+1:ipoint+4) = grid%element(elem)%vertex
+               ipoint = ipoint + 4
+            end select
+! edges
+            do i=1,EDGES_PER_ELEMENT
+               edge = grid%element(elem)%edge(i)
+               if (seen_edge(edge)) cycle
+               seen_edge(edge) = .true.
+               if (grid%edge(edge)%bmark == 0) cycle
+               nelement = nelement + 1
+               isend(ipoint+1) = edge
+               isend(ipoint+2) = 1   ! 2-node line
+               isend(ipoint+3) = ntag
+               if (ntag /= 1) then
+                  isend(ipoint+4:ipoint+3+ntag) = grid%edge(edge)%tags(1:ntag)
+               endif
+               isend(ipoint+4) = grid%edge(edge)%bmark
+               ipoint = ipoint + 3+ntag
+               isend(ipoint+1:ipoint+2) = grid%edge(edge)%vertex
+               ipoint = ipoint + 2
+            end do
+! faces
+            do i=1,FACES_PER_ELEMENT
+               face = grid%element(elem)%face(i)
+               if (seen_face(face)) cycle
+               seen_face(face) = .true.
+               if (grid%face(face)%bmark == 0) cycle
+               nelement = nelement + 1
+               isend(ipoint+1) = face
+               isend(ipoint+2) = 2    ! 3-node triangle
+               isend(ipoint+3) = ntag
+               if (ntag /= 1) then
+                  isend(ipoint+4:ipoint+3+ntag) = grid%face(face)%tags(1:ntag)
+               endif
+               isend(ipoint+4) = grid%face(face)%bmark
+               ipoint = ipoint + 3+ntag
+               isend(ipoint+1:ipoint+3) = grid%face(face)%vertex
+               ipoint = ipoint + 3
+            end do
+         endif
+         elem = grid%element(elem)%next
+      end do
+   end do
+   deallocate(seen_edge)
+   if (global_element_kind == TETRAHEDRAL_ELEMENT) deallocate(seen_face)
+
+   isend(1) = nelement
+   ni = ipoint
+   if (parallel == SEQUENTIAL) then
+      irecv => isend
+   else
+      call phaml_send(procs,MASTER,isend,ni,(/0.0_my_real/),0,751)
+   endif
+else ! MASTER
+   call phaml_recv(procs,proc,irecv,ni,rrecv,nr,751)
+endif
+
+if (iprint) then
+   write(unit,"(A)") "$Elements"
+   write(unit,"(I11)") irecv(1)
+   fmat = "(    I11)"
+
+   ipoint = 1
+   do i=1,irecv(1)
+      select case (irecv(ipoint+2)) ! element type
+      case (15) ! point
+         nval = 4+irecv(ipoint+3)
+      case (1) ! line
+         nval = 5+irecv(ipoint+3)
+      case (2) ! triangle
+         nval = 6+irecv(ipoint+3)
+      case (4) ! tetrahedron
+         nval = 7+irecv(ipoint+3)
+      end select
+      write(fmat(2:5),"(I3)") nval
+      write(unit,fmat) irecv(ipoint+1:ipoint+nval)
+      ipoint = ipoint + nval
+   end do
+
+   write(unit,"(A)") "$EndElements"
+endif
+
+if (parallel == SEQUENTIAL) then
+   nullify(irecv)
+   deallocate(isend)
+else
+   if (allocated(isend)) deallocate(isend)
+   if (associated(irecv)) deallocate(irecv)
+   if (associated(rrecv)) deallocate(rrecv)
+endif
+
+! output solution at vertices
+
+if (fmt == GRIDFILE_MSH_SOLN) then
+
+   nsolut = 1
+   if (comp == -1)  nsolut = nsolut*size(grid%vertex_solution,dim=2)
+   if (eigen == -1) nsolut = nsolut*size(grid%vertex_solution,dim=3)
+   if (nsolut > 999) then
+      call warning("Too many solutions per vertex in store_grid_msh", &
+                   "Solutions not included in grid file")
+      return
+   endif
+
+   if (myproc == 1) then
+      allocate(isend(grid%nvert+1),rsend(nsolut*grid%nvert),stat=astat)
+      if (astat /= 0) then
+         ierr = ALLOC_FAILED
+         call fatal("allocation failed in store_grid_msh",procs=procs)
+         stop
+      endif
+      isend(1) = grid%nvert
+      ipoint = 1
+      rpoint = 0
+      visited_vert = .false.
+      do lev=1,grid%nlev
+         elem = grid%head_level_elem(lev)
+         do while (elem /= END_OF_LIST)
+            do ivert=1,VERTICES_PER_ELEMENT
+               vert = grid%element(elem)%vertex(ivert)
+               if (visited_vert(vert)) cycle
+               visited_vert(vert) = .true.
+               isend(ipoint+1) = vert
+               ipoint = ipoint + 1
+               if (comp == -1) then
+                  if (eigen == -1) then
+                     rsend(rpoint+1:rpoint+nsolut) = &
+                        reshape(grid%vertex_solution(vert,:,:),(/nsolut/))
+                  else
+                     rsend(rpoint+1:rpoint+nsolut) = &
+                        grid%vertex_solution(vert,:,eigen)
+                  endif
+               else
+                  if (eigen == -1) then
+                     rsend(rpoint+1:rpoint+nsolut) = &
+                        grid%vertex_solution(vert,comp,:)
+                  else
+                     rsend(rpoint+1) = grid%vertex_solution(vert,comp,eigen)
+                  endif
+               endif
+               rpoint = rpoint + nsolut
+            end do
+            elem = grid%element(elem)%next
+         end do
+      end do
+      ni = ipoint
+      nr = rpoint
+      if (parallel == SEQUENTIAL) then
+         irecv => isend
+         rrecv => rsend
+      else
+         call phaml_send(procs,MASTER,isend,ni,rsend,nr,750)
+      endif
+   else ! MASTER
+      call phaml_recv(procs,proc,irecv,ni,rrecv,nr,750)
+   endif
+
+   if (iprint) then
+      fmat = "(SS,1P,I11,    E21.13E2)"
+      write(fmat(12:15),"(I3)") nsolut
+
+      write(unit,"(A)") "$NodeData"
+      write(unit,"(I2)") 1
+      write(unit,"(A)") "Solution"
+      write(unit,"(I2)") 1
+      write(unit,"(F4.1)") 0.0
+      write(unit,"(I2)") 3
+      write(unit,"(I2)") 0
+      write(unit,"(I4)") nsolut
+      write(unit,"(I11)") irecv(1)
+
+      ipoint = 1
+      rpoint = 0
+      do i=2,irecv(1)+1
+         write(unit,fmat) irecv(ipoint+1), rrecv(rpoint+1:rpoint+nsolut)
+         ipoint = ipoint + 1
+         rpoint = rpoint + nsolut
+      end do
+      write(unit,"(A)") "$EndNodeData"
+   endif
+
+   if (parallel == SEQUENTIAL) then
+      nullify(irecv,rrecv)
+      deallocate(isend,rsend)
+   else
+      if (allocated(isend)) deallocate(isend)
+      if (allocated(rsend)) deallocate(rsend)
+      if (associated(irecv)) deallocate(irecv)
+      if (associated(rrecv)) deallocate(rrecv)
+   endif
+
+endif
+
+end subroutine store_grid_msh
 
 end module grid_io

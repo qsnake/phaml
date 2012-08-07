@@ -7,8 +7,8 @@ Total Grid:
    min and max degree      =           4          4
 
 Norms of error:
-   energy error estimate      3.3250751980E-04
-   Linf error estimate        2.2634216028E-04
+   energy error estimate      4.2123676506E-04
+   Linf error estimate        7.0732006411E-05
 time =  1.000000000000E-02
 
 Total Grid:
@@ -19,8 +19,8 @@ Total Grid:
    min and max degree      =           4          4
 
 Norms of error:
-   energy error estimate      3.7600700038E-04
-   Linf error estimate        1.7597488594E-04
+   energy error estimate      4.7672293115E-04
+   Linf error estimate        5.4992160644E-05
 time =  2.000000000000E-02
 
 Total Grid:
@@ -31,8 +31,8 @@ Total Grid:
    min and max degree      =           4          4
 
 Norms of error:
-   energy error estimate      4.2269828850E-04
-   Linf error estimate        2.0458466564E-04
+   energy error estimate      5.3547485965E-04
+   Linf error estimate        6.3932727006E-05
 time =  3.000000000000E-02
 
 Total Grid:
@@ -43,8 +43,8 @@ Total Grid:
    min and max degree      =           4          4
 
 Norms of error:
-   energy error estimate      4.8822020222E-04
-   Linf error estimate        2.8198046064E-04
+   energy error estimate      6.1753274842E-04
+   Linf error estimate        8.8118930117E-05
 time =  4.000000000000E-02
 
 Total Grid:
@@ -55,6 +55,6 @@ Total Grid:
    min and max degree      =           4          4
 
 Norms of error:
-   energy error estimate      5.4978609404E-04
-   Linf error estimate        2.8400941503E-04
+   energy error estimate      6.9486705786E-04
+   Linf error estimate        8.8752988227E-05
 time =  5.000000000000E-02

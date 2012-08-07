@@ -321,7 +321,7 @@ endif ! not still_sequential
 
 ! workspace
 
-allocate(work((restart+6)*neq),work2(2*restart**2+2),stat=astat)
+allocate(work((restart+6)*max(3,neq)),work2(2*restart**2+2),stat=astat)
 if (astat /= 0) then
    ierr = ALLOC_FAILED
    call fatal("allocation failed in phaml_gmres1",procs=loc_procs)
@@ -332,7 +332,7 @@ work2 = 0
 
 ! Call the Templates GMRES routine
 
-call gmres(neq,rhs,solution,restart,work,neq,work2,restart,iter,resid, &
+call gmres(neq,rhs,solution,restart,work,max(3,neq),work2,restart,iter,resid, &
         matvec,precond,info, &
         loc_io_cntl%print_error_when==FREQUENTLY.or.loc_io_cntl%print_error_when==TOO_MUCH)
 
@@ -384,6 +384,8 @@ do i=1,loc_linsys%neq
          loc_linsys%solution(i) = loc_grid%vertex_solution(lid,srank,1)
       case (EDGE_ID)
          loc_linsys%solution(i) = loc_grid%edge(lid)%solution(brank,srank,1)
+      case (FACE_ID)
+         loc_linsys%solution(i) = loc_grid%face(lid)%solution(brank,srank,1)
       end select
    endif
 end do
@@ -596,12 +598,12 @@ do
 ! get unowned components of right hand side
 
          if (.not. loc_still_sequential) then
-            do lev=loc_linsys%nlev+1,2,-1
+            do lev=loc_linsys%cond_level,2,-1
                call basis_change(lev,TO_HIER,loc_linsys)
             end do
             call sum_fudop_vect(loc_linsys%rhs(1:loc_linsys%neq),loc_procs, &
                                 loc_linsys,3041,3042,3043)
-            do lev=2,loc_linsys%nlev+1
+            do lev=2,loc_linsys%cond_level
                call basis_change(lev,TO_NODAL,loc_linsys)
             end do
          endif
@@ -666,6 +668,8 @@ do
                loc_linsys%solution(i) = loc_grid%vertex_solution(lid,srank,1)
             case (EDGE_ID)
                loc_linsys%solution(i) = loc_grid%edge(lid)%solution(brank,srank,1)
+            case (FACE_ID)
+               loc_linsys%solution(i) = loc_grid%face(lid)%solution(brank,srank,1)
             end select
          endif
       end do
@@ -913,12 +917,12 @@ case (MG_PRECONDITION)
 ! get unowned right hand side entries
 
    if (.not. loc_still_sequential) then
-      do lev=loc_linsys%nlev+1,2,-1
+      do lev=loc_linsys%cond_level,2,-1
          call basis_change(lev,TO_HIER,loc_linsys)
       end do
       call sum_fudop_vect(loc_linsys%rhs(1:loc_linsys%neq),loc_procs, &
                           loc_linsys,3041,3042,3043)
-      do lev=2,loc_linsys%nlev+1
+      do lev=2,loc_linsys%cond_level
          call basis_change(lev,TO_NODAL,loc_linsys)
       end do
    endif
@@ -1067,23 +1071,9 @@ io_cntl_noprint%print_error_when = NEVER
 holdsoln = linsys%solution(1:neq)
 holdrhs  = linsys%rhs(1:neq)
 
-! compute the norm of the rhs of the equations CG is solving
+! compute the norm of the rhs
 
-where (linsys%equation_type(1:neq) /= DIRICHLET) linsys%solution(1:neq) = 0
-call matrix_times_vector(linsys%solution(1:neq),r,linsys,procs, &
-                         still_sequential,3080,3081,3082,3083,3084,3085, &
-                         nocomm2=.true.,nodirch=.true.)
-r = linsys%rhs(1:neq) - r
-do i=1,neq
-   if (linsys%equation_type(i) /= DIRICHLET) then
-      do j=linsys%begin_row(i),linsys%end_row(i)
-         if (linsys%column_index(j) == NO_ENTRY) cycle
-         if (linsys%equation_type(linsys%column_index(j)) == DIRICHLET) then
-            r(i) = r(i) - linsys%matrix_val(j)*holdsoln(linsys%column_index(j))
-         endif
-      end do
-   endif
-end do
+r = linsys%rhs(1:neq)
 where (linsys%equation_type(1:neq) == DIRICHLET) r = 0.0_my_real
 where (.not. linsys%iown(1:neq)) r = 0.0_my_real
 if (dp) then
@@ -1099,9 +1089,6 @@ endif
 normrhs = sqrt(normrhs)
 
 ! compute initial residual r <-- b - Ax
-
-linsys%solution(1:neq) = holdsoln
-linsys%rhs(1:neq) = holdrhs
 
 x = linsys%solution(1:neq)
 call matrix_times_vector(x,r,linsys,procs,still_sequential,3010,3011,3012, &
@@ -1167,11 +1154,11 @@ do
    case (MG_PRECONDITION)
       linsys%rhs(1:neq) = myr
       if (.not. still_sequential) then
-         do lev=linsys%nlev+1,2,-1
+         do lev=linsys%cond_level,2,-1
             call basis_change(lev,TO_HIER,linsys)
          end do
          call sum_fudop_vect(linsys%rhs(1:neq),procs,linsys,3071,3072,3073)
-         do lev=2,linsys%nlev+1
+         do lev=2,linsys%cond_level
             call basis_change(lev,TO_NODAL,linsys)
          end do
       endif

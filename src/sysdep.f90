@@ -42,7 +42,7 @@ subroutine my_system(cmd)
 !----------------------------------------------------
 ! This routine executes a system command as if from the system command line.
 ! It is not supported by the standard, but I haven't had it fail on any
-! compilers I have tried.
+! compilers I have tried, except NAG where you need to use a module to get it.
 !----------------------------------------------------
 
 !----------------------------------------------------

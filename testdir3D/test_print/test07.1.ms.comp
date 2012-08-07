@@ -1,0 +1,293 @@
+---------------------------------------------------------
+           PHAML   Version 1.11.0
+
+Output from slave number     1
+  PDE id is     0
+  Number of slave processors is     1
+  Number of OpenMP threads is       1
+
+Subroutine phaml_solve_pde parameters:
+  max_elem           infinity
+  max_vert                  500
+  max_eq             infinity
+  max_lev            infinity
+  stop_on_maxlev     false
+  max_deg                    22
+  stop_on_maxdeg     false
+  max_refsolveloop   infinity
+  task               BALANCE_REFINE_SOLVE
+  solve_init         true
+  system_size                 1
+  pde_has_first_order_terms  false
+  pde_has_cross_derivative   false
+  laplacian_operator         true
+  isosceles_right_triangles  false
+  print_grid_when    PHASES
+  print_grid_who     EVERYONE
+  print_linsys_when  PHASES
+  print_linsys_who   EVERYONE
+  print_solver_when  PHASES
+  print_solver_who   EVERYONE
+  print_error_when   PHASES
+  print_error_who    EVERYONE
+  print_error_what   LINF_ERR
+  print_errest_what  LINF_ERREST
+  print_time_when    NEVER
+  pause_after_draw   false
+  pause_after_phases false
+  pause_at_start     false
+  pause_at_end       false
+  degree                      1
+  sequential_vert           100
+  inc_factor          2.0000000000E+00
+  error_estimator    HIERARCHICAL_COEFFICIENT
+  errtype            ABSOLUTE_ERROR
+  reftype            H_ADAPTIVE
+  edge_rule          MINIMUM_RULE
+  refterm            DOUBLE_NEQ
+  derefine           false
+  partition_method   RTK
+  ignore_quad_err    true
+  solver             PETSC_CG_SOLVER
+  preconditioner     PETSC_SOR_PRECONDITION
+  petsc_matrix_free  false
+  petsc_rtol         default
+  petsc_atol         default
+  petsc_dtol         default
+  petsc_maxits       default
+  petsc_sor_omega    default
+  petsc_sor_its      default
+  petsc_sor_lits     default
+---------------------------------------------------------
+
+My Grid:
+   number of vertices       =          14
+   number of vertices I own =          14
+   number of elements       =          24
+   number of leaf elements  =          24
+   leaf elements I own      =          24
+   number of levels         =           1
+   degrees of freedom       =          14
+   degrees of freedom I own =          14
+   min and max degree       =           1          1
+
+My Linear System:
+   number of equations =          14
+   number of equations I own =          14
+   number of nonzeroes =         112
+   condensed matrix number of equations =          14
+   condensed matrix number of equations I own =          14
+   condensed matrix number of nonzeroes =         112
+
+Solver information:
+   number of iterations =           0
+   relative residual =   0.0000000000E+00
+
+Norms of error:
+   Linf norm of error         1.6115824825E+00
+   Linf error estimate        1.4999990463E+00
+      effectivity             9.3076157296E-01
+
+My Grid:
+   number of vertices       =          36
+   number of vertices I own =          36
+   number of elements       =         146
+   number of leaf elements  =          85
+   leaf elements I own      =          85
+   number of levels         =           4
+   degrees of freedom       =          36
+   degrees of freedom I own =          36
+   min and max degree       =           1          1
+
+My Linear System:
+   number of equations =          36
+   number of equations I own =          36
+   number of nonzeroes =         332
+   condensed matrix number of equations =          36
+   condensed matrix number of equations I own =          36
+   condensed matrix number of nonzeroes =         332
+
+Solver information:
+   number of iterations =           3
+   relative residual =   1.0076892914E-06
+
+Norms of error:
+   Linf norm of error         1.6115009565E+00
+      reduced by              9.9994941248E-01
+   Linf error estimate        9.9365852980E-01
+      reduced by              6.6243944103E-01
+      effectivity             6.1660436862E-01
+
+My Grid:
+   number of vertices       =          69
+   number of vertices I own =          69
+   number of elements       =         430
+   number of leaf elements  =         227
+   leaf elements I own      =         227
+   number of levels         =           6
+   degrees of freedom       =          69
+   degrees of freedom I own =          69
+   min and max degree       =           1          1
+
+My Linear System:
+   number of equations =          69
+   number of equations I own =          69
+   number of nonzeroes =         747
+   condensed matrix number of equations =          69
+   condensed matrix number of equations I own =          69
+   condensed matrix number of nonzeroes =         747
+
+Solver information:
+   number of iterations =           5
+   relative residual =   1.0297407936E-06
+
+Norms of error:
+   Linf norm of error         1.2456863625E+00
+      reduced by              7.7299759423E-01
+   Linf error estimate        1.1052759712E+00
+      reduced by              1.1123297773E+00
+      effectivity             8.8728270974E-01
+
+My Grid:
+   number of vertices       =         139
+   number of vertices I own =         139
+   number of elements       =         906
+   number of leaf elements  =         465
+   leaf elements I own      =         465
+   number of levels         =           7
+   degrees of freedom       =         139
+   degrees of freedom I own =         139
+   min and max degree       =           1          1
+
+My Linear System:
+   number of equations =         139
+   number of equations I own =         139
+   number of nonzeroes =        1521
+   condensed matrix number of equations =         139
+   condensed matrix number of equations I own =         139
+   condensed matrix number of nonzeroes =        1521
+
+Solver information:
+   number of iterations =           6
+   relative residual =   2.6888089428E-06
+
+Norms of error:
+   Linf norm of error         1.0300023397E+00
+      reduced by              8.2685527496E-01
+   Linf error estimate        9.9365852980E-01
+      reduced by              8.9901396187E-01
+      effectivity             9.6471482778E-01
+
+My Grid:
+   number of vertices       =         247
+   number of vertices I own =         247
+   number of elements       =        1904
+   number of leaf elements  =         964
+   leaf elements I own      =         964
+   number of levels         =           8
+   degrees of freedom       =         247
+   degrees of freedom I own =         247
+   min and max degree       =           1          1
+
+My Linear System:
+   number of equations =         247
+   number of equations I own =         247
+   number of nonzeroes =        2939
+   condensed matrix number of equations =         247
+   condensed matrix number of equations I own =         247
+   condensed matrix number of nonzeroes =        2939
+
+Solver information:
+   number of iterations =           7
+   relative residual =   3.4642268290E-06
+
+Norms of error:
+   Linf norm of error         8.6447156494E-01
+      reduced by              8.3929087497E-01
+   Linf error estimate        8.9344589416E-01
+      reduced by              8.9914781323E-01
+      effectivity             1.0335168100E+00
+
+My Grid:
+   number of vertices       =         474
+   number of vertices I own =         474
+   number of elements       =        3800
+   number of leaf elements  =        1912
+   leaf elements I own      =        1912
+   number of levels         =          10
+   degrees of freedom       =         474
+   degrees of freedom I own =         474
+   min and max degree       =           1          1
+
+My Linear System:
+   number of equations =         474
+   number of equations I own =         474
+   number of nonzeroes =        5694
+   condensed matrix number of equations =         474
+   condensed matrix number of equations I own =         474
+   condensed matrix number of nonzeroes =        5694
+
+Solver information:
+   number of iterations =          10
+   relative residual =   5.6717210307E-06
+
+Norms of error:
+   Linf norm of error         7.9895647454E-01
+      reduced by              9.2421371268E-01
+   Linf error estimate        7.1472471545E-01
+      reduced by              7.9996418375E-01
+      effectivity             8.9457278115E-01
+
+My Grid:
+   number of vertices       =         900
+   number of vertices I own =         900
+   number of elements       =        7764
+   number of leaf elements  =        3894
+   leaf elements I own      =        3894
+   number of levels         =          11
+   degrees of freedom       =         900
+   degrees of freedom I own =         900
+   min and max degree       =           1          1
+
+My Linear System:
+   number of equations =         900
+   number of equations I own =         900
+   number of nonzeroes =       11218
+   condensed matrix number of equations =         900
+   condensed matrix number of equations I own =         900
+   condensed matrix number of nonzeroes =       11218
+
+Solver information:
+   number of iterations =          12
+   relative residual =   7.7446972370E-06
+
+Norms of error:
+   Linf norm of error         4.9948026511E-01
+      reduced by              6.2516580193E-01
+   Linf error estimate        7.1483902389E-01
+      reduced by              1.0001599335E+00
+      effectivity             1.4311657013E+00
+
+My Grid:
+   number of vertices       =         900
+   number of vertices I own =         900
+   number of elements       =        7764
+   number of leaf elements  =        3894
+   leaf elements I own      =        3894
+   number of levels         =          11
+   degrees of freedom       =         900
+   degrees of freedom I own =         900
+   min and max degree       =           1          1
+
+Norms of error:
+   Linf norm of error         4.9948026511E-01
+   Linf error estimate        7.1483902389E-01
+      effectivity             1.4311657013E+00
+
+---------------------------------------------------------
+phaml_solve_pde complete
+
+number of loops through phases =           6
+termination condition:
+  maximum vertices achieved
+---------------------------------------------------------

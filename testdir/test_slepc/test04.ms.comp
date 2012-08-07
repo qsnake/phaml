@@ -1,0 +1,286 @@
+---------------------------------------------------------
+           PHAML   Version 1.11.0
+
+Output from the master process
+  PDE id is     0
+  Number of slave processors is     4
+  Number of OpenMP threads is       1
+
+Subroutine phaml_solve_pde parameters:
+  max_elem           infinity
+  max_vert                  500
+  max_eq             infinity
+  max_lev            infinity
+  stop_on_maxlev     false
+  max_deg                    22
+  stop_on_maxdeg     false
+  max_refsolveloop   infinity
+  task               BALANCE_REFINE_SOLVE
+  solve_init         true
+  system_size                 1
+  pde_has_first_order_terms  false
+  pde_has_cross_derivative   false
+  laplacian_operator         false
+  isosceles_right_triangles  true
+  print_grid_when    PHASES
+  print_grid_who     MASTER
+  print_linsys_when  NEVER
+  print_solver_when  PHASES
+  print_solver_who   MASTER
+  print_error_when   NEVER
+  print_time_when    NEVER
+  print_eval_when    PHASES
+  print_eval_who     MASTER
+  pause_after_draw   false
+  pause_after_phases false
+  pause_at_start     false
+  pause_at_end       false
+  degree             existing
+  sequential_vert           100
+  inc_factor          2.0000000000E+00
+  error_estimator    EXPLICIT_ERRIND
+  errtype            ABSOLUTE_ERROR
+  reftype            H_ADAPTIVE
+  edge_rule          MINIMUM_RULE
+  refterm            DOUBLE_NEQ
+  derefine           true
+  partition_method   RTK
+  prebalance         BALANCE_ELEMENTS
+  ignore_quad_err    true
+  solver             default
+  preconditioner     default
+  eigensolver        SLEPC_KRYLOV_SCHUR
+  num_eval                    5
+  lambda0             3.5000000000E+01
+  scale_evec         SCALE_LINF
+  transformation     ST_NONE
+  eigen_ncv          default
+  eigen_maxit              200
+  eigen_tol          1.0000000000E-10
+  harmonic_extraction  false
+  true_residual        false
+---------------------------------------------------------
+
+Total Grid:
+   number of vertices      =           9
+   number of leaf elements =           8
+   number of levels        =           1
+   degrees of freedom      =           9
+   min and max degree      =           1          1
+
+Solver information:
+   number of column vectors   =          20
+   maximum iterations allowed =         200
+   number of iterations used  =           1
+   number of converged eigens =           1
+   eigensolver L2 residual    =   3.2751579226E-14
+   eigensolver eval errest    =   1.1739597238E-15
+
+Eigenvalues and error estimates:
+     9.1115740741E+01  1.0829488805E+04
+     0.0000000000E+00  0.0000000000E+00
+     0.0000000000E+00  0.0000000000E+00
+     0.0000000000E+00  0.0000000000E+00
+     0.0000000000E+00  0.0000000000E+00
+
+Total Grid:
+   number of vertices      =          25
+   number of leaf elements =          36
+   number of levels        =           4
+   degrees of freedom      =          25
+   min and max degree      =           1          1
+
+Solver information:
+   number of column vectors   =          20
+   maximum iterations allowed =         200
+   number of iterations used  =           1
+   number of converged eigens =           5
+   eigensolver L2 residual    =   5.3642308645E-13
+                                  1.3006563315E-13
+                                  5.8335500114E-14
+                                  9.5667249867E-14
+                                  4.6545049364E-13
+   eigensolver eval errest    =   4.3202982646E-14
+                                  2.2765962849E-15
+                                  7.7419684138E-16
+                                  1.2770564648E-15
+                                  7.3059726265E-15
+
+Eigenvalues and error estimates:
+     1.4061093547E+01  8.4928851294E+01
+     5.7203186212E+01  4.1200755857E+02
+     6.0839949179E+01  2.1781982797E+02
+     6.0964210197E+01  2.1858713736E+02
+     6.1664150437E+01  4.2284691935E+02
+
+Total Grid:
+   number of vertices      =          45
+   number of leaf elements =          76
+   number of levels        =           6
+   degrees of freedom      =          45
+   min and max degree      =           1          1
+
+Solver information:
+   number of column vectors   =          20
+   maximum iterations allowed =         200
+   number of iterations used  =           5
+   number of converged eigens =           5
+   eigensolver L2 residual    =   1.9343451924E-13
+                                  8.9486284523E-12
+                                  4.4911358579E-11
+                                  4.2283659207E-11
+                                  2.6258707638E-13
+   eigensolver eval errest    =   3.9742914896E-15
+                                  1.2846559248E-13
+                                  5.0922871800E-13
+                                  3.8234664242E-13
+                                  2.7639843357E-15
+
+Eigenvalues and error estimates:
+     2.6851576528E+01  1.4529435008E+01
+     3.3100729807E+01  3.4936679440E+01
+     3.7018824366E+01  3.0915366459E+01
+     4.5653870322E+01  3.4843063168E+01
+     4.6258921726E+01  5.1172637994E+01
+
+Total Grid:
+   number of vertices      =          83
+   number of leaf elements =         148
+   number of levels        =           8
+   degrees of freedom      =          83
+   min and max degree      =           1          1
+
+Solver information:
+   number of column vectors   =          20
+   maximum iterations allowed =         200
+   number of iterations used  =           9
+   number of converged eigens =           5
+   eigensolver L2 residual    =   1.8354585216E-13
+                                  7.5341996418E-12
+                                  3.4068291761E-10
+                                  1.8885751391E-10
+                                  4.9219830851E-10
+   eigensolver eval errest    =   2.9447880163E-15
+                                  8.4047415875E-14
+                                  3.5806889257E-12
+                                  1.5982912883E-12
+                                  3.3417682054E-12
+
+Eigenvalues and error estimates:
+     2.6433231452E+01  7.8293495534E+00
+     3.2537160300E+01  9.2676219275E+00
+     3.5679713844E+01  1.2205096902E+01
+     3.8514959002E+01  7.8895621048E+00
+     4.9158983395E+01  1.9381370667E+01
+
+Total Grid:
+   number of vertices      =         145
+   number of leaf elements =         272
+   number of levels        =          10
+   degrees of freedom      =         145
+   min and max degree      =           1          1
+
+Solver information:
+   number of column vectors   =          20
+   maximum iterations allowed =         200
+   number of iterations used  =          24
+   number of converged eigens =           5
+   eigensolver L2 residual    =   2.3731742773E-12
+                                  1.0284758168E-09
+                                  4.3692535525E-10
+                                  4.1895700735E-09
+                                  6.4048161669E-10
+   eigensolver eval errest    =   1.6947885444E-14
+                                  7.0522141683E-12
+                                  2.6589275110E-12
+                                  2.3717935288E-11
+                                  3.4455914319E-12
+
+Eigenvalues and error estimates:
+     3.0587582925E+01  6.7739194985E+00
+     3.2802872493E+01  5.1121850061E+00
+     3.6786697068E+01  6.1644283353E+00
+     3.8932680825E+01  1.2519270031E+01
+     4.1349482108E+01  8.7753266515E+00
+
+Total Grid:
+   number of vertices      =         345
+   number of leaf elements =         672
+   number of levels        =          11
+   degrees of freedom      =         345
+   min and max degree      =           1          1
+
+Solver information:
+   number of column vectors   =          20
+   maximum iterations allowed =         200
+   number of iterations used  =          60
+   number of converged eigens =           5
+   eigensolver L2 residual    =   1.7595358329E-09
+                                  1.8261577986E-12
+                                  7.1320957152E-09
+                                  8.5643542407E-09
+                                  4.7928911236E-11
+   eigensolver eval errest    =   7.9950331135E-12
+                                  8.3889463583E-15
+                                  2.9119641382E-11
+                                  3.2449810194E-11
+                                  1.8428302979E-13
+
+Eigenvalues and error estimates:
+     2.9637411532E+01  1.3116884407E+00
+     3.1630314647E+01  1.4601575991E+00
+     3.5049247013E+01  1.4921846824E+00
+     3.7176916397E+01  1.8961257486E+00
+     3.9126962798E+01  2.2027382003E+00
+
+Total Grid:
+   number of vertices      =         613
+   number of leaf elements =        1208
+   number of levels        =          13
+   degrees of freedom      =         613
+   min and max degree      =           1          1
+
+Solver information:
+   number of column vectors   =          20
+   maximum iterations allowed =         200
+   number of iterations used  =          85
+   number of converged eigens =           5
+   eigensolver L2 residual    =   2.2177368359E-09
+                                  1.1573670595E-11
+                                  8.5754898100E-09
+                                  5.4631565070E-09
+                                  1.2256348987E-09
+   eigensolver eval errest    =   7.5032207213E-12
+                                  3.6540220311E-14
+                                  2.5494573990E-11
+                                  1.5442967627E-11
+                                  3.3024099453E-12
+
+Eigenvalues and error estimates:
+     2.9328218401E+01  6.9934689226E-01
+     3.1280916882E+01  6.9417469785E-01
+     3.4628746076E+01  7.6535527956E-01
+     3.6621803808E+01  1.0087778015E+00
+     3.8573629035E+01  9.5463079021E-01
+
+Total Grid:
+   number of vertices      =         613
+   number of leaf elements =        1208
+   number of levels        =          13
+   degrees of freedom      =         613
+   min and max degree      =           1          1
+
+Eigenvalues and error estimates:
+     2.9328218401E+01  6.9934689226E-01
+     3.1280916882E+01  6.9417469785E-01
+     3.4628746076E+01  7.6535527956E-01
+     3.6621803808E+01  1.0087778015E+00
+     3.8573629035E+01  9.5463079021E-01
+
+---------------------------------------------------------
+phaml_solve_pde complete
+
+number of loops through phases =           6
+termination condition:
+  maximum vertices achieved
+---------------------------------------------------------

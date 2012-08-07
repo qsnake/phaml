@@ -9,51 +9,51 @@ termination condition:
 solving pde 1, iteration           1
 
 Total Grid:
-   number of vertices      =          20
-   number of leaf elements =          27
+   number of vertices      =          19
+   number of leaf elements =          25
    number of levels        =           4
-   degrees of freedom      =          20
+   degrees of freedom      =          19
    min and max degree      =           1          1
 
 Norms of error:
-   energy norm of error       2.2955271873E-01
-   energy error estimate      4.1949138981E-02
-      effectivity             1.8274294120E-01
-   Linf norm of error         8.6938338256E-02
-   Linf error estimate        7.6988548104E-03
-      effectivity             8.8555348133E-02
+   energy norm of error       2.2837600139E-01
+   energy error estimate      2.0709566826E-01
+      effectivity             9.0681887327E-01
+   Linf norm of error         8.6052182199E-02
+   Linf error estimate        3.8494274052E-02
+      effectivity             4.4733640761E-01
 solving pde 2, iteration           1
 
 Total Grid:
-   number of vertices      =          27
-   number of leaf elements =          38
+   number of vertices      =          30
+   number of leaf elements =          43
    number of levels        =           5
-   degrees of freedom      =          27
+   degrees of freedom      =          30
    min and max degree      =           1          1
 
 Norms of error:
-   energy norm of error       1.7820921271E+00
-   energy error estimate      4.9745946746E-01
-      effectivity             2.7914351896E-01
-   Linf norm of error         2.8786965305E-01
-   Linf error estimate        5.8577527638E-02
-      effectivity             2.0348628978E-01
+   energy norm of error       1.7471628639E+00
+   energy error estimate      2.3352392592E+00
+      effectivity             1.3365893400E+00
+   Linf norm of error         2.8838513354E-01
+   Linf error estimate        2.7359305458E-01
+      effectivity             9.4870720700E-01
 solving pde 1, iteration           2
 
 Total Grid:
-   number of vertices      =          40
-   number of leaf elements =          60
+   number of vertices      =          48
+   number of leaf elements =          74
    number of levels        =           5
-   degrees of freedom      =          40
+   degrees of freedom      =          48
    min and max degree      =           1          1
 
 Norms of error:
-   energy norm of error       1.3097109581E-01
-   energy error estimate      3.4506015968E-02
-      effectivity             2.6346283318E-01
-   Linf norm of error         1.6335043956E-02
-   Linf error estimate        3.0749360239E-03
-      effectivity             1.8824167428E-01
+   energy norm of error       1.1024231848E-01
+   energy error estimate      1.4145984125E-01
+      effectivity             1.2831718636E+00
+   Linf norm of error         1.4003455701E-02
+   Linf error estimate        1.0330118376E-02
+      effectivity             7.3768351156E-01
 solving pde 2, iteration           2
 
 Total Grid:
@@ -64,28 +64,28 @@ Total Grid:
    min and max degree      =           1          1
 
 Norms of error:
-   energy norm of error       1.1943653999E+00
-   energy error estimate      3.0822407983E-01
-      effectivity             2.5806514476E-01
-   Linf norm of error         1.5410755625E-01
-   Linf error estimate        2.1753307826E-02
-      effectivity             1.4115665938E-01
+   energy norm of error       1.1943654217E+00
+   energy error estimate      1.4718348147E+00
+      effectivity             1.2323153266E+00
+   Linf norm of error         1.5422599407E-01
+   Linf error estimate        1.0876606994E-01
+      effectivity             7.0523824855E-01
 solving pde 1, iteration           3
 
 Total Grid:
-   number of vertices      =          92
-   number of leaf elements =         156
+   number of vertices      =          98
+   number of leaf elements =         166
    number of levels        =           6
-   degrees of freedom      =          92
+   degrees of freedom      =          98
    min and max degree      =           1          1
 
 Norms of error:
-   energy norm of error       7.6841410780E-02
-   energy error estimate      2.0171244803E-02
-      effectivity             2.6250487333E-01
-   Linf norm of error         7.1214458092E-03
-   Linf error estimate        1.1345277096E-03
-      effectivity             1.5931142916E-01
+   energy norm of error       7.5849401155E-02
+   energy error estimate      9.3508656896E-02
+      effectivity             1.2328199758E+00
+   Linf norm of error         7.0170687425E-03
+   Linf error estimate        4.3734928844E-03
+      effectivity             6.2326493367E-01
 solving pde 2, iteration           3
 
 Total Grid:
@@ -96,9 +96,9 @@ Total Grid:
    min and max degree      =           1          1
 
 Norms of error:
-   energy norm of error       8.2887077768E-01
-   energy error estimate      2.1177052438E-01
-      effectivity             2.5549281032E-01
-   Linf norm of error         6.8213797259E-02
-   Linf error estimate        9.1317420693E-03
-      effectivity             1.3386942871E-01
+   energy norm of error       8.2887075020E-01
+   energy error estimate      1.0067646179E+00
+      effectivity             1.2146219632E+00
+   Linf norm of error         6.8214653411E-02
+   Linf error estimate        4.1600612557E-02
+      effectivity             6.0984862456E-01

@@ -85,8 +85,10 @@ read *,nproc
 
 allocate(pde(2))
 call phaml_create(pde(1),nproc, &
+!                  spawn_form=DEBUG_SLAVE,debug_command="gdb", &
                   draw_grid_who = MASTER,id = 1)
 call phaml_create(pde(2),nproc, &
+!                  spawn_form=DEBUG_SLAVE,debug_command="gdb", &
                   draw_grid_who = MASTER,id = 2)
 
 ! connect the two solutions

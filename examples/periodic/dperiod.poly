@@ -1,0 +1,16 @@
+5 2 0 1
+1 0.0 0.0 1
+2 0.0 1.0 1
+3 1.0 1.0 1
+4 1.0 0.0 1
+5 0.5 0.5 0
+4 1
+1 1 2 -9
+2 2 3 8
+3 3 4 9
+4 4 1 -8
+0
+# In this version of a square domain, bmark is set to 0 for the interior
+# vertex, 1 for the corners with Dirichlet conditions, -8 and 8 for the bottom
+# and top edges with periodic conditions, and -9 and 9 for the left and right
+# edges with periodic conditions.

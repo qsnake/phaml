@@ -194,11 +194,11 @@ if (still_sequential) then
       phaml_matrix%lapack_symm_band_exists = .false.
    endif
    if (.not. phaml_matrix%lapack_gen_band_exists) then
-      if (phaml_matrix%neq == phaml_matrix%neq_vert+phaml_matrix%neq_edge) then
-         call make_lapack_gen_band(phaml_matrix%nlev+1,phaml_matrix, &
+      if (phaml_matrix%neq == phaml_matrix%neq_cond) then
+         call make_lapack_gen_band(phaml_matrix%cond_level,phaml_matrix, &
                                    phaml_matrix%lapack_mat)
       else
-         call make_lapack_gen_band(phaml_matrix%nlev+2,phaml_matrix, &
+         call make_lapack_gen_band(phaml_matrix%bubble_level,phaml_matrix, &
                                    phaml_matrix%lapack_mat)
       endif
       phaml_matrix%lapack_gen_band_exists = .true.
@@ -229,10 +229,10 @@ if (allocstat /= 0) then
    return
 endif
 
-! edge and face equations that I don't own might not exist on the processor
-! that owns the region containing them, because the edge or face has been
-! refined.  Start global_eq at a negative number so that it doesn't fall
-! in this processor's range if it doesn't get set by some processor
+! edge, face and bubble equations that I don't own might not exist on the
+! processor that owns the region containing them, because the edge, face or
+! element has been refined.  Start global_eq at a negative number so that it
+! doesn't fall in this processor's range if it doesn't get set by some processor
 
 hypre_matrix%global_eq = -10
 
@@ -832,10 +832,12 @@ if (still_sequential) then
    endif
    hold_rhs = phaml_matrix%rhs
    phaml_matrix%rhs = hypre_matrix%lapack_rhs
-   if (phaml_matrix%neq == phaml_matrix%neq_vert+phaml_matrix%neq_edge) then
-     call lapack_indef(phaml_matrix%nlev+1,phaml_matrix,phaml_matrix%lapack_mat)
+   if (phaml_matrix%neq == phaml_matrix%neq_cond) then
+     call lapack_indef(phaml_matrix%cond_level,phaml_matrix, &
+                       phaml_matrix%lapack_mat)
    else
-     call lapack_indef(phaml_matrix%nlev+2,phaml_matrix,phaml_matrix%lapack_mat)
+     call lapack_indef(phaml_matrix%bubble_level,phaml_matrix, &
+                       phaml_matrix%lapack_mat)
    endif
    phaml_matrix%rhs = hold_rhs
    deallocate(hold_rhs,stat=allocstat)

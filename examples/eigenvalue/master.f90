@@ -58,7 +58,7 @@ nvert = 1000
 ! Find the eigenvalue closest to lambda0.  For the smallest eigenvalue,
 ! use -huge(0.0_my_real).  For interior eigenvalues, you must use a
 ! solver that handles indefinite problems, for example
-! solver=LAPACK_INDEFINITE_SOLVER or solver=MUMPS_GEN_SOLVER
+! solver=LAPACK_INDEFINITE_SOLVER or solver=PETSC_MUMPS_GEN_SOLVER
 
 lambda0 = -huge(0.0_my_real)
 !print *,"lambda0?"
@@ -105,7 +105,7 @@ endif
 ! Create the pde data structure
 
 call phaml_create(pde1,nproc,eq_type=EIGENVALUE, &
-!                  spawn_form=DEBUG_SLAVE, debug_command="gdb", &
+!                  spawn_form=DEBUG_SLAVE, debug_command="idbc", &
                   draw_grid_who = MASTER)
 
 ! Send prob_param to the slaves
@@ -125,12 +125,20 @@ call phaml_solve_pde(pde1,                       &
                      print_errest_what=ENERGY_LINF_ERREST, &
                      print_eval_when=PHASES,     &
                      print_eval_who=MASTER,      &
+                     print_solver_when=PHASES,   &
+                     print_solver_who=MASTER,    &
                      draw_grid_when=PHASES,      &
-                     mg_cycles=10,               &
-                     mg_tol=MG_NO_TOL,           &
                      inc_quad_order=3,           &
+!
+!                     solver=PETSC_GMRES_SOLVER,  &
+!                     preconditioner=PETSC_SOR_PRECONDITION, &
+!                     harmonic_extraction=.true., &
+!                     transformation=ST_SHIFT_INVERT, &
+!                     eigensolver=SLEPC_ARPACK      , &
+!
                      lambda0 = lambda0,          &
                      num_eval = num_eval,        &
+                     eigen_maxit = 500,          &
 	             pause_after_phases = .true.,&
                      pause_at_start = .true.,    &
                      pause_at_end=.true.)

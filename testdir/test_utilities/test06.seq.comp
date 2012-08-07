@@ -1,9 +1,10 @@
 ---------------------------------------------------------
-           PHAML   Version 1.9.1
+           PHAML   Version 1.11.0
 
 Output from slave number     1
   PDE id is     0
   Number of slave processors is     1
+  Number of OpenMP threads is       1
 
 Subroutine phaml_solve_pde parameters:
   max_elem           infinity
@@ -17,6 +18,10 @@ Subroutine phaml_solve_pde parameters:
   task               REFINE_ONLY
   solve_init         true
   system_size                 1
+  pde_has_first_order_terms  false
+  pde_has_cross_derivative   false
+  laplacian_operator         true
+  isosceles_right_triangles  true
   print_grid_when    NEVER
   print_linsys_when  NEVER
   print_solver_when  NEVER
@@ -33,7 +38,7 @@ Subroutine phaml_solve_pde parameters:
   errtype            ABSOLUTE_ERROR
   reftype            H_ADAPTIVE
   edge_rule          MINIMUM_RULE
-  refterm            DOUBLE_NEQ_SMOOTH
+  refterm            DOUBLE_NEQ
   derefine           true
   partition_method   RTK
   prebalance         BALANCE_ELEMENTS
@@ -56,11 +61,12 @@ termination condition:
   one trip refinement
 ---------------------------------------------------------
 ---------------------------------------------------------
-           PHAML   Version 1.9.1
+           PHAML   Version 1.11.0
 
 Output from slave number     1
   PDE id is     0
   Number of slave processors is     1
+  Number of OpenMP threads is       1
 
 Subroutine phaml_solve_pde parameters:
   max_elem           infinity
@@ -74,6 +80,10 @@ Subroutine phaml_solve_pde parameters:
   task               REFINE_ONLY
   solve_init         true
   system_size                 1
+  pde_has_first_order_terms  false
+  pde_has_cross_derivative   false
+  laplacian_operator         true
+  isosceles_right_triangles  true
   print_grid_when    NEVER
   print_linsys_when  NEVER
   print_solver_when  NEVER
@@ -91,26 +101,23 @@ Subroutine phaml_solve_pde parameters:
   errtype            ABSOLUTE_ERROR
   reftype            H_ADAPTIVE
   edge_rule          MINIMUM_RULE
-  refterm            DOUBLE_NEQ_SMOOTH
+  refterm            DOUBLE_NEQ
   derefine           true
   partition_method   RTK
   prebalance         BALANCE_ELEMENTS
-  ignore_quad_err    false
-  solver             MG_SOLVER
-  mg_cycles          infinity
-  mg_tol             MG_ERREST_TOL
-  mg_prerelax                 1
-  mg_postrelax                2
-  mg_prerelax_ho              1
-  mg_postrelax_ho             1
-  mg_comm            MGCOMM_FUDOP
-  eigensolver        ARPACK_SOLVER
+  ignore_quad_err    true
+  solver             default
+  preconditioner     default
+  eigensolver        SLEPC_KRYLOV_SCHUR
   num_eval                    1
   lambda0            -infinity
   scale_evec         SCALE_LINF
-  arpack_ncv                 20
-  arpack_maxit              100
-  arpack_tol          1.0000000000E-10
+  transformation     ST_NONE
+  eigen_ncv          default
+  eigen_maxit        default
+  eigen_tol          1.0000000000E-10
+  harmonic_extraction  false
+  true_residual        false
 ---------------------------------------------------------
 
 ---------------------------------------------------------

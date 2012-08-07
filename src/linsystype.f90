@@ -32,16 +32,13 @@ use hash_mod
 use hash_eq_mod
 use message_passing
 use petsc_type_mod
-use mumps_struc_mod
 use hypretype_mod
-use superlutype_mod
 !----------------------------------------------------
 
 implicit none
 private
 public NO_ENTRY, lapack_band_matrix, linsys_type, solver_options, &
-       arpack_options, arpack_dummy, blopex_options, level1_ancestors, &
-       encased_matrix, lid_arrays
+       eigen_options, level1_ancestors, encased_matrix, lid_arrays
 
 !----------------------------------------------------
 ! The following parameters are defined:
@@ -82,11 +79,12 @@ type linsys_type
 ! restriction to a coarse grid.  end_row_linear gives the end of the entries
 ! for linear-basis equations (these columns come before high-order-basis
 ! equations), end_row_edge gives the end of the entries for edge equations,
-! and end_row_face gives the end of the entries for face equations, i.e., the
-! end of the row.  When the matrix is in it's usual p-hierarchical form,
-! end_row points to end_row_face.  It points to end_row_edge when working
-! with the condensed matrix from static condensation, and to end_row_linear
-! when converting to h-hierarchical bases.
+! end_row_face gives the end of the entries for face equations,
+! and end_row_bubble gives the end of the entries for bubble equations, i.e.,
+! the end of the row.  When the matrix is in it's usual p-hierarchical form,
+! end_row points to end_row_bubble.  It points to end_row_edge (end_row_face
+! in 3D) when working with the condensed matrix from static condensation, and
+! to end_row_linear when converting to h-hierarchical bases.
 ! column_index(k) is the column index for matrix_val(k).
 ! There may be nonexistant entries in matrix_val; for these the column_index
 ! is set to NO_ENTRY, which indexes a 0.0 entry in the solution vector so it
@@ -107,21 +105,17 @@ type linsys_type
 ! the equation is set up, and never changed (except possibly basis changes).
 
    integer, pointer :: column_index(:), begin_row(:), end_row(:), &
-                       end_row_linear(:), end_row_edge(:), end_row_face(:)
+                       end_row_linear(:), end_row_edge(:), end_row_face(:), &
+                       end_row_bubble(:)
 
 ! stiffness is the usual stiffness matrix (contains energy inner products
 ! of the basis functions).  It is the matrix in Ax=b.  It may contain the
 ! statically condensed values of the matrix.
 ! mass is the mass matrix (contains L2 inner products of the basis functions).
 ! It is the matrix M in the generalized eigenproblem Ax=lambda*Mx.
-! shifted is the shifted matrix A-lambda0*M where lambda0 is close to the
-! eigenvalues to be computed.  It actually contains the statically condensed
-! values of the matrix.
 ! condensed is the Schur complement matrix formed by static condensation of
-! the face bases in stiffness or shifted.  For elliptic boundary value
-! problems it will point to stiffness unless the stiffness matrix is needed
-! to compute residuals.  For elliptic eigenvalue problems it will point to
-! shifted.
+! the bubble bases in stiffness.  It will point to stiffness unless the
+! stiffness matrix is needed to compute residuals.
 ! matrix_val is used to access matrix values most of the time.  Usually it
 ! will point to condensed, but at times it will point to other matrices, e.g.
 ! it will point to mass when matrix_times_vector is called to multiply a
@@ -130,18 +124,31 @@ type linsys_type
 ! the rest of the data structure.
 
    real(my_real), pointer :: matrix_val(:)
-   real(my_real), pointer :: stiffness(:), mass(:), shifted(:), condensed(:)
+   real(my_real), pointer :: stiffness(:), mass(:), condensed(:)
 
 ! The equations are numbered such that all the equations from linear basis
 ! functions (associated with vertices) come first, and those from the same
 ! level are contiguous.  begin_level(i) is the first row for level i; the last
-! row is begin_level(i+1)-1.  begin_level(nlev+1) is the first row for edge
-! bases; begin_level(nlev+2) is the first row for face bases.
-! begin_level(nlev+3) is neq+1.  The edge (face) rows have those associated
-! with an edge (face) contiguous and in the order that the p-hierarchical basis
-! returns them.
+! row is begin_level(i+1)-1.  The last level for vertex rows is
+! nlev_vert = grid%nlev
+! edge, face and bubble rows are each considered to occupy one level.  edges
+! are in level edge_level = nlev_vert+1.  face rows (which only exist in 3D)
+! are in level face_level = nlev_vert+2, and bubble rows are in level
+! bubble_level = nlev_vert+3.  In 2D, begin_level(face_level) =
+! begin_level(bubble_level), so any erroneous attempt to use face rows will
+! result in an empty list.
+! beyond_last_level = bubble_level+1 with begin_level(beyond_last_level) = neq+1
+! cond_level is the last level of the condensed matrix, which is edge_level
+! in 2D and face_level in 3D.
+! The edge (face) rows are numbered such that those with the same degree are
+! contiguous.  edge_begin_degree(i) (face_begin_degree) is the first row of
+! edge (face) equations with degree i; the last row is edge_begin_degree(i+1)-1.
+! The bubble rows have those associated with an element contiguous and in the
+! order that the p-hierarchical basis returns them.
 
-   integer, pointer :: begin_level(:)
+   integer, pointer :: begin_level(:), edge_begin_degree(:),face_begin_degree(:)
+   integer :: nlev_vert, edge_level, face_level, bubble_level, cond_level, &
+              beyond_last_level
 
 ! The right hand side of the system, with and without static condensation
 
@@ -158,7 +165,7 @@ type linsys_type
 
    real(my_real), pointer :: evecs(:,:)
 
-! equation_type indicates the kind of vertex or edge (interior, Neuman,
+! equation_type indicates the kind of vertex, edge or face (interior, Neuman,
 ! Dirichlet, etc.) this equation came from, to indicate the need for special
 ! handling.
 
@@ -214,22 +221,19 @@ type linsys_type
    type(encased_matrix), pointer :: elem_block(:)
 
 ! The number of equations, refinement levels and coupled PDEs, and maximum
-! polynomial degree, number of vertex, edge and face equations.
-! When treating the matrix as statically condensed, neq = neq_vert+neq_edge,
-! otherwise neq_vert+neq_edge+neq_face
+! polynomial degree, number of vertex, edge, face and bubble equations.
+! When treating the matrix as statically condensed,
+! neq = neq_cond = neq_vert+neq_edge+neq_face,
+! otherwise neq = neq_full = neq_vert+neq_edge+neq_face+neq_bubble
 
-   integer :: neq, nlev, system_size, maxdeg, neq_vert, neq_edge, neq_face
+   integer :: neq, system_size, maxdeg, neq_vert, neq_edge, neq_face, &
+              neq_bubble, neq_cond, neq_full
 
 ! Information about the performance of the solver: number of iterations,
 ! relative residual
 
    integer :: solver_niter
    real(my_real) :: relresid
-
-! The minimum value of PDE coefficient r(x,y), used as lambda0 when
-! the smallest eigenvalues are desired.
-
-   real(my_real) :: rmin
 
 ! The matrices used for conversion between nodal and h-hierarchical bases.
 ! Multiplication by S converts the coefficient vector of a h-hierarchical
@@ -259,47 +263,31 @@ type linsys_type
    type(petsc_matrix_type) :: petsc_matrix
    logical :: petsc_matrix_exists
 
-! Storage of the matrix in MUMPS format
-
-   type(mumps_matrix_type) :: mumps_matrix
-   logical :: mumps_matrix_exists
-
 ! Storage of the matrix in hypre format
 
    type(hypre_matrix_type) :: hypre_matrix
    logical :: hypre_matrix_exists
 
-! Storage of the matrix in SuperLU format
-
-   type(superlu_matrix_type) :: superlu_matrix
-   logical :: superlu_matrix_exists
-
 end type linsys_type
 
-type arpack_options
-   real(my_real) :: tol
-   integer :: ncv, maxit
-end type arpack_options
-
-! Can be used for solver_options constructors
-type(arpack_options), parameter :: arpack_dummy=arpack_options(0.0_my_real,0,0)
-
-type blopex_options
-   real(my_real) :: atol, rtol
-   integer :: maxit
-end type blopex_options
+type eigen_options
+   real(my_real) :: tol, st_shift, st_antishift
+   integer :: ncv, maxit, transformation
+   logical :: harmonic_extraction, true_residual
+end type eigen_options
 
 type solver_options
-   logical :: ignore_quad_err, petsc_matrix_free
+   logical :: ignore_quad_err, petsc_matrix_free, pde_has_first_order_terms, &
+              pde_has_cross_derivative, isosceles_right_triangles, &
+              laplacian_operator
    integer :: solver, preconditioner, ncycle, prerelax, postrelax, &
               prerelax_ho, postrelax_ho, dd_iterations, eq_type, &
               num_eval, system_size, coarse_size, coarse_method, &
               inc_quad_order, scale_evec, krylov_iter, krylov_restart, &
-              eigensolver, lambda0_side, transformation, mg_comm
+              eigensolver, mg_comm
    real(my_real) :: lambda0, mg_tol, krylov_tol
    type(hypre_options) :: hypre_cntl
-   type(arpack_options) :: arpack_cntl
-   type(blopex_options) :: blopex_cntl
+   type(eigen_options) :: eigen_cntl
    type(petsc_options) :: petsc_cntl
 end type solver_options
 

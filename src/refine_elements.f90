@@ -29,6 +29,7 @@ module refine_elements
 
 use global
 use gridtype_mod
+use linsystype_mod
 use hash_mod
 use grid_util
 use error_estimators
@@ -40,46 +41,21 @@ implicit none
 private
 public p_coarsen_elem, &            ! not thread safe
        p_coarsen_elem_interior, &   ! conditionally thread safe
-       unbisect_triangle_pair,   &  ! conditionally thread safe
+       h_coarsen_element, &         ! conditionally thread safe
        p_refine_elem, &             ! not thread safe
        p_refine_element_interior, & ! conditionally thread safe
        enforce_edge_rule, &         ! conditionally thread safe
        before_h_refine, &           ! not thread safe
-       bisect_triangle_pair, &      ! conditionally thread safe
+       h_refine_element, &          ! conditionally thread safe
        after_h_refine, &            ! not thread safe
        remove_from_errind_list, &   ! not thread safe
        create_element, &            ! not thread safe
        init_guess_ic, &             ! not thread safe
-       init_guess_p                 ! not thread safe
+       init_guess_p, &              ! not thread safe
+       remove_hanging_nodes         ! not used
 
 !----------------------------------------------------
 ! Non-module procedures used are:
-
-interface
-
-   function trues(x,y,comp,eigen) ! real (my_real)
-   use global
-   real (my_real), intent(in) :: x,y
-   integer, intent(in) :: comp, eigen
-   real (my_real) :: trues
-   end function trues
-
-   subroutine bconds(x,y,bmark,itype,c,rs)
-   use global
-   real(my_real), intent(in) :: x,y
-   integer, intent(in) :: bmark
-   integer, intent(out) :: itype(:)
-   real(my_real), intent(out) :: c(:,:),rs(:)
-   end subroutine bconds
-
-   function iconds(x,y,comp,eigen)
-   use global
-   real(my_real), intent(in) :: x,y
-   integer, intent(in) :: comp,eigen
-   real(my_real) :: iconds
-   end function iconds
-
-end interface
 
 !----------------------------------------------------
 ! The following defined constants are defined:
@@ -113,7 +89,7 @@ logical, intent(in), optional :: delay_errind
 !----------------------------------------------------
 ! Local variables:
 
-integer :: j, deg, side, edge, neigh(EDGES_PER_ELEMENT), new_deg, &
+integer :: j, deg, side, edge, neigh(NEIGHBORS_PER_ELEMENT), new_deg, &
            old_edge_deg(EDGES_PER_ELEMENT)
 logical :: loc_delay_errind
 !----------------------------------------------------
@@ -180,7 +156,7 @@ do side=1,EDGES_PER_ELEMENT
    endif
 end do ! next side
 
-! fix exact for the face bases; other solution coefficients stay the same
+! fix exact for the element bases; other solution coefficients stay the same
 ! because the basis is p-hierarchical
 
 if (grid%have_true) then
@@ -228,7 +204,7 @@ logical, intent(in), optional :: delay_errind
 !----------------------------------------------------
 ! Local variables:
 
-integer :: j, deg, side, edge, neigh(EDGES_PER_ELEMENT), new_deg, &
+integer :: j, deg, side, edge, neigh(NEIGHBORS_PER_ELEMENT), new_deg, &
            old_edge_deg(EDGES_PER_ELEMENT)
 logical :: loc_delay_errind
 !----------------------------------------------------
@@ -277,7 +253,7 @@ if (deg >= 2) then
    endif
 endif
 
-! fix exact for the face bases; other solution coefficients stay the same
+! fix exact for the element bases; other solution coefficients stay the same
 ! because the basis is p-hierarchical
 
 if (grid%have_true) then
@@ -298,7 +274,7 @@ endif
 end subroutine p_coarsen_elem_interior
 
 !          ----------------------
-subroutine unbisect_triangle_pair(grid,parent,errcode,refcont, &
+subroutine h_coarsen_element(grid,parent,errcode,refcont, &
                                   delta_nelem, delta_nelem_leaf, delta_nedge, &
                                   delta_nvert, delta_nelem_leaf_own, &
                                   delta_nvert_own, delta_dof, delta_dof_own, &
@@ -369,7 +345,7 @@ if ((present(delta_dof) .neqv. present(delta_dof_own)) .or. &
     (present(delta_dof) .neqv. present(delta_nvert)) .or. &
     (present(delta_dof) .neqv. present(delta_nvert_own))) then
    ierr = PHAML_INTERNAL_ERROR
-   call fatal("unbisect_triangle_pair: all or none of the deltas must be present")
+   call fatal("h_coarsen_element: all or none of the deltas must be present")
    stop
 endif
 
@@ -450,7 +426,7 @@ endif
 
 if (mate /= BOUNDARY) then
    if ((grid%element(child(3))%iown .and. grid%element(child(4))%iown) .neqv. grid%element(mate)%iown) then
-      call warning("need to keep assignment of iown in unbisect_triangle_pair")
+      call warning("need to keep assignment of iown in h_coarsen_element")
    endif
    grid%element(mate)%iown = grid%element(child(3))%iown .and. &
                              grid%element(child(4))%iown
@@ -478,39 +454,27 @@ if (mate /= BOUNDARY) then
       grid%vertex(grid%element(mate)%vertex(3))%assoc_elem = mate
    endif
 endif
-do i=1,3
-   if (any(grid%vertex_type(grid%element(parent)%vertex(i),:) == PERIODIC_SLAVE) .or. &
-       any(grid%vertex_type(grid%element(parent)%vertex(i),:) == PERIODIC_SLAVE_DIR) .or. &
-       any(grid%vertex_type(grid%element(parent)%vertex(i),:) == PERIODIC_SLAVE_NAT) .or. &
-       any(grid%vertex_type(grid%element(parent)%vertex(i),:) == PERIODIC_SLAVE_MIX)) then
+do i=1,VERTICES_PER_ELEMENT
+   if (is_periodic_vert_slave(grid%element(parent)%vertex(i),grid)) then
       grid%vertex(grid%element(parent)%vertex(i))%assoc_elem = &
-         grid%vertex(grid%vertex(grid%element(parent)%vertex(i))%next)%assoc_elem
+        grid%vertex(grid%vertex(grid%element(parent)%vertex(i))%next)%assoc_elem
    endif
-   if (any(grid%vertex_type(grid%element(parent)%vertex(i),:) == PERIODIC_MASTER) .or. &
-       any(grid%vertex_type(grid%element(parent)%vertex(i),:) == PERIODIC_MASTER_DIR) .or. &
-       any(grid%vertex_type(grid%element(parent)%vertex(i),:) == PERIODIC_MASTER_NAT) .or. &
-       any(grid%vertex_type(grid%element(parent)%vertex(i),:) == PERIODIC_MASTER_MIX)) then
-      grid%vertex(grid%vertex(grid%element(parent)%vertex(i))%previous)%assoc_elem = &
+   if (is_periodic_vert_master(grid%element(parent)%vertex(i),grid)) then
+      grid%vertex(grid%vertex(grid%element(parent)%vertex(i))%next)%assoc_elem=&
          grid%vertex(grid%element(parent)%vertex(i))%assoc_elem
    endif
 end do
 if (mate /= BOUNDARY) then
- do i=1,3
-   if (any(grid%vertex_type(grid%element(mate)%vertex(i),:) == PERIODIC_SLAVE) .or. &
-       any(grid%vertex_type(grid%element(mate)%vertex(i),:) == PERIODIC_SLAVE_DIR) .or. &
-       any(grid%vertex_type(grid%element(mate)%vertex(i),:) == PERIODIC_SLAVE_NAT) .or. &
-       any(grid%vertex_type(grid%element(mate)%vertex(i),:) == PERIODIC_SLAVE_MIX)) then
-      grid%vertex(grid%element(mate)%vertex(i))%assoc_elem = &
-         grid%vertex(grid%vertex(grid%element(mate)%vertex(i))%next)%assoc_elem
-   endif
-   if (any(grid%vertex_type(grid%element(mate)%vertex(i),:) == PERIODIC_MASTER) .or. &
-       any(grid%vertex_type(grid%element(mate)%vertex(i),:) == PERIODIC_MASTER_DIR) .or. &
-       any(grid%vertex_type(grid%element(mate)%vertex(i),:) == PERIODIC_MASTER_NAT) .or. &
-       any(grid%vertex_type(grid%element(mate)%vertex(i),:) == PERIODIC_MASTER_MIX)) then
-      grid%vertex(grid%vertex(grid%element(mate)%vertex(i))%previous)%assoc_elem = &
-         grid%vertex(grid%element(mate)%vertex(i))%assoc_elem
-   endif
- end do
+   do i=1,VERTICES_PER_ELEMENT
+      if (is_periodic_vert_slave(grid%element(mate)%vertex(i),grid)) then
+         grid%vertex(grid%element(mate)%vertex(i))%assoc_elem = &
+          grid%vertex(grid%vertex(grid%element(mate)%vertex(i))%next)%assoc_elem
+      endif
+      if (is_periodic_vert_master(grid%element(mate)%vertex(i),grid)) then
+        grid%vertex(grid%vertex(grid%element(mate)%vertex(i))%next)%assoc_elem=&
+          grid%vertex(grid%element(mate)%vertex(i))%assoc_elem
+      endif
+   end do
 endif
 
 ! reassign associated element for the edges of the parents
@@ -552,7 +516,7 @@ endif
 ! set parent degree and make sure the parent has enough memory for solution
 
 grid%element(parent)%degree = par_deg
-elem_size = ((par_deg-1)*(par_deg-2))/2
+elem_size = element_dof(par_deg)
 if (associated(grid%element(parent)%solution)) then
    oldsize = size(grid%element(parent)%solution,dim=1)
 else
@@ -561,7 +525,7 @@ endif
 if (oldsize < elem_size) then
    allocate(temp1(elem_size,grid%system_size,max(1,grid%num_eval)),stat=astat)
    if (astat /= 0) then
-      call fatal("allocation failed in unbisect_triangle_pair")
+      call fatal("allocation failed in h_coarsen_element")
       stop 
    endif
    temp1 = 0.0_my_real
@@ -571,7 +535,7 @@ if (oldsize < elem_size) then
       nullify(temp1)
       allocate(temp1(elem_size,grid%system_size,max(1,grid%num_eval)),stat=astat)
       if (astat /= 0) then
-         call fatal("allocation failed in unbisect_triangle_pair")
+         call fatal("allocation failed in h_coarsen_element")
          stop 
       endif
       temp1 = 0.0_my_real
@@ -584,7 +548,7 @@ endif
 
 if (mate /= BOUNDARY) then
    grid%element(mate)%degree = mate_deg
-   elem_size = ((mate_deg-1)*(mate_deg-2))/2
+   elem_size = element_dof(mate_deg)
    if (associated(grid%element(mate)%solution)) then
       oldsize = size(grid%element(mate)%solution,dim=1)
    else
@@ -594,7 +558,7 @@ if (mate /= BOUNDARY) then
       allocate(temp1(elem_size,grid%system_size,max(1,grid%num_eval)), &
                stat=astat)
       if (astat /= 0) then
-         call fatal("allocation failed in unbisect_triangle_pair")
+         call fatal("allocation failed in h_coarsen_element")
          stop 
       endif
       temp1 = 0.0_my_real
@@ -605,7 +569,7 @@ if (mate /= BOUNDARY) then
          allocate(temp1(elem_size,grid%system_size,max(1,grid%num_eval)), &
                   stat=astat)
          if (astat /= 0) then
-            call fatal("allocation failed in unbisect_triangle_pair")
+            call fatal("allocation failed in h_coarsen_element")
             stop 
          endif
          temp1 = 0.0_my_real
@@ -658,7 +622,7 @@ if (.not. present(delta_dof)) then
          allocate(temp1(edge_size,grid%system_size,max(1,grid%num_eval)), &
                   stat=astat)
          if (astat /= 0) then
-            call fatal("allocation failed in unbisect_triangle_pair")
+            call fatal("allocation failed in h_coarsen_element")
             stop
          endif
          temp1 = 0.0_my_real
@@ -670,7 +634,7 @@ if (.not. present(delta_dof)) then
             allocate(temp1(edge_size,grid%system_size,max(1,grid%num_eval)), &
                      stat=astat)
             if (astat /= 0) then
-               call fatal("allocation failed in unbisect_triangle_pair")
+               call fatal("allocation failed in h_coarsen_element")
                stop
             endif
             temp1 = 0.0_my_real
@@ -683,7 +647,7 @@ if (.not. present(delta_dof)) then
             allocate(temp1(edge_size,grid%system_size,max(1,grid%num_eval)), &
                      stat=astat)
             if (astat /= 0) then
-               call fatal("allocation failed in unbisect_triangle_pair")
+               call fatal("allocation failed in h_coarsen_element")
                stop
             endif
 ! don't know what oldsoln is on an unrefined edge, so just leave the
@@ -748,8 +712,7 @@ call hcoarsen_init_guess(grid,parent,mate,child)
 ! putting them on the free space linked list
 
 vert1 = grid%element(child(1))%vertex(3)
-if (any(grid%vertex_type(vert1,:) == PERIODIC_MASTER) .or. &
-    any(grid%vertex_type(vert1,:) == PERIODIC_SLAVE)) then
+if (is_periodic_vert(vert1,grid)) then
    vert2 = grid%element(child(3))%vertex(3)
 endif
 do i=1,4
@@ -771,8 +734,7 @@ do i=1,4
    else
       grid%element(grid%element(child(i))%next)%previous = grid%element(child(i))%previous
    endif
-   grid%element(child(i))%next = grid%next_free_elem
-   grid%next_free_elem = child(i)
+   call put_next_free_elem(grid,child(i))
 !$omp end critical (critical_hcoarsen1)
 end do
 do i=1,6
@@ -785,40 +747,16 @@ do i=1,6
    if (associated(grid%edge(childedge(i))%exact)) then
       deallocate(grid%edge(childedge(i))%exact)
    endif
-   grid%edge(childedge(i))%next = grid%next_free_edge
-   grid%next_free_edge = childedge(i)
+   call put_next_free_edge(grid,childedge(i))
 !$omp end critical (critical_hcoarsen2)
 end do
-if (any(grid%vertex_type(vert1,:) == PERIODIC_MASTER) .or. &
-    any(grid%vertex_type(vert1,:) == PERIODIC_SLAVE)) then
+if (is_periodic_vert(vert1,grid)) then
 !$omp critical (critical_hcoarsen3)
-   if (grid%vertex(vert2)%previous == END_OF_LIST) then
-      grid%head_level_vert(grid%element(child(1))%level) = grid%vertex(vert2)%next
-   else
-      grid%vertex(grid%vertex(vert2)%previous)%next = grid%vertex(vert2)%next
-   endif
-   if (grid%vertex(vert2)%next == END_OF_LIST) then
-      ! nothing, unless I add end_level_vert to the grid data structure
-   else
-      grid%vertex(grid%vertex(vert2)%next)%previous = grid%vertex(vert2)%previous
-   endif
-   grid%vertex(vert2)%next = grid%next_free_vert
-   grid%next_free_vert = vert2
+   call put_next_free_vert(grid,vert2)
 !$omp end critical (critical_hcoarsen3)
 endif
 !$omp critical (critical_hcoarsen4)
-if (grid%vertex(vert1)%previous == END_OF_LIST) then
-   grid%head_level_vert(grid%element(child(1))%level) = grid%vertex(vert1)%next
-else
-   grid%vertex(grid%vertex(vert1)%previous)%next = grid%vertex(vert1)%next
-endif
-if (grid%vertex(vert1)%next == END_OF_LIST) then
-   ! nothing, unless I add end_level_vert to the grid data structure
-else
-   grid%vertex(grid%vertex(vert1)%next)%previous = grid%vertex(vert1)%previous
-endif
-grid%vertex(vert1)%next = grid%next_free_vert
-grid%next_free_vert = vert1
+call put_next_free_vert(grid,vert1)
 !$omp end critical (critical_hcoarsen4)
 
 ! remove the children elements, edges and vertices from the hash tables
@@ -841,8 +779,7 @@ if (mate /= BOUNDARY) then
    endif
 endif
 call hash_remove(grid%vertex(vert1)%gid,grid%vert_hash)
-if (any(grid%vertex_type(vert1,:) == PERIODIC_MASTER) .or. &
-    any(grid%vertex_type(vert1,:) == PERIODIC_SLAVE)) then
+if (is_periodic_vert(vert1,grid)) then
    call hash_remove(grid%vertex(vert2)%gid,grid%vert_hash)
 endif
 !$omp end critical (critical_hcoarsen5)
@@ -871,14 +808,12 @@ else
    loc_delta_nedge = loc_delta_nedge - 4
 ! TEMP also need to update nedge_own
 endif
-if (any(grid%edge_type(grid%element(parent)%edge(3),:) == PERIODIC_MASTER) .or. &
-    any(grid%edge_type(grid%element(parent)%edge(3),:) == PERIODIC_SLAVE)) then
+if (is_periodic_edge(grid%element(parent)%edge(3),grid)) then
    loc_delta_nedge = loc_delta_nedge - 2
 ! TEMP also need to update nedge_own
 endif
 loc_delta_nvert = loc_delta_nvert - 1
-if (any(grid%vertex_type(vert1,:) == PERIODIC_MASTER) .or. &
-    any(grid%vertex_type(vert1,:) == PERIODIC_SLAVE)) then
+if (is_periodic_vert(vert1,grid)) then
    loc_delta_nvert = loc_delta_nvert - 1
 endif
 do i=1,4
@@ -897,8 +832,7 @@ if (mate /= BOUNDARY) then
 endif
 if (grid%element(grid%vertex(vert1)%assoc_elem)%iown) then
    loc_delta_nvert_own = loc_delta_nvert_own - 1
-   if (any(grid%vertex_type(vert1,:) == PERIODIC_MASTER) .or. &
-       any(grid%vertex_type(vert1,:) == PERIODIC_SLAVE)) then
+   if (is_periodic_vert(vert1,grid)) then
       loc_delta_nvert_own = loc_delta_nvert_own - 1
    endif
 endif
@@ -916,10 +850,10 @@ do i=1,4
    if (i>2 .and. mate==BOUNDARY) exit
    if (grid%element(child(i))%degree >= 3) then
       loc_delta_dof = loc_delta_dof - grid%system_size * &
-        ((grid%element(child(i))%degree-1)*(grid%element(child(i))%degree-2))/2
+                      element_dof(grid%element(child(i))%degree)
       if (grid%element(child(i))%iown) then
        loc_delta_dof_own = loc_delta_dof_own - grid%system_size * &
-        ((grid%element(child(i))%degree-1)*(grid%element(child(i))%degree-2))/2
+                      element_dof(grid%element(child(i))%degree)
       endif
    endif
 end do
@@ -927,15 +861,15 @@ end do
 ! dof in interior of parent and mate
 
 if (par_deg >= 3) then
-   loc_delta_dof = loc_delta_dof + grid%system_size*((par_deg-1)*(par_deg-2))/2
+   loc_delta_dof = loc_delta_dof + grid%system_size*element_dof(par_deg)
    if (grid%element(parent)%iown) then
-      loc_delta_dof_own = loc_delta_dof_own + grid%system_size*((par_deg-1)*(par_deg-2))/2
+      loc_delta_dof_own = loc_delta_dof_own + grid%system_size*element_dof(par_deg)
    endif
 endif
 if (mate /= BOUNDARY .and. mate_deg >= 3) then
-   loc_delta_dof = loc_delta_dof + grid%system_size*((mate_deg-1)*(mate_deg-2))/2
+   loc_delta_dof = loc_delta_dof + grid%system_size*element_dof(mate_deg)
    if (grid%element(mate)%iown) then
-      loc_delta_dof_own = loc_delta_dof_own + grid%system_size*((mate_deg-1)*(mate_deg-2))/2
+      loc_delta_dof_own = loc_delta_dof_own + grid%system_size*element_dof(mate_deg)
    endif
 endif
 
@@ -1021,7 +955,7 @@ if (mate /= BOUNDARY) then
    endif
 endif
 
-end subroutine unbisect_triangle_pair
+end subroutine h_coarsen_element
 
 !          -------------
 subroutine p_refine_elem(grid,elem,refine_control,elist,numpref, &
@@ -1198,7 +1132,7 @@ if (associated(grid%element(elem)%solution)) then
 else
    old_size = 0
 endif
-new_size = ((new_deg-1)*(new_deg-2))/2
+new_size = element_dof(new_deg)
 
 if (old_size < new_size) then
    new_size = ((new_deg+1)*new_deg)/2
@@ -1277,8 +1211,8 @@ endif
 ! set the new solution coefficients to 0, and the exact solution
 
 if (new_deg >= 3) then
-   grid%element(elem)%solution(1+((new_deg-2)*(new_deg-3))/2: &
-                               ((new_deg-1)*(new_deg-2))/2,:,:)= 0.0_my_real
+   grid%element(elem)%solution(1+element_dof(new_deg-1): &
+                               element_dof(new_deg),:,:)= 0.0_my_real
    if (grid%have_true) then
       do i=1,grid%system_size
          call elem_exact(grid,elem,i,"t")
@@ -1325,8 +1259,9 @@ integer, intent(out), optional :: delta_dof, delta_dof_own
 !----------------------------------------------------
 ! Local variables:
 
-integer :: elem(2), i, old_deg, new_deg, old_size, new_size, copy_size, &
+integer :: i, old_deg, new_deg, old_size, new_size, copy_size, &
            copy_size_oldsoln, astat
+integer, pointer :: elem(:)
 real(my_real), pointer :: temp(:,:,:)
 !----------------------------------------------------
 ! Begin executable code
@@ -1339,17 +1274,22 @@ endif
 
 ! get the elements that share this edge
 
-elem = get_edge_elements(grid,edge)
+call get_edge_elements(grid,edge,elem)
 
-! determine what the degree of this element should be
+! determine what the degree of this edge should be
 
-if (elem(2) == BOUNDARY) then
-   new_deg = grid%element(elem(1))%degree
-elseif (refine_control%edge_rule == MINIMUM_RULE) then
-   new_deg = min(grid%element(elem(1))%degree,grid%element(elem(2))%degree)
+if (refine_control%edge_rule == MINIMUM_RULE) then
+   new_deg = huge(0)
 else ! (refine_control%edge_rule == MAXIMUM_RULE)
-   new_deg = max(grid%element(elem(1))%degree,grid%element(elem(2))%degree)
+   new_deg = 0
 endif
+do i=1,size(elem)
+   if (refine_control%edge_rule == MINIMUM_RULE) then
+      new_deg = min(grid%element(elem(i))%degree,new_deg)
+   else ! (refine_control%edge_rule == MAXIMUM_RULE)
+      new_deg = max(grid%element(elem(i))%degree,new_deg)
+   endif
+end do
 
 ! assign the new degree
 
@@ -1468,12 +1408,15 @@ if (new_deg /= old_deg) then
    end do
 endif
 
-! indicate the error indicators for both elements should be recomputed later
+! indicate the error indicators should be recomputed later
 
 !$omp critical (critical_edge_rule)
-if (elem(1) /= BOUNDARY) grid%element_errind(elem(1),:) = -1.0_my_real
-if (elem(2) /= BOUNDARY) grid%element_errind(elem(2),:) = -1.0_my_real
+do i=1,size(elem)
+   grid%element_errind(elem(i),:) = -1.0_my_real
+end do
 !$omp end critical (critical_edge_rule)
+
+deallocate(elem)
 
 end subroutine enforce_edge_rule
 
@@ -1504,8 +1447,7 @@ integer, optional, pointer :: desired_level(:), desired_degree(:), elem_list(:)
 !----------------------------------------------------
 ! Local variables:
 
-integer :: elem, mate, i, errcode, level, hold_vert_head, hold_elem_head, &
-           hold_vert_prev, hold_elem_prev
+integer :: elem, mate, i, errcode, level, hold_elem_head, hold_elem_prev
 !----------------------------------------------------
 ! Begin executable code
 
@@ -1516,9 +1458,9 @@ if (nelem == 0) return
 ! assign -1 for excess lids, like when the mate is the boundary.
 ! It will also be returned as -1 if we run out of memory.
 
-vert_lid = -1
-edge_lid = -1
-elem_lid = -1
+vert_lid(:,1:nelem) = -1
+edge_lid(:,1:nelem) = -1
+elem_lid(:,1:nelem) = -1
 
 level = grid%element(element_list(1))%level + 1
 
@@ -1547,15 +1489,11 @@ do i=1,nelem
       endif
    endif
 
-! keep track of the current head of the level linked lists in case we abort
+! keep track of the current head of the level linked list in case we abort
 
    hold_elem_head = grid%head_level_elem(level)
    if (hold_elem_head /= END_OF_LIST) then
       hold_elem_prev = grid%element(hold_elem_head)%previous
-   endif
-   hold_vert_head = grid%head_level_vert(level)
-   if (hold_vert_head /= END_OF_LIST) then
-      hold_vert_prev = grid%element(hold_vert_head)%previous
    endif
 
 ! get the lids of the children, add them to the level linked lists, and set
@@ -1563,15 +1501,13 @@ do i=1,nelem
 
 ! element child 1
 
-   if (grid%next_free_elem == END_OF_LIST) then
-      call more_elements(grid,errcode,elist,reftype,new_p,numhref,numpref, &
-                         desired_level,desired_degree,elem_list)
-      if (errcode /= 0) then
-         return
-      endif
+   elem_lid(1,i) = get_next_free_elem(grid,errcode,elist,reftype,new_p,numhref,&
+                                      numpref,desired_level,desired_degree, &
+                                      elem_list)
+   if (errcode /= 0) then
+      elem_lid = -1
+      return
    endif
-   elem_lid(1,i) = grid%next_free_elem
-   grid%next_free_elem = grid%element(elem_lid(1,i))%next
    grid%element(elem_lid(1,i))%next = hold_elem_head
    if (hold_elem_head /= END_OF_LIST) then
       grid%element(hold_elem_head)%previous = elem_lid(1,i)
@@ -1585,19 +1521,16 @@ do i=1,nelem
 
 ! element child 2
 
-   if (grid%next_free_elem == END_OF_LIST) then
-      call more_elements(grid,errcode,elist,reftype,new_p,numhref,numpref, &
-                         desired_level,desired_degree,elem_list)
-      if (errcode /= 0) then
-         elem_lid = -1
-         if (hold_elem_head /= END_OF_LIST) then
-            grid%element(hold_elem_head)%previous = hold_elem_prev
-         endif
-         return
+   elem_lid(2,i) = get_next_free_elem(grid,errcode,elist,reftype,new_p,numhref,&
+                                      numpref,desired_level,desired_degree, &
+                                      elem_list)
+   if (errcode /= 0) then
+      elem_lid = -1
+      if (hold_elem_head /= END_OF_LIST) then
+         grid%element(hold_elem_head)%previous = hold_elem_prev
       endif
+      return
    endif
-   elem_lid(2,i) = grid%next_free_elem
-   grid%next_free_elem = grid%element(elem_lid(2,i))%next
    grid%element(elem_lid(2,i))%next = elem_lid(1,i)
    grid%element(elem_lid(1,i))%previous = elem_lid(2,i)
    grid%element(elem_lid(2,i))%previous = END_OF_LIST
@@ -1613,20 +1546,17 @@ do i=1,nelem
 
    if (mate /= BOUNDARY) then
 
-      if (grid%next_free_elem == END_OF_LIST) then
-         call more_elements(grid,errcode,elist,reftype,new_p,numhref,numpref, &
-                            desired_level,desired_degree,elem_list)
-         if (errcode /= 0) then
-            elem_lid = -1
-            if (hold_elem_head /= END_OF_LIST) then
-               grid%element(hold_elem_head)%previous = hold_elem_prev
-            endif
-            grid%head_level_elem(level) = hold_elem_head
-            return
+      elem_lid(3,i) = get_next_free_elem(grid,errcode,elist,reftype,new_p, &
+                                         numhref,numpref,desired_level, &
+                                         desired_degree,elem_list)
+      if (errcode /= 0) then
+         elem_lid = -1
+         if (hold_elem_head /= END_OF_LIST) then
+            grid%element(hold_elem_head)%previous = hold_elem_prev
          endif
+         grid%head_level_elem(level) = hold_elem_head
+         return
       endif
-      elem_lid(3,i) = grid%next_free_elem
-      grid%next_free_elem = grid%element(elem_lid(3,i))%next
       grid%element(elem_lid(3,i))%next = elem_lid(2,i)
       grid%element(elem_lid(2,i))%previous = elem_lid(3,i)
       if (present(desired_level)) then
@@ -1638,20 +1568,17 @@ do i=1,nelem
 
 ! element child 4
 
-      if (grid%next_free_elem == END_OF_LIST) then
-         call more_elements(grid,errcode,elist,reftype,new_p,numhref,numpref, &
-                            desired_level,desired_degree,elem_list)
-         if (errcode /= 0) then
-            elem_lid = -1
-            if (hold_elem_head /= END_OF_LIST) then
-               grid%element(hold_elem_head)%previous = hold_elem_prev
-            endif
-            grid%head_level_elem(level) = hold_elem_head
-            return
+      elem_lid(4,i) = get_next_free_elem(grid,errcode,elist,reftype,new_p, &
+                                         numhref,numpref,desired_level, &
+                                         desired_degree,elem_list)
+      if (errcode /= 0) then
+         elem_lid = -1
+         if (hold_elem_head /= END_OF_LIST) then
+            grid%element(hold_elem_head)%previous = hold_elem_prev
          endif
+         grid%head_level_elem(level) = hold_elem_head
+         return
       endif
-      elem_lid(4,i) = grid%next_free_elem
-      grid%next_free_elem = grid%element(elem_lid(4,i))%next
       grid%element(elem_lid(4,i))%next = elem_lid(3,i)
       grid%element(elem_lid(3,i))%previous = elem_lid(4,i)
       grid%element(elem_lid(4,i))%previous = END_OF_LIST
@@ -1667,111 +1594,87 @@ do i=1,nelem
 
 ! edge child 1
 
-   if (grid%next_free_edge == END_OF_LIST) then
-      call more_edges(grid,errcode)
-      if (errcode /= 0) then
-         elem_lid = -1
-         if (hold_elem_head /= END_OF_LIST) then
-            grid%element(hold_elem_head)%previous = hold_elem_prev
-         endif
-         grid%head_level_elem(level) = hold_elem_head
-         return
+   edge_lid(1,i) = get_next_free_edge(grid,errcode)
+   if (errcode /= 0) then
+      elem_lid = -1
+      edge_lid = -1
+      if (hold_elem_head /= END_OF_LIST) then
+         grid%element(hold_elem_head)%previous = hold_elem_prev
       endif
+      grid%head_level_elem(level) = hold_elem_head
+      return
    endif
-   edge_lid(1,i) = grid%next_free_edge
-   grid%next_free_edge = grid%edge(edge_lid(1,i))%next
 
 ! edge child 2
 
-   if (grid%next_free_edge == END_OF_LIST) then
-      call more_edges(grid,errcode)
-      if (errcode /= 0) then
-         elem_lid = -1
-         edge_lid = -1
-         if (hold_elem_head /= END_OF_LIST) then
-            grid%element(hold_elem_head)%previous = hold_elem_prev
-         endif
-         grid%head_level_elem(level) = hold_elem_head
-         return
+   edge_lid(2,i) = get_next_free_edge(grid,errcode)
+   if (errcode /= 0) then
+      elem_lid = -1
+      edge_lid = -1
+      if (hold_elem_head /= END_OF_LIST) then
+         grid%element(hold_elem_head)%previous = hold_elem_prev
       endif
+      grid%head_level_elem(level) = hold_elem_head
+      return
    endif
-   edge_lid(2,i) = grid%next_free_edge
-   grid%next_free_edge = grid%edge(edge_lid(2,i))%next
 
 ! edge child 3
 
-   if (grid%next_free_edge == END_OF_LIST) then
-      call more_edges(grid,errcode)
-      if (errcode /= 0) then
-         elem_lid = -1
-         edge_lid = -1
-         if (hold_elem_head /= END_OF_LIST) then
-            grid%element(hold_elem_head)%previous = hold_elem_prev
-         endif
-         grid%head_level_elem(level) = hold_elem_head
-         return
+   edge_lid(3,i) = get_next_free_edge(grid,errcode)
+   if (errcode /= 0) then
+      elem_lid = -1
+      edge_lid = -1
+      if (hold_elem_head /= END_OF_LIST) then
+         grid%element(hold_elem_head)%previous = hold_elem_prev
       endif
+      grid%head_level_elem(level) = hold_elem_head
+      return
    endif
-   edge_lid(3,i) = grid%next_free_edge
-   grid%next_free_edge = grid%edge(edge_lid(3,i))%next
 
 ! edge child 4
 
    if (mate /= BOUNDARY) then
-      if (grid%next_free_edge == END_OF_LIST) then
-         call more_edges(grid,errcode)
-         if (errcode /= 0) then
-            elem_lid = -1
-            edge_lid = -1
-            if (hold_elem_head /= END_OF_LIST) then
-               grid%element(hold_elem_head)%previous = hold_elem_prev
-            endif
-            grid%head_level_elem(level) = hold_elem_head
-            return
+      edge_lid(4,i) = get_next_free_edge(grid,errcode)
+      if (errcode /= 0) then
+         elem_lid = -1
+         edge_lid = -1
+         if (hold_elem_head /= END_OF_LIST) then
+            grid%element(hold_elem_head)%previous = hold_elem_prev
          endif
+         grid%head_level_elem(level) = hold_elem_head
+         return
       endif
-      edge_lid(4,i) = grid%next_free_edge
-      grid%next_free_edge = grid%edge(edge_lid(4,i))%next
    endif
 
 ! edge child 5
 
-   if (any(grid%edge_type(grid%element(elem)%edge(3),:)==PERIODIC_MASTER) .or. &
-       any(grid%edge_type(grid%element(elem)%edge(3),:)==PERIODIC_SLAVE)) then
+   if (is_periodic_edge(grid%element(elem)%edge(3),grid)) then
 
-      if (grid%next_free_edge == END_OF_LIST) then
-         call more_edges(grid,errcode)
-         if (errcode /= 0) then
-            elem_lid = -1
-            edge_lid = -1
-            if (hold_elem_head /= END_OF_LIST) then
-               grid%element(hold_elem_head)%previous = hold_elem_prev
-            endif
-            grid%head_level_elem(level) = hold_elem_head
-            return
+      edge_lid(5,i) = get_next_free_edge(grid,errcode)
+      if (errcode /= 0) then
+         elem_lid = -1
+         edge_lid = -1
+         if (hold_elem_head /= END_OF_LIST) then
+            grid%element(hold_elem_head)%previous = hold_elem_prev
          endif
+         grid%head_level_elem(level) = hold_elem_head
+         return
       endif
-      edge_lid(5,i) = grid%next_free_edge
-      grid%next_free_edge = grid%edge(edge_lid(5,i))%next
       grid%edge(edge_lid(5,i))%next = edge_lid(1,i)
       grid%edge(edge_lid(1,i))%next = edge_lid(5,i)
 
 ! edge child 6
 
-      if (grid%next_free_edge == END_OF_LIST) then
-         call more_edges(grid,errcode)
-         if (errcode /= 0) then
-            elem_lid = -1
-            edge_lid = -1
-            if (hold_elem_head /= END_OF_LIST) then
-               grid%element(hold_elem_head)%previous = hold_elem_prev
-            endif
-            grid%head_level_elem(level) = hold_elem_head
-            return
+      edge_lid(6,i) = get_next_free_edge(grid,errcode)
+      if (errcode /= 0) then
+         elem_lid = -1
+         edge_lid = -1
+         if (hold_elem_head /= END_OF_LIST) then
+            grid%element(hold_elem_head)%previous = hold_elem_prev
          endif
+         grid%head_level_elem(level) = hold_elem_head
+         return
       endif
-      edge_lid(6,i) = grid%next_free_edge
-      grid%next_free_edge = grid%edge(edge_lid(6,i))%next
       grid%edge(edge_lid(6,i))%next = edge_lid(2,i)
       grid%edge(edge_lid(2,i))%next = edge_lid(6,i)
 
@@ -1779,64 +1682,35 @@ do i=1,nelem
 
 ! vertex child 1
 
-   if (grid%next_free_vert == END_OF_LIST) then
-      call more_verts(grid,errcode)
-      if (errcode /= 0) then
-         elem_lid = -1
-         edge_lid = -1
-         if (hold_elem_head /= END_OF_LIST) then
-            grid%element(hold_elem_head)%previous = hold_elem_prev
-         endif
-         grid%head_level_elem(level) = hold_elem_head
-         return
+   vert_lid(1,i) = get_next_free_vert(grid,errcode)
+   if (errcode /= 0) then
+      elem_lid = -1
+      edge_lid = -1
+      vert_lid = -1
+      if (hold_elem_head /= END_OF_LIST) then
+         grid%element(hold_elem_head)%previous = hold_elem_prev
       endif
+      grid%head_level_elem(level) = hold_elem_head
+      return
    endif
-   vert_lid(1,i) = grid%next_free_vert
-   grid%next_free_vert = grid%vertex(vert_lid(1,i))%next
-   grid%vertex(vert_lid(1,i))%next = hold_vert_head
-   grid%head_level_vert(level) = vert_lid(1,i)
-   if (hold_vert_head /= END_OF_LIST) then
-      grid%vertex(hold_vert_head)%previous = vert_lid(1,i)
-   endif
-   grid%vertex(vert_lid(1,i))%previous = END_OF_LIST
 
 ! vertex child 2
 
-   if (any(grid%edge_type(grid%element(elem)%edge(3),:)==PERIODIC_MASTER) .or. &
-       any(grid%edge_type(grid%element(elem)%edge(3),:)==PERIODIC_SLAVE)) then
+   if (is_periodic_edge(grid%element(elem)%edge(3),grid)) then
 
-      if (grid%next_free_vert == END_OF_LIST) then
-         call more_verts(grid,errcode)
-         if (errcode /= 0) then
-            elem_lid = -1
-            edge_lid = -1
-            vert_lid = -1
-            if (hold_elem_head /= END_OF_LIST) then
-               grid%element(hold_elem_head)%previous = hold_elem_prev
-               grid%head_level_elem(level) = hold_elem_head
-            endif
-            if (hold_vert_head /= END_OF_LIST) then
-               grid%vertex(hold_vert_head)%previous = hold_vert_prev
-            endif
-            grid%head_level_vert(level) = hold_vert_head
-            return
+      vert_lid(2,i) = get_next_free_vert(grid,errcode)
+      if (errcode /= 0) then
+         elem_lid = -1
+         edge_lid = -1
+         vert_lid = -1
+         if (hold_elem_head /= END_OF_LIST) then
+            grid%element(hold_elem_head)%previous = hold_elem_prev
+            grid%head_level_elem(level) = hold_elem_head
          endif
+         return
       endif
-      vert_lid(2,i) = grid%next_free_vert
-      grid%next_free_vert = grid%vertex(vert_lid(2,i))%next
-      if (any(grid%edge_type(grid%element(elem)%edge(3),:)==PERIODIC_MASTER)) then
-         grid%vertex(vert_lid(2,i))%next = vert_lid(1,i)
-         grid%head_level_vert(level) = vert_lid(2,i)
-         grid%vertex(vert_lid(1,i))%previous = vert_lid(2,i)
-         grid%vertex(vert_lid(2,i))%previous = END_OF_LIST
-      else
-         grid%vertex(vert_lid(2,i))%next = grid%vertex(vert_lid(1,i))%next
-         grid%vertex(vert_lid(1,i))%next = vert_lid(2,i)
-         grid%vertex(vert_lid(2,i))%previous = vert_lid(1,i)
-         if (grid%vertex(vert_lid(2,i))%next /= END_OF_LIST) then
-            grid%vertex(hold_vert_head)%previous = vert_lid(2,i)
-         endif
-      endif
+      grid%vertex(vert_lid(2,i))%next = vert_lid(1,i)
+      grid%vertex(vert_lid(1,i))%next = vert_lid(2,i)
 
    endif
 
@@ -1844,15 +1718,17 @@ end do ! next element
 
 end subroutine before_h_refine
 
-!                    --------------------
-recursive subroutine bisect_triangle_pair(grid,parent,errcode,refcont,elist, &
-                                          reftype,new_p,numhref,numpref, &
+!                    ----------------
+recursive subroutine h_refine_element(grid,parent,errcode,did_refinement_edge, &
+                                      refcont,solver_control,elist, &
+                                      reftype,new_p,numhref,numpref, &
                      return_to_elist,reduce_p,reduce_p_max,vert_child_lid, &
                      edge_child_lid,elem_child_lid,delta_dof,delta_dof_own, &
                      delta_nelem,delta_nelem_leaf,delta_nelem_leaf_own, &
                      delta_nedge,delta_nedge_own,delta_nvert,delta_nvert_own, &
-                     max_nlev,delay_errind)
-!                    --------------------
+                     max_nlev,delay_errind,desired_level,desired_degree, &
+                     elem_list)
+!                    ----------------
 
 !----------------------------------------------------
 ! This routine refines triangle parent and its mate by bisection.
@@ -1884,7 +1760,9 @@ recursive subroutine bisect_triangle_pair(grid,parent,errcode,refcont,elist, &
 type(grid_type), intent(inout) :: grid
 integer, intent(in) :: parent
 integer, intent(inout) :: errcode
+integer, intent(out) :: did_refinement_edge
 type(refine_options), intent(in) :: refcont
+type(solver_options), intent(in) :: solver_control
 type(errind_list), optional, intent(inout) :: elist
 character(len=*), optional, pointer :: reftype(:)
 integer, optional, pointer :: new_p(:,:), numhref(:), numpref(:)
@@ -1898,6 +1776,9 @@ integer, optional, intent(out) :: delta_dof, delta_dof_own, delta_nelem, &
                                   delta_nedge, delta_nedge_own, delta_nvert, &
                                   delta_nvert_own, max_nlev
 logical, optional, intent(in) :: delay_errind
+! TEMP these are only here because they are in the 3D interface until I write
+!      before_h_refine for tetrahedra
+integer, optional, pointer :: desired_level(:), desired_degree(:), elem_list(:)
 
 !----------------------------------------------------
 ! Local variables:
@@ -1921,6 +1802,7 @@ else
 endif
 
 errcode = 0
+did_refinement_edge = -1
 
 ! if the delta_* arguments are present, the change in the grid scalar is
 ! returned; otherwise the grid scalars are updated
@@ -1935,7 +1817,7 @@ if ((present(delta_dof) .neqv. present(delta_dof_own)) .or. &
     (present(delta_dof) .neqv. present(delta_nvert_own)) .or. &
     (present(delta_dof) .neqv. present(max_nlev))) then
    ierr = PHAML_INTERNAL_ERROR
-   call fatal("bisect_triangle_pair: all or none of the deltas must be present")
+   call fatal("h_refine_element: all or none of the deltas must be present")
    stop
 endif
 
@@ -1991,7 +1873,7 @@ endif
 
 if (present(reduce_p) .neqv. present(reduce_p_max)) then
    ierr = PHAML_INTERNAL_ERROR
-   call fatal("reduce_p and reduce_p_max must both be present or absent in bisect_triangle_pair")
+   call fatal("reduce_p and reduce_p_max must both be present or absent in h_refine_element")
    stop
 endif
 
@@ -2004,10 +1886,11 @@ if (grid%element(parent)%mate == BOUNDARY) then
 else
    mate = hash_decode_key(grid%element(parent)%mate,grid%elem_hash)
    if (mate == HASH_NOT_FOUND) then
-      mate = hash_decode_key(grid%element(parent)%mate/2,grid%elem_hash)
-      call bisect_triangle_pair(grid,mate,errcode,refcont,elist,reftype,new_p, &
-                                numhref,numpref,return_to_elist,reduce_p, &
-                                reduce_p_max)
+      mate = hash_decode_key(grid%element(parent)%mate/MAX_CHILD, &
+                             grid%elem_hash)
+      call h_refine_element(grid,mate,errcode,did_refinement_edge,refcont, &
+                            solver_control,elist,reftype,new_p,numhref,numpref,&
+                            return_to_elist,reduce_p,reduce_p_max)
       if (errcode /= 0) return
       mate = hash_decode_key(grid%element(parent)%mate,grid%elem_hash)
       if (present(reftype)) reftype(mate) = "h"
@@ -2032,7 +1915,7 @@ endif
 if ((present(elem_child_lid) .neqv. present(edge_child_lid)) .or. &
     (present(elem_child_lid) .neqv. present(vert_child_lid))) then
    ierr = PHAML_INTERNAL_ERROR
-   call fatal("bisect_triangle_pair: all child_lid arrays must be present or absent")
+   call fatal("h_refine_element: all child_lid arrays must be present or absent")
    stop
 endif
 
@@ -2056,69 +1939,46 @@ if (present(elem_child_lid)) then
 
 else
 
-   if (grid%next_free_elem == END_OF_LIST) then
-      call more_elements(grid,errcode,elist,reftype,new_p,numhref,numpref)
-      if (errcode /= 0) return
-   endif
-   child1 = grid%next_free_elem
-   grid%next_free_elem = grid%element(child1)%next
-   if (grid%next_free_elem == END_OF_LIST) then
-      call more_elements(grid,errcode,elist,reftype,new_p,numhref,numpref)
-      if (errcode /= 0) return
-   endif
-   child2 = grid%next_free_elem
-   grid%next_free_elem = grid%element(child2)%next
+   child1 = get_next_free_elem(grid,errcode,elist,reftype,new_p,numhref, &
+                               numpref,desired_level,desired_degree, &
+                               elem_list)
+   if (errcode /= 0) return
+   child2 = get_next_free_elem(grid,errcode,elist,reftype,new_p,numhref, &
+                               numpref,desired_level,desired_degree, &
+                               elem_list)
+   if (errcode /= 0) return
    if (mate /= BOUNDARY) then
-      if (grid%next_free_elem == END_OF_LIST) then
-         call more_elements(grid,errcode,elist,reftype,new_p,numhref,numpref)
-         if (errcode /= 0) return
-      endif
-      child3 = grid%next_free_elem
-      grid%next_free_elem = grid%element(child3)%next
-      if (grid%next_free_elem == END_OF_LIST) then
-         call more_elements(grid,errcode,elist,reftype,new_p,numhref,numpref)
-         if (errcode /= 0) return
-      endif
-      child4 = grid%next_free_elem
-      grid%next_free_elem = grid%element(child4)%next
-   endif
-   if (grid%next_free_edge == END_OF_LIST) then
-      call more_edges(grid,errcode)
+      child3 = get_next_free_elem(grid,errcode,elist,reftype,new_p,numhref, &
+                                  numpref,desired_level,desired_degree, &
+                                  elem_list)
       if (errcode /= 0) return
-   endif
-   edge1 = grid%next_free_edge
-   grid%next_free_edge = grid%edge(edge1)%next
-   if (grid%next_free_edge == END_OF_LIST) then
-      call more_edges(grid,errcode)
+      child4 = get_next_free_elem(grid,errcode,elist,reftype,new_p,numhref, &
+                                  numpref,desired_level,desired_degree, &
+                                  elem_list)
       if (errcode /= 0) return
+   else
+      child3 = 0
+      child4 = 0
    endif
-   edge2 = grid%next_free_edge
-   grid%next_free_edge = grid%edge(edge2)%next
-   if (grid%next_free_edge == END_OF_LIST) then
-      call more_edges(grid,errcode)
-      if (errcode /= 0) return
-   endif
-   edge3 = grid%next_free_edge
-   grid%next_free_edge = grid%edge(edge3)%next
+   edge1 = get_next_free_edge(grid,errcode)
+   if (errcode /= 0) return
+   edge2 = get_next_free_edge(grid,errcode)
+   if (errcode /= 0) return
+   edge3 = get_next_free_edge(grid,errcode)
+   if (errcode /= 0) return
    if (mate /= BOUNDARY) then
-      if (grid%next_free_edge == END_OF_LIST) then
-         call more_edges(grid,errcode)
-         if (errcode /= 0) return
-      endif
-      edge4 = grid%next_free_edge
-      grid%next_free_edge = grid%edge(edge4)%next
-   endif
-   if (grid%next_free_vert == END_OF_LIST) then
-      call more_verts(grid,errcode)
+      edge4 = get_next_free_edge(grid,errcode)
       if (errcode /= 0) return
+   else
+      edge4 = 0
    endif
-   vert1 = grid%next_free_vert
-   grid%next_free_vert = grid%vertex(vert1)%next
+   vert1 = get_next_free_vert(grid,errcode)
+   if (errcode /= 0) return
 
 endif ! elem_child_lid present
 
 if (grid%element(parent)%level /= 1) then
-   grandparent = grid%element(parent)%gid/2
+   grandparent = grid%element(parent)%gid/MAX_CHILD
    grandparentmate = grid%element(hash_decode_key(grandparent,grid%elem_hash))%mate
 endif
 
@@ -2166,7 +2026,7 @@ if (associated(grid%element(parent)%solution)) then
             dim=1),grid%system_size,max(1,grid%num_eval)),stat=astat)
    if (astat /= 0) then
       ierr = ALLOC_FAILED
-      call fatal("memory allocation failed in bisect_triangle_pair")
+      call fatal("memory allocation failed in h_refine_element")
       stop
    endif
    grid%element(child1)%solution = 0.0_my_real
@@ -2175,28 +2035,34 @@ if (associated(grid%element(parent)%solution)) then
                dim=1),grid%system_size,max(1,grid%num_eval)),stat=astat)
       if (astat /= 0) then
          ierr = ALLOC_FAILED
-         call fatal("memory allocation failed in bisect_triangle_pair")
+         call fatal("memory allocation failed in h_refine_element")
          return
       endif
       grid%element(child1)%exact = 0.0_my_real
+   else
+      nullify(grid%element(child1)%exact)
    endif
+else
+   nullify(grid%element(child1)%solution)
+   nullify(grid%element(child1)%exact)
 endif
+nullify(grid%element(child1)%oldsoln)
 if (grid%element(child1)%degree >= 3) then
    if (present(delta_dof)) then
       delta_dof = delta_dof + grid%system_size * &
-           ((grid%element(child1)%degree-2)*(grid%element(child1)%degree-1))/2
+                  element_dof(grid%element(child1)%degree)
    else
       grid%dof = grid%dof + grid%system_size * &
-           ((grid%element(child1)%degree-2)*(grid%element(child1)%degree-1))/2
+                  element_dof(grid%element(child1)%degree)
    endif
 endif
 if (grid%element(child1)%iown .and. grid%element(child1)%degree >= 3) then
    if (present(delta_dof)) then
       delta_dof_own = delta_dof_own + grid%system_size * &
-           ((grid%element(child1)%degree-2)*(grid%element(child1)%degree-1))/2
+                  element_dof(grid%element(child1)%degree)
    else
       grid%dof_own = grid%dof_own + grid%system_size * &
-           ((grid%element(child1)%degree-2)*(grid%element(child1)%degree-1))/2
+                  element_dof(grid%element(child1)%degree)
    endif
 endif
 
@@ -2239,7 +2105,7 @@ if (associated(grid%element(parent)%solution)) then
             dim=1),grid%system_size,max(1,grid%num_eval)),stat=astat)
    if (astat /= 0) then
       ierr = ALLOC_FAILED
-      call fatal("memory allocation failed in bisect_triangle_pair")
+      call fatal("memory allocation failed in h_refine_element")
       stop
    endif
    grid%element(child2)%solution = 0.0_my_real
@@ -2248,12 +2114,18 @@ if (associated(grid%element(parent)%solution)) then
                dim=1),grid%system_size,max(1,grid%num_eval)),stat=astat)
       if (astat /= 0) then
          ierr = ALLOC_FAILED
-         call fatal("memory allocation failed in bisect_triangle_pair")
+         call fatal("memory allocation failed in h_refine_element")
          return
       endif
       grid%element(child2)%exact = 0.0_my_real
+   else
+      nullify(grid%element(child2)%exact)
    endif
+else
+   nullify(grid%element(child2)%solution)
+   nullify(grid%element(child2)%exact)
 endif
+nullify(grid%element(child2)%oldsoln)
 
 if (.not. present(elem_child_lid)) then
    call hash_insert(grid%element(child2)%gid,child2,grid%elem_hash)
@@ -2272,7 +2144,8 @@ endif
 else
 
 if (grid%element(mate)%level /= 1) stepgrandparentmate = &
-  grid%element(hash_decode_key(grid%element(parent)%mate/2,grid%elem_hash))%mate
+  grid%element(hash_decode_key(grid%element(parent)%mate/MAX_CHILD, &
+               grid%elem_hash))%mate
 
 modval = mod(grid%element(mate)%gid,2)
 
@@ -2316,7 +2189,7 @@ if (associated(grid%element(mate)%solution)) then
             dim=1),grid%system_size,max(1,grid%num_eval)),stat=astat)
    if (astat /= 0) then
       ierr = ALLOC_FAILED
-      call fatal("memory allocation failed in bisect_triangle_pair")
+      call fatal("memory allocation failed in h_refine_element")
       stop
    endif
    grid%element(child3)%solution = 0.0_my_real
@@ -2325,28 +2198,34 @@ if (associated(grid%element(mate)%solution)) then
                dim=1),grid%system_size,max(1,grid%num_eval)),stat=astat)
       if (astat /= 0) then
          ierr = ALLOC_FAILED
-         call fatal("memory allocation failed in bisect_triangle_pair")
+         call fatal("memory allocation failed in h_refine_element")
          return
       endif
       grid%element(child3)%exact = 0.0_my_real
+   else
+      nullify(grid%element(child3)%exact)
    endif
+else
+   nullify(grid%element(child3)%solution)
+   nullify(grid%element(child3)%exact)
 endif
+nullify(grid%element(child3)%oldsoln)
 if (grid%element(child3)%degree >= 3) then
    if (present(delta_dof)) then
       delta_dof = delta_dof + grid%system_size * &
-           ((grid%element(child3)%degree-2)*(grid%element(child3)%degree-1))/2
+                  element_dof(grid%element(child3)%degree)
    else
       grid%dof = grid%dof + grid%system_size * &
-           ((grid%element(child3)%degree-2)*(grid%element(child3)%degree-1))/2
+                  element_dof(grid%element(child3)%degree)
    endif
 endif
 if (grid%element(child3)%iown .and. grid%element(child3)%degree >= 3) then
    if (present(delta_dof)) then
       delta_dof_own = delta_dof_own + grid%system_size * &
-           ((grid%element(child3)%degree-2)*(grid%element(child3)%degree-1))/2
+                  element_dof(grid%element(child3)%degree)
    else
       grid%dof_own = grid%dof_own + grid%system_size * &
-           ((grid%element(child3)%degree-2)*(grid%element(child3)%degree-1))/2
+                  element_dof(grid%element(child3)%degree)
    endif
 endif
 
@@ -2390,7 +2269,7 @@ if (associated(grid%element(mate)%solution)) then
             dim=1),grid%system_size,max(1,grid%num_eval)),stat=astat)
    if (astat /= 0) then
       ierr = ALLOC_FAILED
-      call fatal("memory allocation failed in bisect_triangle_pair")
+      call fatal("memory allocation failed in h_refine_element")
       stop
    endif
    grid%element(child4)%solution = 0.0_my_real
@@ -2399,12 +2278,18 @@ if (associated(grid%element(mate)%solution)) then
                dim=1),grid%system_size,max(1,grid%num_eval)),stat=astat)
       if (astat /= 0) then
          ierr = ALLOC_FAILED
-         call fatal("memory allocation failed in bisect_triangle_pair")
+         call fatal("memory allocation failed in h_refine_element")
          return
       endif
       grid%element(child4)%exact = 0.0_my_real
+   else
+      nullify(grid%element(child4)%exact)
    endif
+else
+   nullify(grid%element(child4)%solution)
+   nullify(grid%element(child4)%exact)
 endif
+nullify(grid%element(child4)%oldsoln)
 
 if (.not. present(elem_child_lid)) then
    call hash_insert(grid%element(child4)%gid,child4,grid%elem_hash)
@@ -2447,8 +2332,9 @@ call point_on_edge(grid, &
 grid%vertex(vert1)%bmark = grid%edge(grid%element(parent)%edge(3))%bmark
 grid%vertex_type(vert1,:) = grid%edge_type(grid%element(parent)%edge(3),:)
 if (any(grid%vertex_type(vert1,:) == DIRICHLET)) then
-   call bconds(grid%vertex(vert1)%coord%x,grid%vertex(vert1)%coord%y, &
-               grid%vertex(vert1)%bmark,bctype,bccoef,bcrhs)
+   call my_bconds(grid%vertex(vert1)%coord%x,grid%vertex(vert1)%coord%y, &
+                  zcoord(grid%vertex(vert1)%coord), &
+                  grid%vertex(vert1)%bmark,bctype,bccoef,bcrhs)
 endif
 do i=1,grid%system_size
    if (grid%vertex_type(vert1,i) == DIRICHLET) then
@@ -2457,20 +2343,13 @@ do i=1,grid%system_size
       grid%vertex_solution(vert1,i,:) = 0.0_my_real
    endif
 end do
-if (.not. present(elem_child_lid)) then
-   grid%vertex(vert1)%next = grid%head_level_vert(grid%element(child1)%level)
-   grid%head_level_vert(grid%element(child1)%level) = vert1
-   if (grid%vertex(vert1)%next /= END_OF_LIST) then
-      grid%vertex(grid%vertex(vert1)%next)%previous = vert1
-   endif
-   grid%vertex(vert1)%previous = END_OF_LIST
-endif
 if (grid%have_true) then
    do j=1,max(1,grid%num_eval)
       do i=1,grid%system_size
-         grid%vertex_exact(vert1,i,j)=trues(grid%vertex(vert1)%coord%x, &
-                                            grid%vertex(vert1)%coord%y, &
-                                            i,j)
+         grid%vertex_exact(vert1,i,j)=my_trues(grid%vertex(vert1)%coord%x, &
+                                               grid%vertex(vert1)%coord%y, &
+                                             zcoord(grid%vertex(vert1)%coord), &
+                                               i,j)
       end do
    end do
 endif
@@ -2492,19 +2371,14 @@ endif
 
 masterparent = -1
 
-if (any(grid%vertex_type(vert1,:) == PERIODIC_MASTER) .or. &
-    any(grid%vertex_type(vert1,:) == PERIODIC_SLAVE)) then
+if (is_periodic_vert(vert1,grid)) then
 
    if (.not. present(elem_child_lid)) then
-      if (grid%next_free_vert == END_OF_LIST) then
-         call more_verts(grid,errcode)
-         if (errcode /= 0) return
-      endif
-      vert2 = grid%next_free_vert
-      grid%next_free_vert = grid%vertex(vert2)%next
+      vert2 = get_next_free_vert(grid,errcode)
+      if (errcode /= 0) return
    endif
 
-   if (any(grid%vertex_type(vert1,:) == PERIODIC_MASTER)) then
+   if (is_periodic_vert_master(vert1,grid)) then
       masterparent = parent
    else
       masterparent = mate
@@ -2559,8 +2433,9 @@ if (any(grid%vertex_type(vert1,:) == PERIODIC_MASTER) .or. &
    grid%vertex(vert2)%bmark = grid%edge(grid%element(mate)%edge(3))%bmark
    grid%vertex_type(vert2,:) = grid%edge_type(grid%element(mate)%edge(3),:)
    if (any(grid%vertex_type(vert2,:) == DIRICHLET)) then
-      call bconds(grid%vertex(vert2)%coord%x,grid%vertex(vert2)%coord%y, &
-                  grid%vertex(vert2)%bmark,bctype,bccoef,bcrhs)
+      call my_bconds(grid%vertex(vert2)%coord%x,grid%vertex(vert2)%coord%y, &
+                     zcoord(grid%vertex(vert2)%coord), &
+                     grid%vertex(vert2)%bmark,bctype,bccoef,bcrhs)
    endif
    do i=1,grid%system_size
       if (grid%vertex_type(vert2,i) == DIRICHLET) then
@@ -2570,26 +2445,16 @@ if (any(grid%vertex_type(vert1,:) == PERIODIC_MASTER) .or. &
       endif
    end do
    if (.not. present(elem_child_lid)) then
-      if (any(grid%vertex_type(vert1,:) == PERIODIC_MASTER)) then
-         grid%vertex(vert2)%next = vert1
-         grid%head_level_vert(grid%element(child1)%level) = vert2
-         grid%vertex(vert1)%previous = vert2
-         grid%vertex(vert2)%previous = END_OF_LIST
-      else
-         grid%vertex(vert2)%next = grid%vertex(vert1)%next
-         grid%vertex(vert1)%next = vert2
-         grid%vertex(vert2)%previous = vert1
-         if (grid%vertex(vert2)%next /= END_OF_LIST) then
-            grid%vertex(grid%vertex(vert2)%next)%previous = vert2
-         endif
-      endif
+      grid%vertex(vert2)%next = vert1
+      grid%vertex(vert1)%next = vert2
    endif
    if (grid%have_true) then
       do j=1,max(1,grid%num_eval)
          do i=1,grid%system_size
-            grid%vertex_exact(vert2,i,j)=trues(grid%vertex(vert2)%coord%x, &
-                                               grid%vertex(vert2)%coord%y, &
-                                               i,j)
+            grid%vertex_exact(vert2,i,j)=my_trues(grid%vertex(vert2)%coord%x, &
+                                                  grid%vertex(vert2)%coord%y, &
+                                             zcoord(grid%vertex(vert2)%coord), &
+                                                  i,j)
          end do
       end do
    endif
@@ -2620,7 +2485,7 @@ if (grid%edge(edge1)%degree > 1) then
             grid%system_size,max(1,grid%num_eval)),stat=astat)
    if (astat /= 0) then
       ierr = ALLOC_FAILED
-      call fatal("memory allocation failed in bisect_triangle_pair")
+      call fatal("memory allocation failed in h_refine_element")
       stop
    endif
    if (grid%have_true) then
@@ -2628,7 +2493,7 @@ if (grid%edge(edge1)%degree > 1) then
                grid%system_size,max(1,grid%num_eval)),stat=astat)
       if (astat /= 0) then
          ierr = ALLOC_FAILED
-         call fatal("memory allocation failed in bisect_triangle_pair")
+         call fatal("memory allocation failed in h_refine_element")
          return
       endif
       grid%edge(edge1)%exact = 0.0_my_real
@@ -2649,6 +2514,7 @@ else
    nullify(grid%edge(edge1)%solution)
    nullify(grid%edge(edge1)%exact)
 endif
+nullify(grid%edge(edge1)%oldsoln)
 
 if (grid%edge(edge1)%degree >= 2) then
    if (present(delta_dof)) then
@@ -2687,7 +2553,7 @@ if (grid%edge(edge2)%degree > 1) then
             grid%system_size,max(1,grid%num_eval)),stat=astat)
    if (astat /= 0) then
       ierr = ALLOC_FAILED
-      call fatal("memory allocation failed in bisect_triangle_pair")
+      call fatal("memory allocation failed in h_refine_element")
       stop
    endif
    if (grid%have_true) then
@@ -2695,7 +2561,7 @@ if (grid%edge(edge2)%degree > 1) then
                grid%system_size,max(1,grid%num_eval)),stat=astat)
       if (astat /= 0) then
          ierr = ALLOC_FAILED
-         call fatal("memory allocation failed in bisect_triangle_pair")
+         call fatal("memory allocation failed in h_refine_element")
          return
       endif
       grid%edge(edge2)%exact = 0.0_my_real
@@ -2716,6 +2582,7 @@ else
    nullify(grid%edge(edge2)%solution)
    nullify(grid%edge(edge2)%exact)
 endif
+nullify(grid%edge(edge2)%oldsoln)
 if (.not. present(elem_child_lid)) then
    call hash_insert(grid%edge(edge2)%gid,edge2,grid%edge_hash)
 endif
@@ -2749,7 +2616,7 @@ if (grid%edge(edge3)%degree > 1) then
             grid%system_size,max(1,grid%num_eval)),stat=astat)
    if (astat /= 0) then
       ierr = ALLOC_FAILED
-      call fatal("memory allocation failed in bisect_triangle_pair")
+      call fatal("memory allocation failed in h_refine_element")
       stop
    endif
    grid%edge(edge3)%solution = 0.0_my_real
@@ -2758,7 +2625,7 @@ if (grid%edge(edge3)%degree > 1) then
                grid%system_size,max(1,grid%num_eval)),stat=astat)
       if (astat /= 0) then
          ierr = ALLOC_FAILED
-         call fatal("memory allocation failed in bisect_triangle_pair")
+         call fatal("memory allocation failed in h_refine_element")
          return
       endif
       grid%edge(edge3)%exact = 0.0_my_real
@@ -2772,6 +2639,7 @@ else
    nullify(grid%edge(edge3)%solution)
    nullify(grid%edge(edge3)%exact)
 endif
+nullify(grid%edge(edge3)%oldsoln)
 if (grid%edge(edge3)%degree >= 2) then
    if (present(delta_dof)) then
       delta_dof = delta_dof + grid%system_size*(grid%edge(edge3)%degree - 1)
@@ -2806,8 +2674,7 @@ if (mate /= BOUNDARY) then
          grid%edge(edge4)%gid = 4*grid%edge(mateedge)%gid + 2
       endif
    endif
-   if (any(grid%edge_type(edge1,:) == PERIODIC_MASTER) .or. &
-       any(grid%edge_type(edge1,:) == PERIODIC_SLAVE)) then
+   if (is_periodic_edge(edge1,grid)) then
       grid%edge(edge4)%vertex = (/ grid%element(mate)%vertex(3),vert2 /)
    else
       grid%edge(edge4)%vertex = (/ grid%element(mate)%vertex(3),vert1 /)
@@ -2821,7 +2688,7 @@ if (mate /= BOUNDARY) then
                grid%system_size,max(1,grid%num_eval)),stat=astat)
       if (astat /= 0) then
          ierr = ALLOC_FAILED
-         call fatal("memory allocation failed in bisect_triangle_pair")
+         call fatal("memory allocation failed in h_refine_element")
          stop
       endif
       grid%edge(edge4)%solution = 0.0_my_real
@@ -2830,7 +2697,7 @@ if (mate /= BOUNDARY) then
                   grid%system_size,max(1,grid%num_eval)),stat=astat)
          if (astat /= 0) then
             ierr = ALLOC_FAILED
-            call fatal("memory allocation failed in bisect_triangle_pair")
+            call fatal("memory allocation failed in h_refine_element")
             return
          endif
          grid%edge(edge4)%exact = 0.0_my_real
@@ -2844,6 +2711,7 @@ if (mate /= BOUNDARY) then
       nullify(grid%edge(edge4)%solution)
       nullify(grid%edge(edge4)%exact)
    endif
+   nullify(grid%edge(edge4)%oldsoln)
    if (grid%edge(edge4)%degree >= 2) then
       if (present(delta_dof)) then
          delta_dof = delta_dof + grid%system_size*(grid%edge(edge4)%degree - 1)
@@ -2864,22 +2732,13 @@ endif
 
 ! 5th and 6th edges if periodic boundary edge
 
-if (any(grid%edge_type(edge1,:) == PERIODIC_MASTER) .or. &
-    any(grid%edge_type(edge1,:) == PERIODIC_SLAVE)) then
+if (is_periodic_edge(edge1,grid)) then
 
    if (.not. present(elem_child_lid)) then
-      if (grid%next_free_edge == END_OF_LIST) then
-         call more_edges(grid,errcode)
-         if (errcode /= 0) return
-      endif
-      edge5 = grid%next_free_edge
-      grid%next_free_edge = grid%edge(edge5)%next
-      if (grid%next_free_edge == END_OF_LIST) then
-         call more_edges(grid,errcode)
-         if (errcode /= 0) return
-      endif
-      edge6 = grid%next_free_edge
-      grid%next_free_edge = grid%edge(edge6)%next
+      edge5 = get_next_free_edge(grid,errcode)
+      if (errcode /= 0) return
+      edge6 = get_next_free_edge(grid,errcode)
+      if (errcode /= 0) return
    endif
 
    grid%element(child3)%edge(2) = edge5
@@ -2902,7 +2761,7 @@ if (any(grid%edge_type(edge1,:) == PERIODIC_MASTER) .or. &
                grid%system_size,max(1,grid%num_eval)),stat=astat)
       if (astat /= 0) then
          ierr = ALLOC_FAILED
-         call fatal("memory allocation failed in bisect_triangle_pair")
+         call fatal("memory allocation failed in h_refine_element")
          stop
       endif
       if (grid%have_true) then
@@ -2910,7 +2769,7 @@ if (any(grid%edge_type(edge1,:) == PERIODIC_MASTER) .or. &
                   grid%system_size,max(1,grid%num_eval)),stat=astat)
          if (astat /= 0) then
             ierr = ALLOC_FAILED
-            call fatal("memory allocation failed in bisect_triangle_pair")
+            call fatal("memory allocation failed in h_refine_element")
             return
          endif
          grid%edge(edge5)%exact = 0.0_my_real
@@ -2931,6 +2790,7 @@ if (any(grid%edge_type(edge1,:) == PERIODIC_MASTER) .or. &
       nullify(grid%edge(edge5)%solution)
       nullify(grid%edge(edge5)%exact)
    endif
+   nullify(grid%edge(edge5)%oldsoln)
    if (.not. present(elem_child_lid)) then
       call hash_insert(grid%edge(edge5)%gid,edge5,grid%edge_hash)
    endif
@@ -2952,7 +2812,7 @@ if (any(grid%edge_type(edge1,:) == PERIODIC_MASTER) .or. &
                grid%system_size,max(1,grid%num_eval)),stat=astat)
       if (astat /= 0) then
          ierr = ALLOC_FAILED
-         call fatal("memory allocation failed in bisect_triangle_pair")
+         call fatal("memory allocation failed in h_refine_element")
          stop
       endif
       if (grid%have_true) then
@@ -2960,7 +2820,7 @@ if (any(grid%edge_type(edge1,:) == PERIODIC_MASTER) .or. &
                   grid%system_size,max(1,grid%num_eval)),stat=astat)
          if (astat /= 0) then
             ierr = ALLOC_FAILED
-            call fatal("memory allocation failed in bisect_triangle_pair")
+            call fatal("memory allocation failed in h_refine_element")
             return
          endif
          grid%edge(edge6)%exact = 0.0_my_real
@@ -2981,6 +2841,7 @@ if (any(grid%edge_type(edge1,:) == PERIODIC_MASTER) .or. &
       nullify(grid%edge(edge6)%solution)
       nullify(grid%edge(edge6)%exact)
    endif
+   nullify(grid%edge(edge6)%oldsoln)
    if (.not. present(elem_child_lid)) then
       call hash_insert(grid%edge(edge6)%gid,edge6,grid%edge_hash)
    endif
@@ -3053,74 +2914,74 @@ endif
 !$omp critical (reset_assoc_elem_critical)
 
 if (grid%vertex(grid%element(parent)%vertex(1))%assoc_elem == parent) then
-   if (.not. is_periodic_slave(grid%element(parent)%vertex(1))) then
+   if (.not. is_periodic_vert_slave(grid%element(parent)%vertex(1),grid)) then
       grid%vertex(grid%element(parent)%vertex(1))%assoc_elem = child1
-      if (is_periodic_master(grid%element(parent)%vertex(1))) then
-         other_vert = grid%vertex(grid%element(parent)%vertex(1))%previous
-         do while (is_periodic_slave(other_vert))
+      if (is_periodic_vert_master(grid%element(parent)%vertex(1),grid)) then
+         other_vert = grid%vertex(grid%element(parent)%vertex(1))%next
+         do while (is_periodic_vert_slave(other_vert,grid))
             grid%vertex(other_vert)%assoc_elem = child1
-            other_vert = grid%vertex(other_vert)%previous
+            other_vert = grid%vertex(other_vert)%next
          end do
       endif
    endif
 endif
 if (grid%vertex(grid%element(parent)%vertex(2))%assoc_elem == parent) then
-   if (.not. is_periodic_slave(grid%element(parent)%vertex(2))) then
+   if (.not. is_periodic_vert_slave(grid%element(parent)%vertex(2),grid)) then
       grid%vertex(grid%element(parent)%vertex(2))%assoc_elem = child2
-      if (is_periodic_master(grid%element(parent)%vertex(2))) then
-         other_vert = grid%vertex(grid%element(parent)%vertex(2))%previous
-         do while (is_periodic_slave(other_vert))
+      if (is_periodic_vert_master(grid%element(parent)%vertex(2),grid)) then
+         other_vert = grid%vertex(grid%element(parent)%vertex(2))%next
+         do while (is_periodic_vert_slave(other_vert,grid))
             grid%vertex(other_vert)%assoc_elem = child2
-            other_vert = grid%vertex(other_vert)%previous
+            other_vert = grid%vertex(other_vert)%next
          end do
       endif
    endif
 endif
 if (grid%vertex(grid%element(parent)%vertex(3))%assoc_elem == parent) then
-   if (.not. is_periodic_slave(grid%element(parent)%vertex(3))) then
+   if (.not. is_periodic_vert_slave(grid%element(parent)%vertex(3),grid)) then
       grid%vertex(grid%element(parent)%vertex(3))%assoc_elem = child1
-      if (is_periodic_master(grid%element(parent)%vertex(3))) then
-         other_vert = grid%vertex(grid%element(parent)%vertex(3))%previous
-         do while (is_periodic_slave(other_vert))
+      if (is_periodic_vert_master(grid%element(parent)%vertex(3),grid)) then
+         other_vert = grid%vertex(grid%element(parent)%vertex(3))%next
+         do while (is_periodic_vert_slave(other_vert,grid))
             grid%vertex(other_vert)%assoc_elem = child1
-            other_vert = grid%vertex(other_vert)%previous
+            other_vert = grid%vertex(other_vert)%next
          end do
       endif
    endif
 endif
 if (mate /= BOUNDARY) then
    if (grid%vertex(grid%element(mate)%vertex(1))%assoc_elem == mate) then
-      if (.not. is_periodic_slave(grid%element(mate)%vertex(1))) then
+      if (.not. is_periodic_vert_slave(grid%element(mate)%vertex(1),grid)) then
          grid%vertex(grid%element(mate)%vertex(1))%assoc_elem = child3
-         if (is_periodic_master(grid%element(mate)%vertex(1))) then
-            other_vert = grid%vertex(grid%element(mate)%vertex(1))%previous
-            do while (is_periodic_slave(other_vert))
+         if (is_periodic_vert_master(grid%element(mate)%vertex(1),grid)) then
+            other_vert = grid%vertex(grid%element(mate)%vertex(1))%next
+            do while (is_periodic_vert_slave(other_vert,grid))
                grid%vertex(other_vert)%assoc_elem = child3
-               other_vert = grid%vertex(other_vert)%previous
+               other_vert = grid%vertex(other_vert)%next
             end do
          endif
       endif
    endif
    if (grid%vertex(grid%element(mate)%vertex(2))%assoc_elem == mate) then
-      if (.not. is_periodic_slave(grid%element(mate)%vertex(2))) then
+      if (.not. is_periodic_vert_slave(grid%element(mate)%vertex(2),grid)) then
          grid%vertex(grid%element(mate)%vertex(2))%assoc_elem = child4
-         if (is_periodic_master(grid%element(mate)%vertex(2))) then
-            other_vert = grid%vertex(grid%element(mate)%vertex(2))%previous
-            do while (is_periodic_slave(other_vert))
+         if (is_periodic_vert_master(grid%element(mate)%vertex(2),grid)) then
+            other_vert = grid%vertex(grid%element(mate)%vertex(2))%next
+            do while (is_periodic_vert_slave(other_vert,grid))
                grid%vertex(other_vert)%assoc_elem = child4
-               other_vert = grid%vertex(other_vert)%previous
+               other_vert = grid%vertex(other_vert)%next
             end do
          endif
       endif
    endif
    if (grid%vertex(grid%element(mate)%vertex(3))%assoc_elem == mate) then
-      if (.not. is_periodic_slave(grid%element(mate)%vertex(3))) then
+      if (.not. is_periodic_vert_slave(grid%element(mate)%vertex(3),grid)) then
          grid%vertex(grid%element(mate)%vertex(3))%assoc_elem = child3
-         if (is_periodic_master(grid%element(mate)%vertex(3))) then
-            other_vert = grid%vertex(grid%element(mate)%vertex(3))%previous
-            do while (is_periodic_slave(other_vert))
+         if (is_periodic_vert_master(grid%element(mate)%vertex(3),grid)) then
+            other_vert = grid%vertex(grid%element(mate)%vertex(3))%next
+            do while (is_periodic_vert_slave(other_vert,grid))
                grid%vertex(other_vert)%assoc_elem = child3
-               other_vert = grid%vertex(other_vert)%previous
+               other_vert = grid%vertex(other_vert)%next
             end do
          endif
       endif
@@ -3130,27 +2991,27 @@ endif
 ! associated elements of the edges of the parent and mate
 
 if (grid%edge(grid%element(parent)%edge(1))%assoc_elem == parent) then
-   if (.not. any(grid%edge_type(grid%element(parent)%edge(1),:) == PERIODIC_SLAVE)) then
+   if (.not. is_periodic_edge_slave(grid%element(parent)%edge(1),grid)) then
       grid%edge(grid%element(parent)%edge(1))%assoc_elem = child2
-      if (any(grid%edge_type(grid%element(parent)%edge(1),:) == PERIODIC_MASTER)) then
+      if (is_periodic_edge_master(grid%element(parent)%edge(1),grid)) then
          other_edge = grid%edge(grid%element(parent)%edge(1))%next
          grid%edge(other_edge)%assoc_elem = child2
       endif
    endif
 endif
 if (grid%edge(grid%element(parent)%edge(2))%assoc_elem == parent) then
-   if (.not. any(grid%edge_type(grid%element(parent)%edge(2),:) == PERIODIC_SLAVE)) then
+   if (.not. is_periodic_edge_slave(grid%element(parent)%edge(2),grid)) then
       grid%edge(grid%element(parent)%edge(2))%assoc_elem = child1
-      if (any(grid%edge_type(grid%element(parent)%edge(2),:) == PERIODIC_MASTER)) then
+      if (is_periodic_edge_master(grid%element(parent)%edge(2),grid)) then
          other_edge = grid%edge(grid%element(parent)%edge(2))%next
          grid%edge(other_edge)%assoc_elem = child1
       endif
    endif
 endif
 if (grid%edge(grid%element(parent)%edge(3))%assoc_elem == parent) then
-   if (.not. any(grid%edge_type(grid%element(parent)%edge(3),:) == PERIODIC_SLAVE)) then
+   if (.not. is_periodic_edge_slave(grid%element(parent)%edge(3),grid)) then
       grid%edge(grid%element(parent)%edge(3))%assoc_elem = child1
-      if (any(grid%edge_type(grid%element(parent)%edge(3),:) == PERIODIC_MASTER)) then
+      if (is_periodic_edge_master(grid%element(parent)%edge(3),grid)) then
          other_edge = grid%edge(grid%element(parent)%edge(3))%next
          grid%edge(other_edge)%assoc_elem = child1
       endif
@@ -3158,27 +3019,27 @@ if (grid%edge(grid%element(parent)%edge(3))%assoc_elem == parent) then
 endif
 if (mate /= BOUNDARY) then
    if (grid%edge(grid%element(mate)%edge(1))%assoc_elem == mate) then
-      if (.not. any(grid%edge_type(grid%element(mate)%edge(1),:) == PERIODIC_SLAVE)) then
+      if (.not. is_periodic_edge_slave(grid%element(mate)%edge(1),grid)) then
          grid%edge(grid%element(mate)%edge(1))%assoc_elem = child4
-         if (any(grid%edge_type(grid%element(mate)%edge(1),:) == PERIODIC_MASTER)) then
+         if (is_periodic_edge_master(grid%element(mate)%edge(1),grid)) then
             other_edge = grid%edge(grid%element(mate)%edge(1))%next
             grid%edge(other_edge)%assoc_elem = child4
          endif
       endif
    endif
    if (grid%edge(grid%element(mate)%edge(2))%assoc_elem == mate) then
-      if (.not. any(grid%edge_type(grid%element(mate)%edge(2),:) == PERIODIC_SLAVE)) then
+      if (.not. is_periodic_edge_slave(grid%element(mate)%edge(2),grid)) then
          grid%edge(grid%element(mate)%edge(2))%assoc_elem = child3
-         if (any(grid%edge_type(grid%element(mate)%edge(2),:) == PERIODIC_MASTER)) then
+         if (is_periodic_edge_master(grid%element(mate)%edge(2),grid)) then
             other_edge = grid%edge(grid%element(mate)%edge(2))%next
             grid%edge(other_edge)%assoc_elem = child3
          endif
       endif
    endif
    if (grid%edge(grid%element(mate)%edge(3))%assoc_elem == mate) then
-      if (.not. any(grid%edge_type(grid%element(mate)%edge(3),:) == PERIODIC_SLAVE)) then
+      if (.not. is_periodic_edge_slave(grid%element(mate)%edge(3),grid)) then
          grid%edge(grid%element(mate)%edge(3))%assoc_elem = child3
-         if (any(grid%edge_type(grid%element(mate)%edge(3),:) == PERIODIC_MASTER)) then
+         if (is_periodic_edge_master(grid%element(mate)%edge(3),grid)) then
             other_edge = grid%edge(grid%element(mate)%edge(3))%next
             grid%edge(other_edge)%assoc_elem = child3
          endif
@@ -3214,15 +3075,13 @@ if (present(delta_dof)) then
       delta_nvert_own = delta_nvert_own + 1
    endif
    max_nlev = max(max_nlev,grid%element(child1)%level)
-   if (any(grid%vertex_type(vert1,:) == PERIODIC_MASTER) .or. &
-       any(grid%vertex_type(vert1,:) == PERIODIC_SLAVE)) then
+   if (is_periodic_vert(vert1,grid)) then
       delta_nvert = delta_nvert + 1
       if (grid%element(grid%vertex(vert1)%assoc_elem)%iown) then
          delta_nvert_own = delta_nvert_own + 1
       endif
    endif
-   if (any(grid%edge_type(grid%element(parent)%edge(3),:) == PERIODIC_MASTER) .or. &
-       any(grid%edge_type(grid%element(parent)%edge(3),:) == PERIODIC_SLAVE)) then
+   if (is_periodic_edge(grid%element(parent)%edge(3),grid)) then
       delta_nedge = delta_nedge + 2
 ! TEMP also need to change nedge_own
    endif
@@ -3251,15 +3110,13 @@ else ! deltas are not present
       grid%nvert_own = grid%nvert_own + 1
    endif
    grid%nlev = max(grid%nlev,grid%element(child1)%level)
-   if (any(grid%vertex_type(vert1,:) == PERIODIC_MASTER) .or. &
-       any(grid%vertex_type(vert1,:) == PERIODIC_SLAVE)) then
+   if (is_periodic_vert(vert1,grid)) then
       grid%nvert = grid%nvert + 1
       if (grid%element(grid%vertex(vert1)%assoc_elem)%iown) then
          grid%nvert_own = grid%nvert_own + 1
       endif
    endif
-   if (any(grid%edge_type(grid%element(parent)%edge(3),:) == PERIODIC_MASTER) .or. &
-       any(grid%edge_type(grid%element(parent)%edge(3),:) == PERIODIC_SLAVE)) then
+   if (is_periodic_edge(grid%element(parent)%edge(3),grid)) then
       grid%nedge = grid%nedge + 2
 ! TEMP also need to change nedge_own
    endif
@@ -3269,14 +3126,18 @@ endif ! are deltas present
 ! set initial guess for solution
 
 if (refcont%error_estimator == INITIAL_CONDITION) then
-! TEMP OPENMP may require atomic assignment
-   call init_guess_ic(grid,parent,(/child1,child2,child3,child4/))
-else
-! TEMP OPENMP thread safe if elemental_matrix is
    if (mate == BOUNDARY) then
-      call init_guess_h(grid,parent,mate,(/child1,child2,BOUNDARY,BOUNDARY/))
+      call init_guess_ic(grid,parent,(/child1,child2,BOUNDARY,BOUNDARY/))
    else
-      call init_guess_h(grid,parent,mate,(/child1,child2,child3,child4/))
+      call init_guess_ic(grid,parent,(/child1,child2,child3,child4/))
+   endif
+else
+   if (mate == BOUNDARY) then
+      call init_guess_h(grid,solver_control,parent,mate, &
+                        (/child1,child2,BOUNDARY,BOUNDARY/))
+   else
+      call init_guess_h(grid,solver_control,parent,mate, &
+                        (/child1,child2,child3,child4/))
    endif
 endif
 
@@ -3289,22 +3150,22 @@ if (present(elist)) then
       if (numhref(parent) > 0) then
          numhref(child1) = numhref(parent)-1
          numhref(child2) = numhref(parent)-1
-         grid%element_errind(child1,:) = &
-                      elist%max_errind*grid%element(child1)%work/binw + .01
          if (grid%element(child1)%mate == BOUNDARY) then
             grid%element(child1)%work = ((grid%element(child1)%degree)* &
                     (grid%element(child1)%degree+1))/2
          else
             grid%element(child1)%work = grid%element(child1)%degree**2
          endif
-         grid%element_errind(child2,:) = &
-                      elist%max_errind*grid%element(child2)%work/binw + .01
+         grid%element_errind(child1,:) = &
+                      elist%max_errind*grid%element(child1)%work/binw + .01
          if (grid%element(child2)%mate == BOUNDARY) then
             grid%element(child2)%work = ((grid%element(child2)%degree)* &
                     (grid%element(child2)%degree+1))/2
          else
             grid%element(child2)%work = grid%element(child2)%degree**2
          endif
+         grid%element_errind(child2,:) = &
+                      elist%max_errind*grid%element(child2)%work/binw + .01
          add_to_list = numhref(child1) > 0 .or. numpref(child1) > 0
          need_new_errind = .false.
       elseif (numhref(parent) < 0) then
@@ -3352,22 +3213,22 @@ if (present(elist)) then
          if (numhref(mate) > 0) then
             numhref(child3) = numhref(mate)-1
             numhref(child4) = numhref(mate)-1
-            grid%element_errind(child3,:) = &
-                        elist%max_errind*grid%element(child3)%work/binw + .01
             if (grid%element(child3)%mate == BOUNDARY) then
                grid%element(child3)%work = ((grid%element(child3)%degree)* &
                        (grid%element(child3)%degree+1))/2
             else
                grid%element(child3)%work = grid%element(child3)%degree**2
             endif
-            grid%element_errind(child4,:) = &
-                        elist%max_errind*grid%element(child4)%work/binw + .01
+            grid%element_errind(child3,:) = &
+                        elist%max_errind*grid%element(child3)%work/binw + .01
             if (grid%element(child4)%mate == BOUNDARY) then
                grid%element(child4)%work = ((grid%element(child4)%degree)* &
                        (grid%element(child4)%degree+1))/2
             else
                grid%element(child4)%work = grid%element(child4)%degree**2
             endif
+            grid%element_errind(child4,:) = &
+                        elist%max_errind*grid%element(child4)%work/binw + .01
             add_to_list = numhref(child3) > 0 .or. numpref(child3) > 0
             need_new_errind = .false.
          elseif (numhref(mate) < 0) then
@@ -3473,27 +3334,7 @@ if (present(reftype)) then
    endif
 endif
 
-contains
-
-function is_periodic_slave(test_vert)
-integer, intent(in) :: test_vert
-logical :: is_periodic_slave
-is_periodic_slave = any(grid%vertex_type(test_vert,:)==PERIODIC_SLAVE) .or. &
-                    any(grid%vertex_type(test_vert,:)==PERIODIC_SLAVE_DIR) .or.&
-                    any(grid%vertex_type(test_vert,:)==PERIODIC_SLAVE_NAT) .or.&
-                    any(grid%vertex_type(test_vert,:)==PERIODIC_SLAVE_MIX)
-end function is_periodic_slave
-
-function is_periodic_master(test_vert)
-integer, intent(in) :: test_vert
-logical :: is_periodic_master
-is_periodic_master=any(grid%vertex_type(test_vert,:)==PERIODIC_MASTER) .or. &
-                   any(grid%vertex_type(test_vert,:)==PERIODIC_MASTER_DIR) .or.&
-                   any(grid%vertex_type(test_vert,:)==PERIODIC_MASTER_NAT) .or.&
-                   any(grid%vertex_type(test_vert,:)==PERIODIC_MASTER_MIX)
-end function is_periodic_master
-
-end subroutine bisect_triangle_pair
+end subroutine h_refine_element
 
 !          --------------
 subroutine after_h_refine(grid,element_list,nelem,vert_lid,edge_lid,elem_lid)
@@ -3679,7 +3520,8 @@ grid%element(child2)%order = (/1,2/)
 end subroutine set_inout
 
 !                    --------------
-recursive subroutine create_element(grid,elemgid,refine_control,err)
+recursive subroutine create_element(grid,elemgid,refine_control, &
+                                    solver_control,err)
 !                    --------------
 
 !----------------------------------------------------
@@ -3693,11 +3535,12 @@ recursive subroutine create_element(grid,elemgid,refine_control,err)
 type(grid_type), intent(inout) :: grid
 type(hash_key), intent(in) :: elemgid
 type(refine_options), intent(in) :: refine_control
+type(solver_options), intent(in) :: solver_control
 integer, intent(inout) :: err
 !----------------------------------------------------
 ! Local variables:
 
-integer :: parentlid
+integer :: parentlid, refedge
 type(hash_key) :: parentgid
 !----------------------------------------------------
 ! Begin executable code
@@ -3716,7 +3559,7 @@ parentlid = hash_decode_key(parentgid,grid%elem_hash)
 ! if the parent doesn't exist, create it
 
 if (parentlid == HASH_NOT_FOUND) then
-   call create_element(grid,parentgid,refine_control,err)
+   call create_element(grid,parentgid,refine_control,solver_control,err)
 endif
 
 if (err /= 0) then
@@ -3726,7 +3569,8 @@ else
 ! refine the parent
 
    parentlid = hash_decode_key(parentgid,grid%elem_hash)
-   call bisect_triangle_pair(grid,parentlid,err,refine_control)
+   call h_refine_element(grid,parentlid,err,refedge,refine_control, &
+                         solver_control)
 
 endif
 
@@ -3868,44 +3712,40 @@ integer, optional, intent(in) :: children(4)
 !----------------------------------------------------
 ! Local variables:
 
-integer :: vert(5), edge(8), face(4)
-integer :: nvert, nedge, nface, v, e, f, i, comp, eigen
+integer :: vert(5), edge(8), element(4)
+integer :: nvert, nedge, nelement, v, e, f, i, comp, eigen
 !----------------------------------------------------
 ! Begin executable code
 
 ! set the entities to do
 
 if (present(children)) then
-   face(1:2) = children(1:2)
-   edge(1:3) = grid%element(face(1))%edge
-   edge(4:5) = grid%element(face(2))%edge(2:3)
-   vert(1:3) = grid%element(elem)%vertex
-   vert(4)   = grid%element(face(1))%vertex(3)
+   element(1:MAX_CHILD) = children(1:MAX_CHILD)
+   edge(1:EDGES_PER_ELEMENT) = grid%element(element(1))%edge
+   edge(4:5) = grid%element(element(2))%edge(2:3)
+   vert(1:VERTICES_PER_ELEMENT) = grid%element(elem)%vertex
+   vert(4)   = grid%element(element(1))%vertex(3)
    if (grid%element(elem)%mate == BOUNDARY) then
       nvert = 4
       nedge = 5
-      nface = 2
+      nelement = 2
    else
-      face(3:4) = children(3:4)
-! TEMP NAG Fortran Compiler Release 5.2(718) gets a seg fault with this
-!      array section 1:3:2, but I don't have time to reduce it down right now.
-!      edge(6:7) = grid%element(face(3))%edge(1:3:2)
-      edge(6) = grid%element(face(3))%edge(1)
-      edge(7) = grid%element(face(3))%edge(3)
-! end TEMP
-      edge(8)   = grid%element(face(4))%edge(3)
-      vert(5)   = grid%element(face(3))%vertex(2)
+      element(3:4) = children(3:4)
+      edge(6) = grid%element(element(3))%edge(1)
+      edge(7) = grid%element(element(3))%edge(3)
+      edge(8)   = grid%element(element(4))%edge(3)
+      vert(5)   = grid%element(element(3))%vertex(2)
       nvert = 5
       nedge = 8
-      nface = 4
+      nelement = 4
    endif
 else
-   face(1)   = elem
-   edge(1:3) = grid%element(elem)%edge
-   vert(1:3) = grid%element(elem)%vertex
+   element(1)   = elem
+   edge(1:EDGES_PER_ELEMENT) = grid%element(elem)%edge
+   vert(1:VERTICES_PER_ELEMENT) = grid%element(elem)%vertex
    nvert = 3
    nedge = 3
-   nface = 1
+   nelement = 1
 endif
 
 ! set the vertex basis function coefficients
@@ -3918,8 +3758,8 @@ do i=1,nvert
           grid%vertex_type(v,comp) /= PERIODIC_SLAVE_DIR) then
          do eigen=1,max(1,grid%num_eval)
             grid%vertex_solution(v,comp,eigen) = &
-               iconds(grid%vertex(v)%coord%x, grid%vertex(v)%coord%y, &
-                      comp,eigen)
+               my_iconds(grid%vertex(v)%coord%x, grid%vertex(v)%coord%y, &
+                         zcoord(grid%vertex(v)%coord),comp,eigen)
          end do
       endif
    end do
@@ -3936,10 +3776,10 @@ do i=1,nedge
    end do
 end do
 
-! set the face basis function coefficients
+! set the element basis function coefficients
 
-do i=1,nface
-   f = face(i)
+do i=1,nelement
+   f = element(i)
    do comp=1,grid%system_size
       call elem_exact(grid,f,comp,"i")
    end do
@@ -3968,9 +3808,8 @@ integer, intent(in) :: elem, old_edge_deg(:)
 
 integer :: ss, i, j, k, degree(1+EDGES_PER_ELEMENT), bmark(EDGES_PER_ELEMENT), &
            edge_type(EDGES_PER_ELEMENT,grid%system_size), nred, n, astat, info,&
-           neigh(3), v1, v2, nev, l
-real(my_real) :: xvert(VERTICES_PER_ELEMENT), yvert(VERTICES_PER_ELEMENT), &
-                 rmin
+           neigh(NEIGHBORS_PER_ELEMENT), v1, v2, nev, l, face_type(1,1)
+real(my_real) :: xvert(VERTICES_PER_ELEMENT), yvert(VERTICES_PER_ELEMENT)
 integer, allocatable :: ipiv(:)
 real(my_real), allocatable :: mat(:,:), rs(:,:),elem_mat(:,:),elem_rs(:,:)
 !----------------------------------------------------
@@ -3978,10 +3817,6 @@ real(my_real), allocatable :: mat(:,:), rs(:,:),elem_mat(:,:),elem_rs(:,:)
 
 ss = grid%system_size
 nev = max(1,grid%num_eval)
-
-! don't actually use rmin
-
-rmin = 0.0_my_real
 
 ! the matrix is the elemental matrix for element elem plus a 1x1 system from
 ! each of the neighbors for the one red basis on each edge
@@ -4024,12 +3859,14 @@ if (astat /= 0) then
 endif
 
 if (nev > 1) then
-   call elemental_matrix(grid, xvert, yvert, degree, edge_type, bmark, ss, &
-                      0, .true., elem, rmin, "p", "r", mat, rs(:,1), &
+   call elemental_matrix(grid, xvert, yvert, degree, edge_type, face_type, &
+                      bmark, ss, &
+                      0, .true., elem, "p", "r", mat, rs(:,1), &
                       loc_bconds_s=init_guess_dirich_bconds, extra_rhs=rs(:,2:))
 else
-   call elemental_matrix(grid, xvert, yvert, degree, edge_type, bmark, ss, &
-                      0, .true., elem, rmin, "p", "r", mat, rs(:,1), &
+   call elemental_matrix(grid, xvert, yvert, degree, edge_type, face_type, &
+                      bmark, ss, &
+                      0, .true., elem, "p", "r", mat, rs(:,1), &
                       loc_bconds_s=init_guess_dirich_bconds)
 endif
 
@@ -4055,7 +3892,7 @@ do i=1,EDGES_PER_ELEMENT
       yvert(1) = grid%vertex(grid%element(elem)%vertex(v1))%coord%y
       xvert(2) = grid%vertex(grid%element(elem)%vertex(v2))%coord%x
       yvert(2) = grid%vertex(grid%element(elem)%vertex(v2))%coord%y
-      do j=1,3
+      do j=1,VERTICES_PER_ELEMENT
          if (grid%element(neigh(i))%vertex(j) /= &
              grid%element(elem)%vertex(v1) .and. &
              grid%element(neigh(i))%vertex(j) /= &
@@ -4067,14 +3904,14 @@ do i=1,EDGES_PER_ELEMENT
       end do
       if (nev > 1) then
          call elemental_matrix(grid, xvert, yvert, (/1,1,degree(i),1/), &
-                            edge_type, bmark, ss, 0, .true., &
-                            neigh(i), rmin, "p", "r", elem_mat, elem_rs(:,1), &
+                            edge_type, face_type, bmark, ss, 0, .true., &
+                            neigh(i), "p", "r", elem_mat, elem_rs(:,1), &
                             loc_bconds_s=init_guess_dirich_bconds, &
                             extra_rhs=elem_rs(:,2:))
       else
          call elemental_matrix(grid, xvert, yvert, (/1,1,degree(i),1/), &
-                            edge_type, bmark, ss, 0, .true., &
-                            neigh(i), rmin, "p", "r", elem_mat, elem_rs(:,1), &
+                            edge_type, face_type, bmark, ss, 0, .true., &
+                            neigh(i), "p", "r", elem_mat, elem_rs(:,1), &
                             loc_bconds_s=init_guess_dirich_bconds)
       endif
       mat(k:k+ss-1,k:k+ss-1) = mat(k:k+ss-1,k:k+ss-1) + elem_mat
@@ -4113,7 +3950,7 @@ do j=1,nev
     end do
     k = k+ss
    end do
-   do i=1+((degree(4)-2)*(degree(4)-3))/2,((degree(4)-1)*(degree(4)-2))/2
+   do i=element_dof(degree(4)-1)+1,element_dof(degree(4))
     do l=1,ss
       grid%element(elem)%solution(i,l,j) = &
          grid%element(elem)%solution(i,l,j) + rs(k+l-1,j)
@@ -4129,7 +3966,7 @@ deallocate(mat,rs,ipiv,elem_mat,elem_rs,stat=astat)
 end subroutine init_guess_p
 
 !          ------------
-subroutine init_guess_h(grid,elem,mate,child)
+subroutine init_guess_h(grid,solver_control,elem,mate,child)
 !          ------------
 
 !----------------------------------------------------
@@ -4143,16 +3980,18 @@ subroutine init_guess_h(grid,elem,mate,child)
 ! Dummy arguments
 
 type(grid_type), intent(inout) :: grid
+type(solver_options), intent(in) :: solver_control
 integer, intent(in) :: elem,mate,child(4)
 !----------------------------------------------------
 ! Local variables:
 
-real(my_real) :: xvert(3), yvert(3), rmin
+real(my_real) :: xvert(VERTICES_PER_ELEMENT), yvert(VERTICES_PER_ELEMENT)
 real(my_real), allocatable :: elem_mat(:,:),elem_rs(:,:),full_mat(:,:), &
                               full_rs(:,:)
 integer :: degree(4), nbasis_elem, nbasis_full, elem_n, &
-           full_n, astat, edge_type(3,grid%system_size), ss, i, j, k, info, &
-           bmark(3), start_renum(17), nb, nev
+           full_n, astat, edge_type(EDGES_PER_ELEMENT,grid%system_size), ss,&
+           i, j, k, info, bmark(EDGES_PER_ELEMENT), start_renum(17), nb, nev, &
+           face_type(1,1)
 integer, allocatable :: renum(:), ipiv(:)
 !----------------------------------------------------
 ! Begin executable code
@@ -4169,14 +4008,14 @@ else
 endif
 do i=1,4
    if (i==3 .and. mate==BOUNDARY) exit
-   do j=1,3
+   do j=1,EDGES_PER_ELEMENT
       if ((i==2.or.i==4) .and. j==1) cycle
       if (i>2 .and. j==2) cycle
       nbasis_full = nbasis_full + &
                     grid%edge(grid%element(child(i))%edge(j))%degree - 1
    end do
    nbasis_full = nbasis_full + &
-         ((grid%element(child(i))%degree-1)*(grid%element(child(i))%degree-2))/2
+         element_dof(grid%element(child(i))%degree)
 end do
 
 full_n = nbasis_full*ss
@@ -4237,17 +4076,13 @@ if (mate == BOUNDARY) then
 else
    start_renum(14) = start_renum(13) + grid%edge(grid%element(child(4))%edge(3))%degree-1
 endif
-start_renum(15) = start_renum(14) + ((grid%element(child(1))%degree-1)*(grid%element(child(1))%degree-2))/2
-start_renum(16) = start_renum(15) + ((grid%element(child(2))%degree-1)*(grid%element(child(2))%degree-2))/2
+start_renum(15) = start_renum(14) + element_dof(grid%element(child(1))%degree)
+start_renum(16) = start_renum(15) + element_dof(grid%element(child(2))%degree)
 if (mate == BOUNDARY) then
    start_renum(17) = 0
 else
-   start_renum(17) = start_renum(16) + ((grid%element(child(3))%degree-1)*(grid%element(child(3))%degree-2))/2
+   start_renum(17) = start_renum(16) + element_dof(grid%element(child(3))%degree)
 endif
-
-! don't actually use rmin
-
-rmin = 0.0_my_real
 
 ! for each of the children of elem and mate, compute the elemental matrix
 ! and right side, and assemble
@@ -4277,18 +4112,18 @@ endif
 edge_type(3,:) = DIRICHLET
 bmark(3) = huge(0)
 
-nbasis_elem = 3
-do i=1,3
+nbasis_elem = VERTICES_PER_ELEMENT
+do i=1,EDGES_PER_ELEMENT
    nbasis_elem = nbasis_elem + degree(i)-1
 end do
-nbasis_elem = nbasis_elem + ((degree(4)-1)*(degree(4)-2))/2
+nbasis_elem = nbasis_elem + element_dof(degree(4))
 
 elem_n = nbasis_elem*ss
 
 allocate(elem_mat(elem_n,elem_n), elem_rs(elem_n,nev), renum(elem_n),stat=astat)
 if (astat /= 0) then
    ierr = ALLOC_FAILED
-   call fatal("memory allocation failed in error estimates")
+   call fatal("memory allocation failed in init_guess_h")
    stop
 endif
 
@@ -4296,14 +4131,17 @@ elem_mat = 0.0_my_real
 elem_rs = 0.0_my_real
 
 if (nev > 1) then
-   call elemental_matrix(grid, xvert, yvert, degree, edge_type, bmark, ss, &
-                         0, .false., elem, rmin, "p", "a", elem_mat, &
+   call elemental_matrix(grid, xvert, yvert, degree, edge_type, face_type, &
+                         bmark, ss, &
+                         0, .false., elem, "p", "a", elem_mat, &
                          elem_rs(:,1), loc_bconds_s=init_guess_dirich_bconds, &
-                         extra_rhs=elem_rs(:,2:))
+                         extra_rhs=elem_rs(:,2:),solver_control=solver_control)
 else
-   call elemental_matrix(grid, xvert, yvert, degree, edge_type, bmark, ss, &
-                         0, .false., elem, rmin, "p", "a", elem_mat, &
-                         elem_rs(:,1), loc_bconds_s=init_guess_dirich_bconds)
+   call elemental_matrix(grid, xvert, yvert, degree, edge_type, face_type, &
+                         bmark, ss, &
+                         0, .false., elem, "p", "a", elem_mat, &
+                         elem_rs(:,1), loc_bconds_s=init_guess_dirich_bconds, &
+                         solver_control=solver_control)
 endif
 
 renum(1:ss) = (/ (1+(start_renum(1)-1)*ss+j,j=0,ss-1) /)
@@ -4319,7 +4157,7 @@ i = i + nb*ss
 nb = grid%edge(grid%element(child(1))%edge(3))%degree-1
 renum(i:i+nb*ss-1) = (/ (1+(start_renum(10)-1)*ss+j,j=0,nb*ss-1) /)
 i = i + nb*ss
-nb = ((grid%element(child(1))%degree-1)*(grid%element(child(1))%degree-2))/2
+nb = element_dof(grid%element(child(1))%degree)
 renum(i:i+nb*ss-1) = (/ (1+(start_renum(14)-1)*ss+j,j=0,nb*ss-1) /)
 
 do i=1,elem_n
@@ -4354,11 +4192,11 @@ endif
 edge_type(3,:) = DIRICHLET
 bmark(3) = huge(0)
 
-nbasis_elem = 3
-do i=1,3
+nbasis_elem = VERTICES_PER_ELEMENT
+do i=1,EDGES_PER_ELEMENT
    nbasis_elem = nbasis_elem + degree(i)-1
 end do
-nbasis_elem = nbasis_elem + ((degree(4)-1)*(degree(4)-2))/2
+nbasis_elem = nbasis_elem + element_dof(degree(4))
 
 elem_n = nbasis_elem*ss
 
@@ -4368,7 +4206,7 @@ if (elem_n /= size(renum)) then
             stat=astat)
    if (astat /= 0) then
       ierr = ALLOC_FAILED
-      call fatal("memory allocation failed in error estimates")
+      call fatal("memory allocation failed in init_guess_h")
       stop
    endif
 endif
@@ -4377,14 +4215,17 @@ elem_mat = 0.0_my_real
 elem_rs = 0.0_my_real
 
 if (nev > 1) then
-   call elemental_matrix(grid, xvert, yvert, degree, edge_type, bmark, ss, &
-                         0, .false., elem, rmin, "p", "a", elem_mat, &
+   call elemental_matrix(grid, xvert, yvert, degree, edge_type, face_type, &
+                         bmark, ss, &
+                         0, .false., elem, "p", "a", elem_mat, &
                          elem_rs(:,1), loc_bconds_s=init_guess_dirich_bconds, &
-                         extra_rhs=elem_rs(:,2:))
+                         extra_rhs=elem_rs(:,2:),solver_control=solver_control)
 else
-   call elemental_matrix(grid, xvert, yvert, degree, edge_type, bmark, ss, &
-                         0, .false., elem, rmin, "p", "a", elem_mat, &
-                         elem_rs(:,1), loc_bconds_s=init_guess_dirich_bconds)
+   call elemental_matrix(grid, xvert, yvert, degree, edge_type, face_type, &
+                         bmark, ss, &
+                         0, .false., elem, "p", "a", elem_mat, &
+                         elem_rs(:,1), loc_bconds_s=init_guess_dirich_bconds, &
+                         solver_control=solver_control)
 endif
 
 renum(1:ss) = (/ (1+(start_renum(2)-1)*ss+j,j=0,ss-1) /)
@@ -4400,7 +4241,7 @@ i = i + nb*ss
 nb = grid%edge(grid%element(child(2))%edge(3))%degree-1
 renum(i:i+nb*ss-1) = (/ (1+(start_renum(11)-1)*ss+j,j=0,nb*ss-1) /)
 i = i + nb*ss
-nb = ((grid%element(child(2))%degree-1)*(grid%element(child(2))%degree-2))/2
+nb = element_dof(grid%element(child(2))%degree)
 renum(i:i+nb*ss-1) = (/ (1+(start_renum(15)-1)*ss+j,j=0,nb*ss-1) /)
 
 do i=1,elem_n
@@ -4437,11 +4278,11 @@ if (mate /= BOUNDARY) then
    edge_type(3,:) = DIRICHLET
    bmark(3) = huge(0)
 
-   nbasis_elem = 3
-   do i=1,3
+   nbasis_elem = VERTICES_PER_ELEMENT
+   do i=1,EDGES_PER_ELEMENT
       nbasis_elem = nbasis_elem + degree(i)-1
    end do
-   nbasis_elem = nbasis_elem + ((degree(4)-1)*(degree(4)-2))/2
+   nbasis_elem = nbasis_elem + element_dof(degree(4))
 
    elem_n = nbasis_elem*ss
 
@@ -4451,7 +4292,7 @@ if (mate /= BOUNDARY) then
                stat=astat)
       if (astat /= 0) then
          ierr = ALLOC_FAILED
-         call fatal("memory allocation failed in error estimates")
+         call fatal("memory allocation failed in init_guess_h")
          stop
       endif
    endif
@@ -4460,14 +4301,15 @@ if (mate /= BOUNDARY) then
    elem_rs = 0.0_my_real
 
    if (nev > 1) then
-      call elemental_matrix(grid, xvert, yvert, degree, edge_type, bmark, ss, &
-                            0, .false., mate, rmin, "p", "a", elem_mat, &
+      call elemental_matrix(grid, xvert, yvert, degree, edge_type, face_type, &
+                            bmark, ss, 0, .false., mate, "p", "a", elem_mat, &
                           elem_rs(:,1), loc_bconds_s=init_guess_dirich_bconds, &
-                            extra_rhs=elem_rs(:,2:))
+                          extra_rhs=elem_rs(:,2:),solver_control=solver_control)
    else
-      call elemental_matrix(grid, xvert, yvert, degree, edge_type, bmark, ss, &
-                            0, .false., mate, rmin, "p", "a", elem_mat, &
-                            elem_rs(:,1), loc_bconds_s=init_guess_dirich_bconds)
+      call elemental_matrix(grid, xvert, yvert, degree, edge_type, face_type, &
+                            bmark, ss, 0, .false., mate, "p", "a", elem_mat, &
+                            elem_rs(:,1),loc_bconds_s=init_guess_dirich_bconds,&
+                            solver_control=solver_control)
    endif
 
    renum(1:ss) = (/ (1+(start_renum(1)-1)*ss+j,j=0,ss-1) /)
@@ -4483,7 +4325,7 @@ if (mate /= BOUNDARY) then
    nb = grid%edge(grid%element(child(3))%edge(3))%degree-1
    renum(i:i+nb*ss-1) = (/ (1+(start_renum(12)-1)*ss+j,j=0,nb*ss-1) /)
    i = i + nb*ss
-   nb = ((grid%element(child(3))%degree-1)*(grid%element(child(3))%degree-2))/2
+   nb = element_dof(grid%element(child(3))%degree)
    renum(i:i+nb*ss-1) = (/ (1+(start_renum(16)-1)*ss+j,j=0,nb*ss-1) /)
 
    do i=1,elem_n
@@ -4518,11 +4360,11 @@ if (mate /= BOUNDARY) then
    edge_type(3,:) = DIRICHLET
    bmark(3) = huge(0)
 
-   nbasis_elem = 3
-   do i=1,3
+   nbasis_elem = VERTICES_PER_ELEMENT
+   do i=1,EDGES_PER_ELEMENT
       nbasis_elem = nbasis_elem + degree(i)-1
    end do
-   nbasis_elem = nbasis_elem + ((degree(4)-1)*(degree(4)-2))/2
+   nbasis_elem = nbasis_elem + element_dof(degree(4))
 
    elem_n = nbasis_elem*ss
 
@@ -4532,7 +4374,7 @@ if (mate /= BOUNDARY) then
                stat=astat)
       if (astat /= 0) then
          ierr = ALLOC_FAILED
-         call fatal("memory allocation failed in error estimates")
+         call fatal("memory allocation failed in init_guess_h")
          stop
       endif
    endif
@@ -4541,14 +4383,15 @@ if (mate /= BOUNDARY) then
    elem_rs = 0.0_my_real
 
    if (nev > 1) then
-      call elemental_matrix(grid, xvert, yvert, degree, edge_type, bmark, ss, &
-                            0, .false., mate, rmin, "p", "a", elem_mat, &
+      call elemental_matrix(grid, xvert, yvert, degree, edge_type, face_type, &
+                            bmark, ss, 0, .false., mate, "p", "a", elem_mat, &
                           elem_rs(:,1), loc_bconds_s=init_guess_dirich_bconds, &
-                            extra_rhs=elem_rs(:,2:))
+                          extra_rhs=elem_rs(:,2:),solver_control=solver_control)
    else
-      call elemental_matrix(grid, xvert, yvert, degree, edge_type, bmark, ss, &
-                            0, .false., mate, rmin, "p", "a", elem_mat, &
-                            elem_rs(:,1), loc_bconds_s=init_guess_dirich_bconds)
+      call elemental_matrix(grid, xvert, yvert, degree, edge_type, face_type, &
+                            bmark, ss, 0, .false., mate, "p", "a", elem_mat, &
+                            elem_rs(:,1),loc_bconds_s=init_guess_dirich_bconds,&
+                            solver_control=solver_control)
    endif
 
    renum(1:ss) = (/ (1+(start_renum(2)-1)*ss+j,j=0,ss-1) /)
@@ -4564,7 +4407,7 @@ if (mate /= BOUNDARY) then
    nb = grid%edge(grid%element(child(4))%edge(3))%degree-1
    renum(i:i+nb*ss-1) = (/ (1+(start_renum(13)-1)*ss+j,j=0,nb*ss-1) /)
    i = i + nb*ss
-   nb = ((grid%element(child(4))%degree-1)*(grid%element(child(4))%degree-2))/2
+   nb = element_dof(grid%element(child(4))%degree)
    renum(i:i+nb*ss-1) = (/ (1+(start_renum(17)-1)*ss+j,j=0,nb*ss-1) /)
 
    do i=1,elem_n
@@ -4762,20 +4605,20 @@ do k=1,nev
             full_rs(j+ss*(start_renum(9)+i-2),k)
       end do
    endif
-   do i=1,((grid%element(child(1))%degree-1)*(grid%element(child(1))%degree-2))/2
+   do i=1,element_dof(grid%element(child(1))%degree)
       grid%element(child(1))%solution(i,j,k) = &
          full_rs(j+ss*(start_renum(14)+i-2),k)
    end do
-   do i=1,((grid%element(child(2))%degree-1)*(grid%element(child(2))%degree-2))/2
+   do i=1,element_dof(grid%element(child(2))%degree)
       grid%element(child(2))%solution(i,j,k) = &
          full_rs(j+ss*(start_renum(15)+i-2),k)
    end do
    if (mate /= BOUNDARY) then
-      do i=1,((grid%element(child(3))%degree-1)*(grid%element(child(3))%degree-2))/2
+      do i=1,element_dof(grid%element(child(3))%degree)
          grid%element(child(3))%solution(i,j,k) = &
             full_rs(j+ss*(start_renum(16)+i-2),k)
       end do
-      do i=1,((grid%element(child(4))%degree-1)*(grid%element(child(4))%degree-2))/2
+      do i=1,element_dof(grid%element(child(4))%degree)
          grid%element(child(4))%solution(i,j,k) = &
             full_rs(j+ss*(start_renum(17)+i-2),k)
       end do
@@ -4847,9 +4690,19 @@ endif
 ! set degree to be the maximum degree, and allocate space for the local
 ! copy of the solution coefficients
 
-degree = 0
+degree = grid%element(parent)%degree
+do j=1,EDGES_PER_ELEMENT
+   degree = max(degree,grid%edge(grid%element(parent)%edge(j))%degree)
+end do
+if (mate /= BOUNDARY) then
+   degree = max(degree,grid%element(mate)%degree)
+   do j=1,EDGES_PER_ELEMENT
+      degree = max(degree,grid%edge(grid%element(mate)%edge(j))%degree)
+   end do
+endif
 do i=1,4
   if (i==3 .and. mate==BOUNDARY) exit
+  degree = max(degree,grid%element(children(i))%degree)
   do j=1,EDGES_PER_ELEMENT
      degree = max(degree,grid%edge(grid%element(children(i))%edge(j))%degree)
   end do
@@ -5180,7 +5033,7 @@ else
    isub = 5
 endif
 ! edge opposite vertex 1 of parent
-jsub = 6 + 4*(degree-1) + ((degree-2)*(degree-1))/2
+jsub = 6 + 4*(degree-1) + element_dof(degree)
 do i=1,degree-1
    solution_c(isub,:) = solution(jsub,:)
    isub = isub+1
@@ -5206,7 +5059,7 @@ if (2*(degree/2) == degree) then
    isub = isub+1
 endif
 ! common edge between parent and mate, half with vertex 2
-jsub = 5 + 4*(degree-1) + ((degree-2)*(degree-1))/2
+jsub = 5 + 4*(degree-1) + element_dof(degree)
 if (2*(degree/2) == degree) jsub = jsub-1
 do i=1,(degree-1)/2
    solution_c(isub,:) = solution(jsub,:)
@@ -5229,7 +5082,7 @@ do j=1,degree-2
       isub = isub+1
    endif
 ! from child 2
-   jsub = 5 + 5*(degree-1) + (degree-2)*(degree-1) - (j*(j-1))/2
+   jsub = 5 + 5*(degree-1) + 2*element_dof(degree) - (j*(j-1))/2
    if (2*((degree+j)/2) == degree+j) jsub = jsub - (j+1)
    do i=1,(degree-j-1)/2
       solution_c(isub,:) = solution(jsub,:)
@@ -5243,14 +5096,14 @@ do j=1,degree-2
 end do
 if (mate /= BOUNDARY) then
 ! edge opposite vertex 1 of mate
-   jsub = 6 + 7*(degree-1) + 3*(((degree-2)*(degree-1))/2)
+   jsub = 6 + 7*(degree-1) + 3*element_dof(degree)
    do i=1,degree-1
       solution_c(isub,:) = solution(jsub,:)
       isub = isub+1
       jsub = jsub+1
    end do
 ! edge opposite vertex 2 of mate
-   jsub = 6 + 6*(degree-1) + (degree-2)*(degree-1)
+   jsub = 6 + 6*(degree-1) + 2*element_dof(degree)
    do i=1,degree-1
       solution_c(isub,:) = solution(jsub,:)
       isub = isub+1
@@ -5259,7 +5112,7 @@ if (mate /= BOUNDARY) then
 ! interior of mate
    do j=1,degree-2
 ! from child 3
-      jsub = 5 + 7*(degree-1) + (degree-2)*(degree-1) + degree-2 + j
+      jsub = 5 + 7*(degree-1) + 2*element_dof(degree) + degree-2 + j
       do i=1,(degree-j-1)/2
          solution_c(isub,:) = solution(jsub,:)
          jsub = jsub + 2*degree - 4*i - 3
@@ -5267,12 +5120,12 @@ if (mate /= BOUNDARY) then
       end do
 ! from bisection edge
       if (2*((degree+j)/2) == degree+j) then
-         jsub = 5 + 6*(degree-1) + (degree-2)*(degree-1) + 1 - j
+         jsub = 5 + 6*(degree-1) + 2*element_dof(degree) + 1 - j
          solution_c(isub,:) = solution(jsub,:)
          isub = isub+1
       endif
 ! from child 4
-      jsub = 5 + 8*(degree-1) + 2*(degree-2)*(degree-1) - (j*(j-1))/2
+      jsub = 5 + 8*(degree-1) + 4*element_dof(degree) - (j*(j-1))/2
       if (2*((degree+j)/2) == degree+j) jsub = jsub - (j+1)
       do i=1,(degree-j-1)/2
          solution_c(isub,:) = solution(jsub,:)
@@ -5295,7 +5148,7 @@ if (do_old) then
       isub = 5
    endif
 ! edge opposite vertex 1 of parent
-   jsub = 6 + 4*(degree-1) + ((degree-2)*(degree-1))/2
+   jsub = 6 + 4*(degree-1) + element_dof(degree)
    do i=1,degree-1
       oldsoln_c(isub,:) = oldsoln(jsub,:)
       isub = isub+1
@@ -5321,7 +5174,7 @@ if (do_old) then
       isub = isub+1
    endif
 ! common edge between parent and mate, half with vertex 2
-   jsub = 5 + 4*(degree-1) + ((degree-2)*(degree-1))/2
+   jsub = 5 + 4*(degree-1) + element_dof(degree)
    if (2*(degree/2) == degree) jsub = jsub-1
    do i=1,(degree-1)/2
       oldsoln_c(isub,:) = oldsoln(jsub,:)
@@ -5344,7 +5197,7 @@ if (do_old) then
          isub = isub+1
       endif
 ! from child 2
-      jsub = 5 + 5*(degree-1) + (degree-2)*(degree-1) - (j*(j-1))/2
+      jsub = 5 + 5*(degree-1) + 2*element_dof(degree) - (j*(j-1))/2
       if (2*((degree+j)/2) == degree+j) jsub = jsub - (j+1)
       do i=1,(degree-j-1)/2
          oldsoln_c(isub,:) = oldsoln(jsub,:)
@@ -5358,14 +5211,14 @@ if (do_old) then
    end do
    if (mate /= BOUNDARY) then
 ! edge opposite vertex 1 of mate
-      jsub = 6 + 7*(degree-1) + 3*(((degree-2)*(degree-1))/2)
+      jsub = 6 + 7*(degree-1) + 3*element_dof(degree)
       do i=1,degree-1
          oldsoln_c(isub,:) = oldsoln(jsub,:)
          isub = isub+1
          jsub = jsub+1
       end do
 ! edge opposite vertex 2 of mate
-      jsub = 6 + 6*(degree-1) + (degree-2)*(degree-1)
+      jsub = 6 + 6*(degree-1) + 2*element_dof(degree)
       do i=1,degree-1
          oldsoln_c(isub,:) = oldsoln(jsub,:)
          isub = isub+1
@@ -5374,7 +5227,7 @@ if (do_old) then
 ! interior of mate
       do j=1,degree-2
 ! from child 3
-         jsub = 5 + 7*(degree-1) + (degree-2)*(degree-1) + degree-2 + j
+         jsub = 5 + 7*(degree-1) + 2*element_dof(degree) + degree-2 + j
          do i=1,(degree-j-1)/2
             oldsoln_c(isub,:) = oldsoln(jsub,:)
             jsub = jsub + 2*degree - 4*i - 3
@@ -5382,12 +5235,12 @@ if (do_old) then
          end do
 ! from bisection edge
          if (2*((degree+j)/2) == degree+j) then
-            jsub = 5 + 6*(degree-1) + (degree-2)*(degree-1) + 1 - j
+            jsub = 5 + 6*(degree-1) + 2*element_dof(degree) + 1 - j
             oldsoln_c(isub,:) = oldsoln(jsub,:)
             isub = isub+1
          endif
 ! from child 4
-         jsub = 5 + 8*(degree-1) + 2*(degree-2)*(degree-1) - (j*(j-1))/2
+         jsub = 5 + 8*(degree-1) + 4*element_dof(degree) - (j*(j-1))/2
          if (2*((degree+j)/2) == degree+j) jsub = jsub - (j+1)
          do i=1,(degree-j-1)/2
             oldsoln_c(isub,:) = oldsoln(jsub,:)
@@ -5444,11 +5297,11 @@ do i=1,grid%edge(grid%element(parent)%edge(3))%degree-1
          reshape(solution_c(isub+i,:),(/grid%system_size,max(1,grid%num_eval)/))
 end do
 isub = isub + degree-1
-do i=1,((grid%element(parent)%degree-2)*(grid%element(parent)%degree-1))/2
+do i=1,element_dof(grid%element(parent)%degree)
    grid%element(parent)%solution(i,:,:) = &
          reshape(solution_c(isub+i,:),(/grid%system_size,max(1,grid%num_eval)/))
 end do
-isub = isub + ((degree-2)*(degree-1))/2
+isub = isub + element_dof(degree)
 if (mate /= BOUNDARY) then
    do i=1,grid%edge(grid%element(mate)%edge(1))%degree-1
       grid%edge(grid%element(mate)%edge(1))%solution(i,:,:) = &
@@ -5460,7 +5313,7 @@ if (mate /= BOUNDARY) then
          reshape(solution_c(isub+i,:),(/grid%system_size,max(1,grid%num_eval)/))
    end do
    isub = isub + degree-1
-   do i=1,((grid%element(mate)%degree-2)*(grid%element(mate)%degree-1))/2
+   do i=1,element_dof(grid%element(mate)%degree)
       grid%element(mate)%solution(i,:,:) = &
          reshape(solution_c(isub+i,:),(/grid%system_size,max(1,grid%num_eval)/))
    end do
@@ -5552,12 +5405,12 @@ if (do_old) then
    end do
    isub = isub + degree-1
    if (a1) then
-      do i=1,((grid%element(parent)%degree-2)*(grid%element(parent)%degree-1))/2
+      do i=1,element_dof(grid%element(parent)%degree)
          grid%element(parent)%oldsoln(i,:,:) = &
           reshape(oldsoln_c(isub+i,:),(/grid%system_size,max(1,grid%num_eval)/))
       end do
    endif
-   isub = isub + ((degree-2)*(degree-1))/2
+   isub = isub + element_dof(degree)
    if (mate /= BOUNDARY .and. a3) then
       do i=1,grid%edge(grid%element(mate)%edge(1))%degree-1
          grid%edge(grid%element(mate)%edge(1))%oldsoln(i,:,:) = &
@@ -5569,7 +5422,7 @@ if (do_old) then
           reshape(oldsoln_c(isub+i,:),(/grid%system_size,max(1,grid%num_eval)/))
       end do
       isub = isub + degree-1
-      do i=1,((grid%element(mate)%degree-2)*(grid%element(mate)%degree-1))/2
+      do i=1,element_dof(grid%element(mate)%degree)
          grid%element(mate)%oldsoln(i,:,:) = &
           reshape(oldsoln_c(isub+i,:),(/grid%system_size,max(1,grid%num_eval)/))
       end do
@@ -5584,7 +5437,7 @@ if (do_old) deallocate(oldsoln,oldsoln_c,stat=astat)
 end subroutine hcoarsen_init_guess
 
 !          ------------------------
-subroutine init_guess_dirich_bconds(x,y,bmark,itype,c,rs)
+subroutine init_guess_dirich_bconds(x,y,z,bmark,itype,c,rs)
 !          ------------------------
 
 !----------------------------------------------------
@@ -5595,7 +5448,7 @@ subroutine init_guess_dirich_bconds(x,y,bmark,itype,c,rs)
 !----------------------------------------------------
 ! Dummy arguments
 
-real(my_real), intent(in) :: x,y
+real(my_real), intent(in) :: x,y,z
 integer, intent(in) :: bmark
 integer, intent(out) :: itype(:)
 real(my_real), intent(out) :: c(:,:),rs(:)
@@ -5618,10 +5471,36 @@ if (bmark == huge(0)) then
 
 else
 
-   call bconds(x,y,bmark,itype,c,rs)
+   call my_bconds(x,y,z,bmark,itype,c,rs)
 
 endif
 
 end subroutine init_guess_dirich_bconds
 
+!          --------------------
+subroutine remove_hanging_nodes(grid,refinement_edge_list,nrefedge, &
+                                refine_control,solver_control, &
+                                desired_level,desired_degree,elem_list)
+!          --------------------
+
+!----------------------------------------------------
+! In 3D this routine removes any hanging nodes in the grid.  Here it is not used
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+
+type(grid_type), intent(inout) :: grid
+integer, intent(inout) :: refinement_edge_list(:), nrefedge
+type(refine_options), intent(in) :: refine_control
+type(solver_options), intent(in) :: solver_control
+integer, optional, pointer :: desired_level(:), desired_degree(:), elem_list(:)
+!----------------------------------------------------
+! Begin executable code
+
+ierr = PHAML_INTERNAL_ERROR
+call fatal("called remove_hanging_nodes in 2D")
+stop
+
+end subroutine remove_hanging_nodes
 end module refine_elements

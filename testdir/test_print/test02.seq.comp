@@ -1,19 +1,19 @@
 
 My Grid:
-   number of vertices       =         734
-   number of vertices I own =         734
-   number of elements       =        2636
-   number of leaf elements  =        1322
-   leaf elements I own      =        1322
+   number of vertices       =         582
+   number of vertices I own =         582
+   number of elements       =        2036
+   number of leaf elements  =        1022
+   leaf elements I own      =        1022
    number of levels         =          12
-   degrees of freedom       =         734
-   degrees of freedom I own =         734
+   degrees of freedom       =         582
+   degrees of freedom I own =         582
    min and max degree       =           1          1
 
 Norms of error:
-   energy norm of error       4.6454550777E-01
-   energy error estimate      1.5324283622E-01
-      effectivity             3.2987690907E-01
-   Linf norm of error         3.0902548786E-02
-   Linf error estimate        3.4344293830E-03
-      effectivity             1.1113741481E-01
+   energy norm of error       6.0874963178E-01
+   energy error estimate      7.8142399508E-01
+      effectivity             1.2836541565E+00
+   Linf norm of error         3.1262194220E-02
+   Linf error estimate        2.1957512244E-02
+      effectivity             7.0236631790E-01

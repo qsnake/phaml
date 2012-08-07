@@ -1,9 +1,10 @@
 ---------------------------------------------------------
-           PHAML   Version 1.9.1
+           PHAML   Version 1.11.0
 
 Output from the master process
   PDE id is     0
   Number of slave processors is     4
+  Number of OpenMP threads is       1
 
 Subroutine phaml_solve_pde parameters:
   max_elem           infinity
@@ -17,10 +18,15 @@ Subroutine phaml_solve_pde parameters:
   task               BALANCE_REFINE_SOLVE
   solve_init         true
   system_size                 1
+  pde_has_first_order_terms  false
+  pde_has_cross_derivative   false
+  laplacian_operator         true
+  isosceles_right_triangles  true
   print_grid_when    PHASES
   print_grid_who     MASTER
   print_linsys_when  NEVER
-  print_solver_when  NEVER
+  print_solver_when  PHASES
+  print_solver_who   MASTER
   print_error_when   PHASES
   print_error_who    MASTER
   print_error_what   ENERGY_LINF_L2_ERR
@@ -37,7 +43,7 @@ Subroutine phaml_solve_pde parameters:
   errtype            ABSOLUTE_ERROR
   reftype            H_ADAPTIVE
   edge_rule          MINIMUM_RULE
-  refterm            DOUBLE_NEQ_SMOOTH
+  refterm            DOUBLE_NEQ
   derefine           true
   partition_method   RTK
   prebalance         BALANCE_ELEMENTS
@@ -58,6 +64,10 @@ Total Grid:
    degrees of freedom      =           9
    min and max degree      =           1          1
 
+Solver information:
+   number of iterations =           0
+   relative residual =   0.0000000000E+00
+
 Norms of error:
    energy norm of error       2.4822035936E+00
    Linf norm of error         8.7914044620E-01
@@ -69,6 +79,10 @@ Total Grid:
    number of levels        =           5
    degrees of freedom      =          29
    min and max degree      =           1          1
+
+Solver information:
+   number of iterations =           7
+   relative residual =   3.0293018596E-16
 
 Norms of error:
    energy norm of error       1.4543374687E+00
@@ -85,6 +99,10 @@ Total Grid:
    degrees of freedom      =          36
    min and max degree      =           1          1
 
+Solver information:
+   number of iterations =           8
+   relative residual =   1.7187338040E-12
+
 Norms of error:
    energy norm of error       1.4268179201E+00
       reduced by              9.8107760463E-01
@@ -94,76 +112,92 @@ Norms of error:
       reduced by              1.0007686719E+00
 
 Total Grid:
-   number of vertices      =          82
-   number of leaf elements =         132
-   number of levels        =           7
-   degrees of freedom      =          82
-   min and max degree      =           1          1
-
-Norms of error:
-   energy norm of error       8.2034400959E-01
-      reduced by              5.7494652824E-01
-   Linf norm of error         1.0000467188E-01
-      reduced by              3.8828144491E-01
-   L2 norm of error           2.7306631858E-02
-      reduced by              3.0164429266E-01
-
-Total Grid:
-   number of vertices      =         145
-   number of leaf elements =         246
+   number of vertices      =          98
+   number of leaf elements =         154
    number of levels        =           8
-   degrees of freedom      =         145
+   degrees of freedom      =          98
    min and max degree      =           1          1
 
+Solver information:
+   number of iterations =          17
+   relative residual =   3.5070714785E-10
+
 Norms of error:
-   energy norm of error       5.1482143541E-01
-      reduced by              6.2756773913E-01
-   Linf norm of error         3.8245739744E-02
-      reduced by              3.8243953033E-01
-   L2 norm of error           1.3402251664E-02
-      reduced by              4.9080574030E-01
+   energy norm of error       7.7955585392E-01
+      reduced by              5.4635973024E-01
+   Linf norm of error         1.0000000776E-01
+      reduced by              3.8826333584E-01
+   L2 norm of error           2.5635825585E-02
+      reduced by              2.8318763426E-01
 
 Total Grid:
-   number of vertices      =         334
-   number of leaf elements =         588
+   number of vertices      =         167
+   number of leaf elements =         288
+   number of levels        =           9
+   degrees of freedom      =         167
+   min and max degree      =           1          1
+
+Solver information:
+   number of iterations =          25
+   relative residual =   5.3145229258E-10
+
+Norms of error:
+   energy norm of error       4.8553639373E-01
+      reduced by              6.2283721081E-01
+   Linf norm of error         3.2559787463E-02
+      reduced by              3.2559784938E-01
+   L2 norm of error           1.2329106529E-02
+      reduced by              4.8093268882E-01
+
+Total Grid:
+   number of vertices      =         314
+   number of leaf elements =         552
    number of levels        =          10
-   degrees of freedom      =         334
+   degrees of freedom      =         314
    min and max degree      =           1          1
 
+Solver information:
+   number of iterations =          38
+   relative residual =   7.7577406203E-10
+
 Norms of error:
-   energy norm of error       3.7046876667E-01
-      reduced by              3.5980316784E-01
-   Linf norm of error         3.0340740543E-02
-      reduced by              7.9331033329E-01
-   L2 norm of error           5.8453985870E-03
-      reduced by              2.1807524338E-01
+   energy norm of error       3.3434878172E-01
+      reduced by              3.4430867185E-01
+   Linf norm of error         3.1415834332E-02
+      reduced by              9.6486607500E-01
+   L2 norm of error           8.0616211112E-03
+      reduced by              3.2693452248E-01
 
 Total Grid:
-   number of vertices      =         626
-   number of leaf elements =        1166
+   number of vertices      =         586
+   number of leaf elements =        1084
    number of levels        =          11
-   degrees of freedom      =         626
+   degrees of freedom      =         586
    min and max degree      =           1          1
 
+Solver information:
+   number of iterations =          58
+   relative residual =   9.2993195956E-10
+
 Norms of error:
-   energy norm of error       2.4614958090E-01
-      reduced by              6.6442735001E-01
-   Linf norm of error         1.0118994066E-02
-      reduced by              3.3351176948E-01
-   L2 norm of error           3.3791828347E-03
-      reduced by              5.7809279972E-01
+   energy norm of error       2.4876295109E-01
+      reduced by              7.4402230451E-01
+   Linf norm of error         1.0114544261E-02
+      reduced by              3.2195688817E-01
+   L2 norm of error           3.3724183586E-03
+      reduced by              4.1833004952E-01
 
 Total Grid:
-   number of vertices      =         626
-   number of leaf elements =        1166
+   number of vertices      =         586
+   number of leaf elements =        1084
    number of levels        =          11
-   degrees of freedom      =         626
+   degrees of freedom      =         586
    min and max degree      =           1          1
 
 Norms of error:
-   energy norm of error       2.4614958090E-01
-   Linf norm of error         1.0118994066E-02
-   L2 norm of error           3.3791828347E-03
+   energy norm of error       2.4876295109E-01
+   Linf norm of error         1.0114544261E-02
+   L2 norm of error           3.3724183586E-03
 
 ---------------------------------------------------------
 phaml_solve_pde complete

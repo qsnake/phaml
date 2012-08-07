@@ -21,7 +21,8 @@
 module basis_functions
 
 !----------------------------------------------------
-! This module contains routines to compute the basis functions
+! This module contains routines to compute the basis functions.  It also
+! has routines to compute barycentric coordinates.
 !----------------------------------------------------
 
 
@@ -34,21 +35,25 @@ use message_passing, only: fatal
 
 implicit none
 private
-public p_hier_basis_func, h_hier_basis_func, nodal_basis_func
+public p_hier_basis_func, h_hier_basis_func, nodal_basis_func, &
+       barycentric, barycentric_tet
 
 !----------------------------------------------------
 ! The following generic interfaces are defined:
    
 interface p_hier_basis_func
    module procedure p_hier_basis_func_a, p_hier_basis_func_s
+   module procedure p_hier_basis_func_a_tet, p_hier_basis_func_s_tet
 end interface
 
 interface nodal_basis_func
    module procedure nodal_basis_func_a, nodal_basis_func_s
+   module procedure nodal_basis_func_a_tet, nodal_basis_func_s_tet
 end interface
 
 interface h_hier_basis_func
    module procedure h_hier_basis_func_a, h_hier_basis_func_s
+   module procedure h_hier_basis_func_a_tet, h_hier_basis_func_s_tet
 end interface
 
 !----------------------------------------------------
@@ -77,7 +82,7 @@ subroutine p_hier_basis_func_a(x,y,xvert,yvert,degree,set,basis,basisx,basisy, &
 ! basisyy and basisxy are all optional; only those present are computed.
 ! degree determines the polynomial degree of the basis functions; degree(1:3)
 ! is the degree of the edge bases opposite the corresponding vertex, degree(4)
-! is the degree of the face bases.
+! is the degree of the bubble bases.
 !
 ! set determines which subset of the bases is returned: "a" requests all
 ! basis functions, "b" requests only the black bases, and "r" the red bases.
@@ -86,7 +91,7 @@ subroutine p_hier_basis_func_a(x,y,xvert,yvert,degree,set,basis,basisx,basisy, &
 !  - the vertex bases at vertex 1, then 2, then 3
 !  - the edge bases at the side opposite vertex 1, then 2, then 3
 !    - for each side, the quadratic basis, then the cubic, ...
-!  - the face bases, in order of degree
+!  - the bubble bases, in order of degree
 !
 ! The basis functions are as defined in
 ! Adjerid, S., Aiffa, M. and Flaherty, J.E., Hierarchical Finite Element
@@ -108,15 +113,15 @@ subroutine p_hier_basis_func_a(x,y,xvert,yvert,degree,set,basis,basisx,basisy, &
 ! Int. J. Num. Meth. Engng., 36, (1993), pp. 3759-3779.
 !
 ! Choosing the Szabo-Babuska basis and performing block eliminations of the
-! rows/columns corresponding to related face bases in the stiffness matrix
+! rows/columns corresponding to related bubble bases in the stiffness matrix
 ! should be equivalent to using the Adjerid basis for Poisson equations.
 !----------------------------------------------------
 
 !----------------------------------------------------
 ! Dummy arguments
 
-real(my_real), intent(in) :: x(:), y(:), xvert(3), yvert(3)
-integer, intent(in) :: degree(4)
+real(my_real), intent(in) :: x(:), y(:), xvert(:), yvert(:)
+integer, intent(in) :: degree(:)
 character(len=1), intent(in) :: set
 real(my_real), intent(out), optional :: basis(:,:), basisx(:,:), basisy(:,:), &
                                         basisxx(:,:), basisyy(:,:), basisxy(:,:)
@@ -124,7 +129,7 @@ real(my_real), intent(out), optional :: basis(:,:), basisx(:,:), basisy(:,:), &
 !----------------------------------------------------
 ! Local variables:
 
-real(my_real) :: zeta(size(x),3), dzdx(3), dzdy(3), zetav1v2(size(x)), &
+real(my_real) :: zeta(3,size(x)), dzdx(3), dzdy(3), zetav1v2(size(x)), &
                  dzdxzeta12(size(x)), dzdyzeta12(size(x)), const, &
                  zetaprod(size(x)), forbasisx(size(x)), forbasisy(size(x)), &
                  forbasisxx(size(x)), forbasisyy(size(x)), forbasisxy(size(x))
@@ -135,8 +140,8 @@ real(my_real), allocatable :: legendre_d0(:,:), legendre_d1(:,:), &
 real(my_real) :: Fr1r2(size(x)),dFdL1(size(x)),dFdL2(size(x)),dFdL3(size(x)), &
                  d2FdL(size(x),3,3)
 integer :: i, j, nbasis, nedge, npoint, side, v1, v2, isub, astat1, astat2, &
-           astat3, r, r1, r2, ik, k, p, nface, nedger, nedgeb, nfacer, nfaceb, &
-           nvert
+           astat3, r, r1, r2, ik, k, p, nbubble, nedger, nedgeb, nbubbler, &
+           nbubbleb, nvert
 
 !----------------------------------------------------
 ! External routines:
@@ -169,11 +174,11 @@ do i=1,3
    endif
 end do
 if (degree(4) > 2) then
-   nfaceb = ((degree(4)-2)*(degree(4)-3))/2
-   nfacer = degree(4)-2
+   nbubbleb = ((degree(4)-2)*(degree(4)-3))/2
+   nbubbler = degree(4)-2
 else
-   nfaceb = 0
-   nfacer = 0
+   nbubbleb = 0
+   nbubbler = 0
 endif
 
 ! always consider the vertex bases to be black, even with degree=1
@@ -181,18 +186,18 @@ select case(set)
 case ("a")
    nvert = 3
    nedge = nedgeb + nedger
-   nface = nfaceb + nfacer
+   nbubble = nbubbleb + nbubbler
 case ("b")
    nvert = 3
    nedge = nedgeb
-   nface = nfaceb
+   nbubble = nbubbleb
 case ("r")
    nvert = 0
    nedge = nedger
-   nface = nfacer
+   nbubble = nbubbler
 end select
 
-nbasis = nvert + nedge + nface
+nbasis = nvert + nedge + nbubble
 
 if (present(basis)) then
    if (size(basis,1) < nbasis .or. size(basis,2) < npoint) then
@@ -282,7 +287,7 @@ call barycentric(x,y,xvert,yvert,zeta,dzdx,dzdy)
 
 if (set == "a" .or. set == "b") then
 
-   lbasis(1:3,:) = transpose(zeta)
+   lbasis(1:3,:) = zeta
 
    if (present(basisx)) then
       basisx(1,:) = dzdx(1)
@@ -356,20 +361,20 @@ if (maxval(degree) > 1) then
 ! evaluate the derivatives of the Legendre polynomials
 
          if (present(basisxx) .or. present(basisyy) .or. present(basisxy)) then
-            call dlegendre(zeta(:,v2)-zeta(:,v1),degree(side)-1, &
+            call dlegendre(zeta(v2,:)-zeta(v1,:),degree(side)-1, &
                            deriv1=legendre_d1,deriv2=legendre_d2, &
                            deriv3=legendre_d3)
          elseif (present(basisx) .or. present(basisy)) then
-            call dlegendre(zeta(:,v2)-zeta(:,v1),degree(side)-1, &
+            call dlegendre(zeta(v2,:)-zeta(v1,:),degree(side)-1, &
                            deriv1=legendre_d1,deriv2=legendre_d2)
          else
-            call dlegendre(zeta(:,v2)-zeta(:,v1),degree(side)-1, &
+            call dlegendre(zeta(v2,:)-zeta(v1,:),degree(side)-1, &
                            deriv1=legendre_d1)
          endif
 
-         zetav1v2 = zeta(:,v1)*zeta(:,v2)
-         dzdxzeta12 = dzdx(v1)*zeta(:,v2)+dzdx(v2)*zeta(:,v1)
-         dzdyzeta12 = dzdy(v1)*zeta(:,v2)+dzdy(v2)*zeta(:,v1)
+         zetav1v2 = zeta(v1,:)*zeta(v2,:)
+         dzdxzeta12 = dzdx(v1)*zeta(v2,:)+dzdx(v2)*zeta(v1,:)
+         dzdyzeta12 = dzdy(v1)*zeta(v2,:)+dzdy(v2)*zeta(v1,:)
 
 ! compute the basis functions and derivatives as requested
 
@@ -512,41 +517,41 @@ if (maxval(degree) > 1) then
                   const = (-1)**k * dbinom(i-1,k) * dbinom(i,k) / (k+1)
 
                      lbasis(isub+i,:) = lbasis(isub+i,:) + &
-                                    const * zeta(:,v1)**k * zeta(:,v2)**(i-1-k)
+                                    const * zeta(v1,:)**k * zeta(v2,:)**(i-1-k)
 
                   if (present(basisx)) then
                      if (k /= 0) then
                         basisx(isub+i,:) = basisx(isub+i,:) + const * &
-                             k*dzdx(v1)*zeta(:,v1)**(k-1)*zeta(:,v2)**(i-1-k)
+                             k*dzdx(v1)*zeta(v1,:)**(k-1)*zeta(v2,:)**(i-1-k)
                      endif
                      if (k /= i-1) then
                         basisx(isub+i,:) = basisx(isub+i,:) + const * &
-                             (i-1-k)*dzdx(v2)*zeta(:,v2)**(i-k-2)*zeta(:,v1)**k
+                             (i-1-k)*dzdx(v2)*zeta(v2,:)**(i-k-2)*zeta(v1,:)**k
                      endif
                   endif
 
                   if (present(basisy)) then
                      if (k /= 0) then
                         basisy(isub+i,:) = basisy(isub+i,:) + const * &
-                             k*dzdy(v1)*zeta(:,v1)**(k-1)*zeta(:,v2)**(i-1-k)
+                             k*dzdy(v1)*zeta(v1,:)**(k-1)*zeta(v2,:)**(i-1-k)
                      endif
                      if (k /= i-1) then
                         basisy(isub+i,:) = basisy(isub+i,:) + const * &
-                             (i-1-k)*dzdy(v2)*zeta(:,v2)**(i-k-2)*zeta(:,v1)**k
+                             (i-1-k)*dzdy(v2)*zeta(v2,:)**(i-k-2)*zeta(v1,:)**k
                      endif
                   endif
                end do
                if (present(basisx)) then
-                  basisx(isub+i,:) = dzdx(v1)*zeta(:,v2)*lbasis(isub+i,:) + &
-                                     dzdx(v2)*zeta(:,v1)*lbasis(isub+i,:) + &
-                                     zeta(:,v1)*zeta(:,v2)*basisx(isub+i,:)
+                  basisx(isub+i,:) = dzdx(v1)*zeta(v2,:)*lbasis(isub+i,:) + &
+                                     dzdx(v2)*zeta(v1,:)*lbasis(isub+i,:) + &
+                                     zeta(v1,:)*zeta(v2,:)*basisx(isub+i,:)
                endif
                if (present(basisy)) then 
-                  basisy(isub+i,:) = dzdy(v1)*zeta(:,v2)*lbasis(isub+i,:) + &
-                                     dzdy(v2)*zeta(:,v1)*lbasis(isub+i,:) + &
-                                     zeta(:,v1)*zeta(:,v2)*basisy(isub+i,:)
+                  basisy(isub+i,:) = dzdy(v1)*zeta(v2,:)*lbasis(isub+i,:) + &
+                                     dzdy(v2)*zeta(v1,:)*lbasis(isub+i,:) + &
+                                     zeta(v1,:)*zeta(v2,:)*basisy(isub+i,:)
                endif
-               lbasis(isub+i,:) = lbasis(isub+i,:)*zeta(:,v1)*zeta(:,v2)
+               lbasis(isub+i,:) = lbasis(isub+i,:)*zeta(v1,:)*zeta(v2,:)
             end do
             isub = isub + degree(side)-2
          endif
@@ -563,39 +568,39 @@ if (maxval(degree) > 1) then
             do k=0,i-1
                const = (-1)**k * dbinom(i-1,k) * dbinom(i,k) / (k+1)
                lbasis(isub+1,:) = lbasis(isub+1,:) + &
-                                    const * zeta(:,v1)**k * zeta(:,v2)**(i-1-k)
+                                    const * zeta(v1,:)**k * zeta(v2,:)**(i-1-k)
                if (present(basisx)) then
                   if (k /= 0) then
                      basisx(isub+1,:) = basisx(isub+1,:) + const * &
-                          k*dzdx(v1)*zeta(:,v1)**(k-1)*zeta(:,v2)**(i-1-k)
+                          k*dzdx(v1)*zeta(v1,:)**(k-1)*zeta(v2,:)**(i-1-k)
                   endif
                   if (k /= i-1) then
                      basisx(isub+1,:) = basisx(isub+1,:) + const * &
-                          (i-1-k)*dzdx(v2)*zeta(:,v2)**(i-k-2)*zeta(:,v1)**k
+                          (i-1-k)*dzdx(v2)*zeta(v2,:)**(i-k-2)*zeta(v1,:)**k
                   endif
                endif
                if (present(basisy)) then
                   if (k /= 0) then
                      basisy(isub+1,:) = basisy(isub+1,:) + const * &
-                          k*dzdy(v1)*zeta(:,v1)**(k-1)*zeta(:,v2)**(i-1-k)
+                          k*dzdy(v1)*zeta(v1,:)**(k-1)*zeta(v2,:)**(i-1-k)
                   endif
                   if (k /= i-1) then
                      basisy(isub+1,:) = basisy(isub+1,:) + const * &
-                          (i-1-k)*dzdy(v2)*zeta(:,v2)**(i-k-2)*zeta(:,v1)**k
+                          (i-1-k)*dzdy(v2)*zeta(v2,:)**(i-k-2)*zeta(v1,:)**k
                   endif
                endif
             end do
             if (present(basisx)) then
-               basisx(isub+1,:) = dzdx(v1)*zeta(:,v2)*lbasis(isub+1,:) + &
-                                  dzdx(v2)*zeta(:,v1)*lbasis(isub+1,:) + &
-                                  zeta(:,v1)*zeta(:,v2)*basisx(isub+1,:)
+               basisx(isub+1,:) = dzdx(v1)*zeta(v2,:)*lbasis(isub+1,:) + &
+                                  dzdx(v2)*zeta(v1,:)*lbasis(isub+1,:) + &
+                                  zeta(v1,:)*zeta(v2,:)*basisx(isub+1,:)
             endif
             if (present(basisy)) then
-               basisy(isub+1,:) = dzdy(v1)*zeta(:,v2)*lbasis(isub+1,:) + &
-                                  dzdy(v2)*zeta(:,v1)*lbasis(isub+1,:) + &
-                                  zeta(:,v1)*zeta(:,v2)*basisy(isub+1,:)
+               basisy(isub+1,:) = dzdy(v1)*zeta(v2,:)*lbasis(isub+1,:) + &
+                                  dzdy(v2)*zeta(v1,:)*lbasis(isub+1,:) + &
+                                  zeta(v1,:)*zeta(v2,:)*basisy(isub+1,:)
             endif
-            lbasis(isub+1,:) = lbasis(isub+1,:)*zeta(:,v1)*zeta(:,v2)
+            lbasis(isub+1,:) = lbasis(isub+1,:)*zeta(v1,:)*zeta(v2,:)
             isub = isub + 1
          endif
       endif
@@ -604,9 +609,9 @@ if (maxval(degree) > 1) then
 endif
 
 !-----------
-! Face bases
+! Bubble bases
 
-! no face functions for linear and quadratic bases
+! no bubble functions for linear and quadratic bases
 
 if (degree(4) > 2) then
 
@@ -634,39 +639,39 @@ if (use_basis == SZABO) then
       stop
    endif
    if (present(basisxx) .or. present(basisyy) .or. present(basisxy)) then
-      call dlegendre(zeta(:,2)-zeta(:,1),degree(4)-3,deriv0=legendre_d0, &
+      call dlegendre(zeta(2,:)-zeta(1,:),degree(4)-3,deriv0=legendre_d0, &
                      deriv1=legendre_d1,deriv2=legendre_d2)
-      call dlegendre(2*zeta(:,3)-1,degree(4)-3,deriv0=legendre2_d0, &
+      call dlegendre(2*zeta(3,:)-1,degree(4)-3,deriv0=legendre2_d0, &
                      deriv1=legendre2_d1,deriv2=legendre2_d2)
    elseif (present(basisx) .or. present(basisy)) then
-      call dlegendre(zeta(:,2)-zeta(:,1),degree(4)-3,deriv0=legendre_d0, &
+      call dlegendre(zeta(2,:)-zeta(1,:),degree(4)-3,deriv0=legendre_d0, &
                      deriv1=legendre_d1)
-      call dlegendre(2*zeta(:,3)-1,degree(4)-3,deriv0=legendre2_d0, &
+      call dlegendre(2*zeta(3,:)-1,degree(4)-3,deriv0=legendre2_d0, &
                      deriv1=legendre2_d1)
    else
-      call dlegendre(zeta(:,2)-zeta(:,1),degree(4)-3,deriv0=legendre_d0)
-      call dlegendre(2*zeta(:,3)-1,degree(4)-3,deriv0=legendre2_d0)
+      call dlegendre(zeta(2,:)-zeta(1,:),degree(4)-3,deriv0=legendre_d0)
+      call dlegendre(2*zeta(3,:)-1,degree(4)-3,deriv0=legendre2_d0)
    endif
 endif
 
 ! common products
 
-zetaprod = zeta(:,1)*zeta(:,2)*zeta(:,3)
-forbasisx = dzdx(1)*zeta(:,2)*zeta(:,3) + dzdx(2)*zeta(:,1)*zeta(:,3) + &
-            dzdx(3)*zeta(:,1)*zeta(:,2)
-forbasisy = dzdy(1)*zeta(:,2)*zeta(:,3) + dzdy(2)*zeta(:,1)*zeta(:,3) + &
-            dzdy(3)*zeta(:,1)*zeta(:,2)
-forbasisxx = 2*(dzdx(1)*dzdx(2)*zeta(:,3) + &
-                dzdx(1)*zeta(:,2)*dzdx(3) + &
-                zeta(:,1)*dzdx(2)*dzdx(3))
-forbasisyy = 2*(dzdy(1)*dzdy(2)*zeta(:,3) + &
-                dzdy(1)*zeta(:,2)*dzdy(3) + &
-                zeta(:,1)*dzdy(2)*dzdy(3))
-forbasisxy = dzdx(1)*dzdy(2)*zeta(:,3) + dzdx(1)*zeta(:,2)*dzdy(3) + &
-             dzdy(1)*dzdx(2)*zeta(:,3) + zeta(:,1)*dzdx(2)*dzdy(3) + &
-             dzdy(1)*zeta(:,2)*dzdx(3) + zeta(:,1)*dzdy(2)*dzdx(3)
+zetaprod = zeta(1,:)*zeta(2,:)*zeta(3,:)
+forbasisx = dzdx(1)*zeta(2,:)*zeta(3,:) + dzdx(2)*zeta(1,:)*zeta(3,:) + &
+            dzdx(3)*zeta(1,:)*zeta(2,:)
+forbasisy = dzdy(1)*zeta(2,:)*zeta(3,:) + dzdy(2)*zeta(1,:)*zeta(3,:) + &
+            dzdy(3)*zeta(1,:)*zeta(2,:)
+forbasisxx = 2*(dzdx(1)*dzdx(2)*zeta(3,:) + &
+                dzdx(1)*zeta(2,:)*dzdx(3) + &
+                zeta(1,:)*dzdx(2)*dzdx(3))
+forbasisyy = 2*(dzdy(1)*dzdy(2)*zeta(3,:) + &
+                dzdy(1)*zeta(2,:)*dzdy(3) + &
+                zeta(1,:)*dzdy(2)*dzdy(3))
+forbasisxy = dzdx(1)*dzdy(2)*zeta(3,:) + dzdx(1)*zeta(2,:)*dzdy(3) + &
+             dzdy(1)*dzdx(2)*zeta(3,:) + zeta(1,:)*dzdx(2)*dzdy(3) + &
+             dzdy(1)*zeta(2,:)*dzdx(3) + zeta(1,:)*dzdy(2)*dzdx(3)
 
-! evaluate the face bases and derivatives
+! evaluate the bubble bases and derivatives
 
 do k=3,degree(4)
    ik = ((k-3)*(k-2))/2
@@ -748,15 +753,15 @@ do k=3,degree(4)
                        dbinom(r2,i) * dbinom(r2+1,i) * factorial(i) * &
                        factorial(j) * factorial(i+j) / const
 
-               Fr1r2 = Fr1r2 + const * zeta(:,1)**(r1-j) * zeta(:,2)**(r2-i)
+               Fr1r2 = Fr1r2 + const * zeta(1,:)**(r1-j) * zeta(2,:)**(r2-i)
                if (present(basisx) .or. present(basisy)) then
                   if (j /= r1) then
                      dFdL1 = dFdL1 + const * &
-                                  (r1-j)*zeta(:,1)**(r1-j-1) * zeta(:,2)**(r2-i)
+                                  (r1-j)*zeta(1,:)**(r1-j-1) * zeta(2,:)**(r2-i)
                   endif
                   if (i /= r2) then
                      dFdL2 = dFdL2 + const * &
-                                  zeta(:,1)**(r1-j) * (r2-i)*zeta(:,2)**(r2-i-1)
+                                  zeta(1,:)**(r1-j) * (r2-i)*zeta(2,:)**(r2-i-1)
                   endif
                endif
             end do
@@ -836,8 +841,8 @@ subroutine p_hier_basis_func_s(x,y,xvert,yvert,degree,set,basis,basisx,basisy,&
 !----------------------------------------------------
 ! Dummy arguments
 
-real(my_real), intent(in) :: x, y, xvert(3), yvert(3)
-integer, intent(in) :: degree(4)
+real(my_real), intent(in) :: x, y, xvert(:), yvert(:)
+integer, intent(in) :: degree(:)
 character(len=1), intent(in) :: set
 real(my_real), intent(out), optional :: basis(:), basisx(:), basisy(:), &
                                         basisxx(:), basisyy(:), basisxy(:)
@@ -1108,20 +1113,25 @@ if (present(basisxy)) basisxy = basisxy_a(:,1)
 end subroutine p_hier_basis_func_s
 
 !          -----------
-subroutine barycentric(x,y,xvert,yvert,zeta,dzdx,dzdy)
+subroutine barycentric(x,y,xvert,yvert,zeta,dzdx,dzdy,no_det)
 !          -----------
 
 !----------------------------------------------------
 ! This subroutine returns the barycentric coordinates of each (x,y) and
-! their derivatives.
-! RESTRICTION triangles
+! their derivatives in the triangle with vertices (xvert,yvert).
+! If no_det is present and .true., the coordinates are not divided by the
+! determinant (area of the triangle).  This is useful if you are only looking
+! at the signs of the coordinates, where it can be wrong if the point is
+! very close to an edge and the area is very small so roundoff can be very bad.
 !----------------------------------------------------
 
 !----------------------------------------------------
 ! Dummy arguments
 
 real(my_real), intent(in) :: x(:),y(:),xvert(:),yvert(:)
-real(my_real), intent(out) :: zeta(:,:),dzdx(:),dzdy(:)
+real(my_real), intent(out) :: zeta(:,:)
+real(my_real), optional, intent(out) :: dzdx(:),dzdy(:)
+logical, optional, intent(in) :: no_det
 
 !----------------------------------------------------
 ! Local variables:
@@ -1129,6 +1139,7 @@ real(my_real), intent(out) :: zeta(:,:),dzdx(:),dzdy(:)
 real(quad_real) :: x1,x2,x3,y1,y2,y3,det,ssump,ssumm
 real(quad_real), dimension(size(x)) :: xy1,xy2,xy3,yx1,yx2,yx3,sump,summ
 real(quad_real) :: x1y2,x2y3,x3y1,x1y3,x2y1,x3y2
+logical :: local_no_det
 
 !----------------------------------------------------
 ! Begin executable code
@@ -1136,8 +1147,16 @@ real(quad_real) :: x1y2,x2y3,x3y1,x1y3,x2y1,x3y2
 ! Do a faster, less careful barycentric if not using quad precision
 
 if (quad_real == my_real) then
-   call fast_barycentric(x,y,xvert,yvert,zeta,dzdx,dzdy)
+   call fast_barycentric(x,y,xvert,yvert,zeta,dzdx,dzdy,no_det)
    return
+endif
+
+! check for request for no determinant
+
+if (present(no_det)) then
+   local_no_det = no_det
+else
+   local_no_det = .false.
 endif
 
 ! put the vertices in local variables to shorten expressions
@@ -1182,6 +1201,12 @@ if (x3y1 > 0.0_quad_real) then; ssump=ssump+x3y1; else; ssumm=ssumm+x3y1; endif
 if (x3y2 < 0.0_quad_real) then; ssump=ssump-x3y2; else; ssumm=ssumm-x3y2; endif
 det = ssump + ssumm
 
+! if the request is to not divide by the determinant, only use its sign
+
+if (local_no_det) then
+   det = sign(1.0_quad_real,det)
+endif
+
 ! compute the coordinates
 
 ! zeta(1) = (x*(y2-y3) + y*(x3-x2) + (x2*y3-x3*y2))/det
@@ -1209,7 +1234,7 @@ elsewhere
 endwhere
 if (x2y3 > 0.0_quad_real) then; sump=sump+x2y3; else; summ=summ+x2y3; endif
 if (x3y2 < 0.0_quad_real) then; sump=sump-x3y2; else; summ=summ-x3y2; endif
-zeta(:,1) = sump/det + summ/det
+zeta(1,:) = sump/det + summ/det
 
 ! zeta(2) = (x*(y3-y1) + y*(x1-x3) + (x3*y1-x1*y3))/det
 
@@ -1236,7 +1261,7 @@ elsewhere
 endwhere
 if (x3y1 > 0.0_quad_real) then; sump=sump+x3y1; else; summ=summ+x3y1; endif
 if (x1y3 < 0.0_quad_real) then; sump=sump-x1y3; else; summ=summ-x1y3; endif
-zeta(:,2) = sump/det + summ/det
+zeta(2,:) = sump/det + summ/det
 
 ! zeta(3) = (x*(y1-y2) + y*(x2-x1) + (x1*y2-x2*y1))/det
 
@@ -1263,45 +1288,59 @@ elsewhere
 endwhere
 if (x1y2 > 0.0_quad_real) then; sump=sump+x1y2; else; summ=summ+x1y2; endif
 if (x2y1 < 0.0_quad_real) then; sump=sump-x2y1; else; summ=summ-x2y1; endif
-zeta(:,3) = sump/det + summ/det
+zeta(3,:) = sump/det + summ/det
 
 ! derivatives
 
-dzdx(1) = (y2-y3)/det
-dzdx(2) = (y3-y1)/det
-dzdx(3) = (y1-y2)/det
-dzdy(1) = (x3-x2)/det
-dzdy(2) = (x1-x3)/det
-dzdy(3) = (x2-x1)/det
+if (present(dzdx)) then
+   dzdx(1) = (y2-y3)/det
+   dzdx(2) = (y3-y1)/det
+   dzdx(3) = (y1-y2)/det
+endif
+if (present(dzdy)) then
+   dzdy(1) = (x3-x2)/det
+   dzdy(2) = (x1-x3)/det
+   dzdy(3) = (x2-x1)/det
+endif
 
 end subroutine barycentric
 
 !          ----------------
-subroutine fast_barycentric(x,y,xvert,yvert,zeta,dzdx,dzdy)
+subroutine fast_barycentric(x,y,xvert,yvert,zeta,dzdx,dzdy,no_det)
 !          ----------------
 
 !----------------------------------------------------
 ! This subroutine returns the barycentric coordinates of each (x,y) and
 ! their derivatives, without using quad precision or being careful about
 ! the order in which numbers are added.
-! RESTRICTION triangles
 !----------------------------------------------------
 
 !----------------------------------------------------
 ! Dummy arguments
 
 real(my_real), intent(in) :: x(:),y(:),xvert(:),yvert(:)
-real(my_real), intent(out) :: zeta(:,:),dzdx(:),dzdy(:)
+real(my_real), intent(out) :: zeta(:,:)
+real(my_real), optional, intent(out) :: dzdx(:),dzdy(:)
+logical, optional, intent(in) :: no_det
 
 !----------------------------------------------------
 ! Local variables:
 
-real(quad_real) :: x1,x2,x3,y1,y2,y3,det,ssump,ssumm
-real(quad_real), dimension(size(x)) :: xy1,xy2,xy3,yx1,yx2,yx3,sump,summ
-real(quad_real) :: x1y2,x2y3,x3y1,x1y3,x2y1,x3y2
+real(my_real) :: x1,x2,x3,y1,y2,y3,det,ssump,ssumm
+real(my_real), dimension(size(x)) :: xy1,xy2,xy3,yx1,yx2,yx3,sump,summ
+real(my_real) :: x1y2,x2y3,x3y1,x1y3,x2y1,x3y2
+logical :: local_no_det
 
 !----------------------------------------------------
 ! Begin executable code
+
+! check for request for no determinant
+
+if (present(no_det)) then
+   local_no_det = no_det
+else
+   local_no_det = .false.
+endif
 
 ! put the vertices in local variables to shorten expressions
 
@@ -1333,22 +1372,122 @@ x3y2 = x3*y2
 
 det = x1*(y2-y3)+x2*(y3-y1)+x3*(y1-y2)
 
+! if the request is to not divide by the determinant, only use its sign
+
+if (local_no_det) then
+   det = sign(1.0_my_real,det)
+endif
+
 ! compute the coordinates
 
-zeta(:,1) = (x*(y2-y3) + y*(x3-x2) + (x2*y3-x3*y2))/det
-zeta(:,2) = (x*(y3-y1) + y*(x1-x3) + (x3*y1-x1*y3))/det
-zeta(:,3) = (x*(y1-y2) + y*(x2-x1) + (x1*y2-x2*y1))/det
+zeta(1,:) = (x*(y2-y3) + y*(x3-x2) + (x2*y3-x3*y2))/det
+zeta(2,:) = (x*(y3-y1) + y*(x1-x3) + (x3*y1-x1*y3))/det
+zeta(3,:) = (x*(y1-y2) + y*(x2-x1) + (x1*y2-x2*y1))/det
 
 ! derivatives
 
-dzdx(1) = (y2-y3)/det
-dzdx(2) = (y3-y1)/det
-dzdx(3) = (y1-y2)/det
-dzdy(1) = (x3-x2)/det
-dzdy(2) = (x1-x3)/det
-dzdy(3) = (x2-x1)/det
+if (present(dzdx)) then
+   dzdx(1) = (y2-y3)/det
+   dzdx(2) = (y3-y1)/det
+   dzdx(3) = (y1-y2)/det
+endif
+if (present(dzdy)) then
+   dzdy(1) = (x3-x2)/det
+   dzdy(2) = (x1-x3)/det
+   dzdy(3) = (x2-x1)/det
+endif
 
 end subroutine fast_barycentric
+
+!          ---------------
+subroutine barycentric_tet(x,y,z,xv,yv,zv,zeta,dzetadx,dzetady,dzetadz)
+!          ---------------
+
+!----------------------------------------------------
+! This function returns the barycentric coordinates of each (x,y,z) in the
+! tetrahedral element with vertices (xv,yv,zv).  The second dimension of zeta
+! is the same as the dimension of x, y and z.  It also optionally returns
+! the derivatives of the barycentric coordinate function, which is a constant
+! 4-vector so it is independent of the points.
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+
+real(my_real), intent(in) :: x(:),y(:),z(:),xv(:),yv(:),zv(:)
+real(my_real), intent(out) :: zeta(:,:)
+real(my_real), optional, intent(out) :: dzetadx(:),dzetady(:),dzetadz(:)
+!----------------------------------------------------
+! Local variables:
+
+real(my_real) :: A(3,3), b(3,size(x)+3)
+integer :: ipiv(3), info, nrhs, i
+!----------------------------------------------------
+! Begin executable code
+
+A(1,1) = xv(1) - xv(4); A(1,2) = xv(2) - xv(4); A(1,3) = xv(3) - xv(4)
+A(2,1) = yv(1) - yv(4); A(2,2) = yv(2) - yv(4); A(2,3) = yv(3) - yv(4)
+A(3,1) = zv(1) - zv(4); A(3,2) = zv(2) - zv(4); A(3,3) = zv(3) - zv(4)
+
+nrhs = size(x)
+b(1,1:nrhs) = x - xv(4)
+b(2,1:nrhs) = y - yv(4)
+b(3,1:nrhs) = z - zv(4)
+
+if (present(dzetadx)) then
+   nrhs = nrhs+1
+   b(:,nrhs) = (/1.0_my_real,0.0_my_real,0.0_my_real/)
+endif
+
+if (present(dzetady)) then
+   nrhs = nrhs+1
+   b(:,nrhs) = (/0.0_my_real,1.0_my_real,0.0_my_real/)
+endif
+
+if (present(dzetadz)) then
+   nrhs = nrhs+1
+   b(:,nrhs) = (/0.0_my_real,0.0_my_real,1.0_my_real/)
+endif
+
+if (my_real == kind(0.0)) then
+   call sgesv(3,nrhs,A,3,ipiv,b,3,info)
+elseif (my_real == kind(0.0d0)) then
+   call dgesv(3,nrhs,A,3,ipiv,b,3,info)
+else
+   ierr = USER_INPUT_ERROR
+   call fatal("kind of real must be single or double to use LAPACK in barycentric_tet")
+   stop
+endif
+
+if (info /= 0) then
+   ierr = PHAML_INTERNAL_ERROR
+   call fatal("LAPACK solution failed in barycentric_tet")
+   stop
+endif
+
+nrhs = size(x)
+zeta(1:3,1:nrhs) = b(:,1:nrhs)
+zeta(4,1:nrhs) = 1.0_my_real - b(1,1:nrhs) - b(2,1:nrhs) - b(3,1:nrhs)
+
+if (present(dzetadx)) then
+   nrhs = nrhs + 1
+   dzetadx(1:3) = b(:,nrhs)
+   dzetadx(4) = -b(1,nrhs) - b(2,nrhs) - b(3,nrhs)
+endif
+
+if (present(dzetady)) then
+   nrhs = nrhs + 1
+   dzetady(1:3) = b(:,nrhs)
+   dzetady(4) = -b(1,nrhs) - b(2,nrhs) - b(3,nrhs)
+endif
+
+if (present(dzetadz)) then
+   nrhs = nrhs + 1
+   dzetadz(1:3) = b(:,nrhs)
+   dzetadz(4) = -b(1,nrhs) - b(2,nrhs) - b(3,nrhs)
+endif
+
+end subroutine barycentric_tet
 
 !          ---------
 subroutine dlegendre(x,degree,deriv0,deriv1,deriv2,deriv3)
@@ -1506,14 +1645,14 @@ subroutine nodal_basis_func_a(x,y,xvert,yvert,degree,set,basis,basisx,basisy)
 !----------------------------------------------------
 ! Dummy arguments
 
-real(my_real), intent(in) :: x(:), y(:), xvert(3), yvert(3)
+real(my_real), intent(in) :: x(:), y(:), xvert(:), yvert(:)
 integer, intent(in) :: degree
 character(len=1), intent(in) :: set
 real(my_real), intent(out), optional :: basis(:,:), basisx(:,:), basisy(:,:)
 !----------------------------------------------------
 ! Local variables:
 
-real(my_real) :: zeta(size(x),3), dzdx(3), dzdy(3), b(size(x)), bx(size(x)), &
+real(my_real) :: zeta(3,size(x)), dzdx(3), dzdy(3), b(size(x)), bx(size(x)), &
                  by(size(x)), factor(size(x)), nf
 integer :: i, j, bas, nbasis, npoint, node_bary(3)
 !----------------------------------------------------
@@ -1610,7 +1749,7 @@ do bas=1,nbasis
       do j=0,degree-1
          if (j < node_bary(i)) then
             nf = nf*real(node_bary(i)-j,my_real)/degree
-            factor = zeta(:,i) - real(j,my_real)/degree
+            factor = zeta(i,:) - real(j,my_real)/degree
             if (present(basisx)) bx = bx*factor + b*dzdx(i)
             if (present(basisy)) by = by*factor + b*dzdy(i)
             b = b*factor
@@ -1638,7 +1777,7 @@ subroutine nodal_basis_func_s(x,y,xvert,yvert,degree,set,basis,basisx,basisy)
 !----------------------------------------------------
 ! Dummy arguments
 
-real(my_real), intent(in) :: x, y, xvert(3), yvert(3)
+real(my_real), intent(in) :: x, y, xvert(:), yvert(:)
 integer, intent(in) :: degree
 character(len=1), intent(in) :: set
 real(my_real), intent(out), optional :: basis(:), basisx(:), basisy(:)
@@ -1742,7 +1881,7 @@ subroutine h_hier_basis_func_a(x,y,xvert,yvert,degree,set,basis,basisx,basisy)
 !----------------------------------------------------
 ! Dummy arguments
 
-real(my_real), intent(in) :: x(:), y(:), xvert(3), yvert(3)
+real(my_real), intent(in) :: x(:), y(:), xvert(:), yvert(:)
 integer, intent(in) :: degree
 character(len=1), intent(in) :: set
 real(my_real), intent(out), optional :: basis(:,:), basisx(:,:), basisy(:,:)
@@ -1921,7 +2060,7 @@ subroutine h_hier_basis_func_s(x,y,xvert,yvert,degree,set,basis,basisx,basisy)
 !----------------------------------------------------
 ! Dummy arguments
 
-real(my_real), intent(in) :: x, y, xvert(3), yvert(3)
+real(my_real), intent(in) :: x, y, xvert(:), yvert(:)
 integer, intent(in) :: degree
 character(len=1), intent(in) :: set
 real(my_real), intent(out), optional :: basis(:), basisx(:), basisy(:)
@@ -1986,5 +2125,741 @@ if (present(basisx)) basisx = basisx_a(:,1)
 if (present(basisy)) basisy = basisy_a(:,1)
 
 end subroutine h_hier_basis_func_s
+
+!-------------------------------------------------------
+! ROUTINES FOR P-HIERARCHICAL BASIS FOR TETRAHEDRA
+!-------------------------------------------------------
+
+!          -----------------------
+subroutine p_hier_basis_func_a_tet(x,y,z,xvert,yvert,zvert,degree,set,basis, &
+                                   basisx,basisy,basisz,basisxx,basisyy, &
+                                   basiszz,basisxy,basisxz,basisyz)
+!          -----------------------
+
+!----------------------------------------------------
+! This routine computes p-hierarchical basis functions and derivatives at
+! (x,y,z) for the tetrahedron given by (xvert,yvert,zvert).
+!
+! basis* are all optional; only those present are computed.  If (x,y,z) is a
+! scalar, then the basis* must come in groups (basis), (basisx,basisy,basisz),
+! (basisxx,basisyy,basiszz) and (basisxy,basisxz,basisyz), i.e. if any of
+! basisx, basisy or basisz is present, they must all be present.
+!
+! degree(1:6) is the degree of the grid%element%edge(1:6) bases
+! degree(7:10) is the degree of the grid%element%face(1:4) bases
+! degree(11) is the degree of the bubble bases.
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+
+real(my_real), intent(in) :: x(:), y(:), z(:), xvert(:), yvert(:), zvert(:)
+integer, intent(in) :: degree(:)
+character(len=1), intent(in) :: set
+real(my_real), intent(out), optional :: basis(:,:), basisx(:,:), basisy(:,:), &
+                                        basisz(:,:), basisxx(:,:), &
+                                        basisyy(:,:), basiszz(:,:), &
+                                        basisxy(:,:), basisxz(:,:), basisyz(:,:)
+
+!----------------------------------------------------
+! Local variables:
+
+real(my_real) :: zeta(4,size(x)), dzetadx(4), dzetady(4), dzetadz(4)
+integer :: i
+!----------------------------------------------------
+! Begin executable code
+
+! TEMP only linear basis functions
+
+if (any(degree/=1)) then
+   ierr = PHAML_INTERNAL_ERROR
+   call fatal("p_hier_basis_func_a_tet: only linear basis functions supported")
+   stop
+endif
+
+call barycentric_tet(x,y,z,xvert,yvert,zvert,zeta,dzetadx,dzetady,dzetadz)
+
+if (present(basis)) basis = zeta
+if (present(basisx)) then
+   do i=1,size(x)
+      basisx(:,i) = dzetadx
+   end do
+endif
+if (present(basisy)) then
+   do i=1,size(x)
+      basisy(:,i) = dzetady
+   end do
+endif
+if (present(basisz)) then
+   do i=1,size(x)
+      basisz(:,i) = dzetadz
+   end do
+endif
+if (present(basisxx)) basisxx = 0.0_my_real
+if (present(basisyy)) basisyy = 0.0_my_real
+if (present(basiszz)) basiszz = 0.0_my_real
+if (present(basisxy)) basisxy = 0.0_my_real
+if (present(basisxz)) basisxz = 0.0_my_real
+if (present(basisyz)) basisyz = 0.0_my_real
+
+end subroutine p_hier_basis_func_a_tet
+
+!          -----------------------
+subroutine p_hier_basis_func_s_tet(x,y,z,xvert,yvert,zvert,degree,set,basis, &
+                                   basisx,basisy,basisz,basisxx,basisyy, &
+                                   basiszz,basisxy,basisxz,basisyz)
+!          -----------------------
+
+!----------------------------------------------------
+! This routine is a version of p_hier_basis_func_tet for a single point.  It
+! turns it into an array of size 1 and calls the version for an array of points.
+!
+! basis* are all optional; only those present are computed.  However, they
+! must come in groups (basis), (basisx,basisy,basisz), (basisxx,basisyy,basiszz)
+! and (basisxy,basisxz,basisyz), i.e. if any of basisx, basisy or basisz is
+! present, they must all be present.
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+
+real(my_real), intent(in) :: x, y, z, xvert(:), yvert(:), zvert(:)
+integer, intent(in) :: degree(:)
+character(len=1), intent(in) :: set
+real(my_real), intent(out), optional :: basis(:), basisx(:), basisy(:), &
+                                        basisz(:), basisxx(:), basisyy(:), &
+                                        basiszz(:), basisxy(:), basisxz(:), &
+                                        basisyz(:)
+!----------------------------------------------------
+! Local variables:
+
+real(my_real) :: x_a(1), y_a(1), z_a(1)
+real(my_real), allocatable :: basis_a(:,:), basisx_a(:,:), basisy_a(:,:), &
+                              basisz_a(:,:), basisxx_a(:,:), basisyy_a(:,:), &
+                              basiszz_a(:,:), basisxy_a(:,:), basisxz_a(:,:), &
+                              basisyz_a(:,:)
+integer :: code, astat1, astat2, astat3, astat4
+!----------------------------------------------------
+! Begin executable code
+
+if ((present(basisx) .neqv. present(basisy)) .or. &
+    (present(basisx) .neqv. present(basisz))) then
+   ierr = PHAML_INTERNAL_ERROR
+   call fatal("p_hier_basis_s_tet: all or none of basisx, basisy, basisz must be present")
+   stop
+endif
+
+if ((present(basisxx) .neqv. present(basisyy)) .or. &
+    (present(basisxx) .neqv. present(basiszz))) then
+   ierr = PHAML_INTERNAL_ERROR
+   call fatal("p_hier_basis_s_tet: all or none of basisxx, basisyy, basiszz must be present")
+   stop
+endif
+
+if ((present(basisxy) .neqv. present(basisxz)) .or. &
+    (present(basisxy) .neqv. present(basisyz))) then
+   ierr = PHAML_INTERNAL_ERROR
+   call fatal("p_hier_basis_s_tet: all or none of basisxy, basisxz, basisyz must be present")
+   stop
+endif
+
+x_a = x
+y_a = y
+z_a = z
+
+code = 0
+astat1 = 0
+astat2 = 0
+astat3 = 0
+astat4 = 0
+
+if (present(basis)) then
+   allocate(basis_a(size(basis),1),stat=astat1)
+   code = code + 1
+endif
+
+if (present(basisx) .and. astat1 == 0) then
+   allocate(basisx_a(size(basisx),1),basisy_a(size(basisx),1), &
+            basisz_a(size(basisx),1),stat=astat2)
+   code = code + 2
+endif
+
+if (present(basisxx) .and. astat1 == 0 .and. astat2 == 0) then
+   allocate(basisxx_a(size(basisxx),1),basisyy_a(size(basisxx),1), &
+            basiszz_a(size(basisxx),1),stat=astat3)
+   code = code + 4
+endif
+
+if (present(basisxy) .and. astat1 == 0 .and. astat2 == 0 .and. astat3 == 0) then
+   allocate(basisxy_a(size(basisxy),1),basisxz_a(size(basisxy),1), &
+            basisyz_a(size(basisxy),1),stat=astat4)
+   code = code + 8
+endif
+
+select case (code)
+case(0)
+case(1)
+   call p_hier_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basis=basis_a)
+case(2)
+   call p_hier_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basisx=basisx_a,basisy=basisy_a,basisz=basisz_a)
+case(3)
+   call p_hier_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basis=basis_a, &
+                        basisx=basisx_a,basisy=basisy_a,basisz=basisz_a)
+case(4)
+   call p_hier_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basisxx=basisxx_a,basisyy=basisyy_a,basiszz=basiszz_a)
+case(5)
+   call p_hier_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basis=basis_a, &
+                        basisxx=basisxx_a,basisyy=basisyy_a,basiszz=basiszz_a)
+case(6)
+   call p_hier_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basisx=basisx_a,basisy=basisy_a,basisz=basisz_a, &
+                        basisxx=basisxx_a,basisyy=basisyy_a,basiszz=basiszz_a)
+case(7)
+   call p_hier_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basis=basis_a, &
+                        basisx=basisx_a,basisy=basisy_a,basisz=basisz_a, &
+                        basisxx=basisxx_a,basisyy=basisyy_a,basiszz=basiszz_a)
+case(8)
+   call p_hier_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basisxy=basisxy_a,basisxz=basisxz_a,basisyz=basisyz_a)
+case(9)
+   call p_hier_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basis=basis_a, &
+                        basisxy=basisxy_a,basisxz=basisxz_a,basisyz=basisyz_a)
+case(10)
+   call p_hier_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basisx=basisx_a,basisy=basisy_a,basisz=basisz_a, &
+                        basisxy=basisxy_a,basisxz=basisxz_a,basisyz=basisyz_a)
+case(11)
+   call p_hier_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basis=basis_a, &
+                        basisx=basisx_a,basisy=basisy_a,basisz=basisz_a, &
+                        basisxy=basisxy_a,basisxz=basisxz_a,basisyz=basisyz_a)
+case(12)
+   call p_hier_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basisxx=basisxx_a,basisyy=basisyy_a,basiszz=basiszz_a, &
+                        basisxy=basisxy_a,basisxz=basisxz_a,basisyz=basisyz_a)
+case(13)
+   call p_hier_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basis=basis_a, &
+                        basisxx=basisxx_a,basisyy=basisyy_a,basiszz=basiszz_a, &
+                        basisxy=basisxy_a,basisxz=basisxz_a,basisyz=basisyz_a)
+case(14)
+   call p_hier_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basisx=basisx_a,basisy=basisy_a,basisz=basisz_a, &
+                        basisxx=basisxx_a,basisyy=basisyy_a,basiszz=basiszz_a, &
+                        basisxy=basisxy_a,basisxz=basisxz_a,basisyz=basisyz_a)
+case(15)
+   call p_hier_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basis=basis_a, &
+                        basisx=basisx_a,basisy=basisy_a,basisz=basisz_a, &
+                        basisxx=basisxx_a,basisyy=basisyy_a,basiszz=basiszz_a, &
+                        basisxy=basisxy_a,basisxz=basisxz_a,basisyz=basisyz_a)
+end select
+
+if (present(basis) ) basis  = basis_a(:,1)
+if (present(basisx)) then
+   basisx = basisx_a(:,1)
+   basisy = basisy_a(:,1)
+   basisz = basisz_a(:,1)
+endif
+if (present(basisxx)) then
+   basisxx = basisxx_a(:,1)
+   basisyy = basisyy_a(:,1)
+   basiszz = basiszz_a(:,1)
+endif
+if (present(basisxy)) then
+   basisxy = basisxy_a(:,1)
+   basisxz = basisxz_a(:,1)
+   basisyz = basisyz_a(:,1)
+endif
+
+end subroutine p_hier_basis_func_s_tet
+
+!-------------------------------------------------------
+! ROUTINES FOR NODAL BASIS FOR TETRAHEDRA
+!-------------------------------------------------------
+
+!          ----------------------
+subroutine nodal_basis_func_a_tet(x,y,z,xvert,yvert,zvert,degree,set,basis, &
+                                  basisx,basisy,basisz,basisxx,basisyy, &
+                                  basiszz,basisxy,basisxz,basisyz)
+!          ----------------------
+
+!----------------------------------------------------
+! This routine computes nodal basis functions and derivatives at
+! (x,y,z) for the tetrahedron given by (xvert,yvert,zvert).
+!
+! basis* are all optional; only those present are computed.  If (x,y,z) is a
+! scalar, then the basis* must come in groups (basis), (basisx,basisy,basisz),
+! (basisxx,basisyy,basiszz) and (basisxy,basisxz,basisyz), i.e. if any of
+! basisx, basisy or basisz is present, they must all be present.
+!
+! degree(1:6) is the degree of the grid%element%edge(1:6) bases
+! degree(7:10) is the degree of the grid%element%face(1:4) bases
+! degree(11) is the degree of the bubble bases.
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+
+real(my_real), intent(in) :: x(:), y(:), z(:), xvert(:), yvert(:), zvert(:)
+integer, intent(in) :: degree
+character(len=1), intent(in) :: set
+real(my_real), intent(out), optional :: basis(:,:), basisx(:,:), basisy(:,:), &
+                                        basisz(:,:), basisxx(:,:), &
+                                        basisyy(:,:), basiszz(:,:), &
+                                        basisxy(:,:), basisxz(:,:), basisyz(:,:)
+
+!----------------------------------------------------
+! Local variables:
+
+real(my_real) :: zeta(4,size(x)), dzetadx(4), dzetady(4), dzetadz(4)
+integer :: i
+!----------------------------------------------------
+! Begin executable code
+
+! TEMP only linear basis functions
+
+if (degree/=1) then
+   ierr = PHAML_INTERNAL_ERROR
+   call fatal("nodal_basis_func_a_tet: only linear basis functions supported")
+   stop
+endif
+
+call barycentric_tet(x,y,z,xvert,yvert,zvert,zeta,dzetadx,dzetady,dzetadz)
+
+if (present(basis)) basis = zeta
+if (present(basisx)) then
+   do i=1,size(x)
+      basisx(:,i) = dzetadx
+   end do
+endif
+if (present(basisy)) then
+   do i=1,size(x)
+      basisy(:,i) = dzetady
+   end do
+endif
+if (present(basisz)) then
+   do i=1,size(x)
+      basisz(:,i) = dzetadz
+   end do
+endif
+if (present(basisxx)) basisxx = 0.0_my_real
+if (present(basisyy)) basisyy = 0.0_my_real
+if (present(basiszz)) basiszz = 0.0_my_real
+if (present(basisxy)) basisxy = 0.0_my_real
+if (present(basisxz)) basisxz = 0.0_my_real
+if (present(basisyz)) basisyz = 0.0_my_real
+
+end subroutine nodal_basis_func_a_tet
+
+!          ----------------------
+subroutine nodal_basis_func_s_tet(x,y,z,xvert,yvert,zvert,degree,set,basis, &
+                                   basisx,basisy,basisz,basisxx,basisyy, &
+                                   basiszz,basisxy,basisxz,basisyz)
+!          ----------------------
+
+!----------------------------------------------------
+! This routine is a version of nodal_basis_func_tet for a single point.  It
+! turns it into an array of size 1 and calls the version for an array of points.
+!
+! basis* are all optional; only those present are computed.  However, they
+! must come in groups (basis), (basisx,basisy,basisz), (basisxx,basisyy,basiszz)
+! and (basisxy,basisxz,basisyz), i.e. if any of basisx, basisy or basisz is
+! present, they must all be present.
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+
+real(my_real), intent(in) :: x, y, z, xvert(:), yvert(:), zvert(:)
+integer, intent(in) :: degree
+character(len=1), intent(in) :: set
+real(my_real), intent(out), optional :: basis(:), basisx(:), basisy(:), &
+                                        basisz(:), basisxx(:), basisyy(:), &
+                                        basiszz(:), basisxy(:), basisxz(:), &
+                                        basisyz(:)
+!----------------------------------------------------
+! Local variables:
+
+real(my_real) :: x_a(1), y_a(1), z_a(1)
+real(my_real), allocatable :: basis_a(:,:), basisx_a(:,:), basisy_a(:,:), &
+                              basisz_a(:,:), basisxx_a(:,:), basisyy_a(:,:), &
+                              basiszz_a(:,:), basisxy_a(:,:), basisxz_a(:,:), &
+                              basisyz_a(:,:)
+integer :: code, astat1, astat2, astat3, astat4
+!----------------------------------------------------
+! Begin executable code
+
+if ((present(basisx) .neqv. present(basisy)) .or. &
+    (present(basisx) .neqv. present(basisz))) then
+   ierr = PHAML_INTERNAL_ERROR
+   call fatal("nodal_basis_s_tet: all or none of basisx, basisy, basisz must be present")
+   stop
+endif
+
+if ((present(basisxx) .neqv. present(basisyy)) .or. &
+    (present(basisxx) .neqv. present(basiszz))) then
+   ierr = PHAML_INTERNAL_ERROR
+   call fatal("nodal_basis_s_tet: all or none of basisxx, basisyy, basiszz must be present")
+   stop
+endif
+
+if ((present(basisxy) .neqv. present(basisxz)) .or. &
+    (present(basisxy) .neqv. present(basisyz))) then
+   ierr = PHAML_INTERNAL_ERROR
+   call fatal("nodal_basis_s_tet: all or none of basisxy, basisxz, basisyz must be present")
+   stop
+endif
+
+x_a = x
+y_a = y
+z_a = z
+
+code = 0
+astat1 = 0
+astat2 = 0
+astat3 = 0
+astat4 = 0
+
+if (present(basis)) then
+   allocate(basis_a(size(basis),1),stat=astat1)
+   code = code + 1
+endif
+
+if (present(basisx) .and. astat1 == 0) then
+   allocate(basisx_a(size(basisx),1),basisy_a(size(basisx),1), &
+            basisz_a(size(basisx),1),stat=astat2)
+   code = code + 2
+endif
+
+if (present(basisxx) .and. astat1 == 0 .and. astat2 == 0) then
+   allocate(basisxx_a(size(basisxx),1),basisyy_a(size(basisxx),1), &
+            basiszz_a(size(basisxx),1),stat=astat3)
+   code = code + 4
+endif
+
+if (present(basisxy) .and. astat1 == 0 .and. astat2 == 0 .and. astat3 == 0) then
+   allocate(basisxy_a(size(basisxy),1),basisxz_a(size(basisxy),1), &
+            basisyz_a(size(basisxy),1),stat=astat4)
+   code = code + 8
+endif
+
+select case (code)
+case(0)
+case(1)
+   call nodal_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basis=basis_a)
+case(2)
+   call nodal_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basisx=basisx_a,basisy=basisy_a,basisz=basisz_a)
+case(3)
+   call nodal_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basis=basis_a, &
+                        basisx=basisx_a,basisy=basisy_a,basisz=basisz_a)
+case(4)
+   call nodal_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basisxx=basisxx_a,basisyy=basisyy_a,basiszz=basiszz_a)
+case(5)
+   call nodal_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basis=basis_a, &
+                        basisxx=basisxx_a,basisyy=basisyy_a,basiszz=basiszz_a)
+case(6)
+   call nodal_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basisx=basisx_a,basisy=basisy_a,basisz=basisz_a, &
+                        basisxx=basisxx_a,basisyy=basisyy_a,basiszz=basiszz_a)
+case(7)
+   call nodal_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basis=basis_a, &
+                        basisx=basisx_a,basisy=basisy_a,basisz=basisz_a, &
+                        basisxx=basisxx_a,basisyy=basisyy_a,basiszz=basiszz_a)
+case(8)
+   call nodal_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basisxy=basisxy_a,basisxz=basisxz_a,basisyz=basisyz_a)
+case(9)
+   call nodal_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basis=basis_a, &
+                        basisxy=basisxy_a,basisxz=basisxz_a,basisyz=basisyz_a)
+case(10)
+   call nodal_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basisx=basisx_a,basisy=basisy_a,basisz=basisz_a, &
+                        basisxy=basisxy_a,basisxz=basisxz_a,basisyz=basisyz_a)
+case(11)
+   call nodal_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basis=basis_a, &
+                        basisx=basisx_a,basisy=basisy_a,basisz=basisz_a, &
+                        basisxy=basisxy_a,basisxz=basisxz_a,basisyz=basisyz_a)
+case(12)
+   call nodal_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basisxx=basisxx_a,basisyy=basisyy_a,basiszz=basiszz_a, &
+                        basisxy=basisxy_a,basisxz=basisxz_a,basisyz=basisyz_a)
+case(13)
+   call nodal_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basis=basis_a, &
+                        basisxx=basisxx_a,basisyy=basisyy_a,basiszz=basiszz_a, &
+                        basisxy=basisxy_a,basisxz=basisxz_a,basisyz=basisyz_a)
+case(14)
+   call nodal_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basisx=basisx_a,basisy=basisy_a,basisz=basisz_a, &
+                        basisxx=basisxx_a,basisyy=basisyy_a,basiszz=basiszz_a, &
+                        basisxy=basisxy_a,basisxz=basisxz_a,basisyz=basisyz_a)
+case(15)
+   call nodal_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basis=basis_a, &
+                        basisx=basisx_a,basisy=basisy_a,basisz=basisz_a, &
+                        basisxx=basisxx_a,basisyy=basisyy_a,basiszz=basiszz_a, &
+                        basisxy=basisxy_a,basisxz=basisxz_a,basisyz=basisyz_a)
+end select
+
+if (present(basis) ) basis  = basis_a(:,1)
+if (present(basisx)) then
+   basisx = basisx_a(:,1)
+   basisy = basisy_a(:,1)
+   basisz = basisz_a(:,1)
+endif
+if (present(basisxx)) then
+   basisxx = basisxx_a(:,1)
+   basisyy = basisyy_a(:,1)
+   basiszz = basiszz_a(:,1)
+endif
+if (present(basisxy)) then
+   basisxy = basisxy_a(:,1)
+   basisxz = basisxz_a(:,1)
+   basisyz = basisyz_a(:,1)
+endif
+
+end subroutine nodal_basis_func_s_tet
+
+!-------------------------------------------------------
+! ROUTINES FOR H-HIERARCHICAL BASIS FOR TETRAHEDRA
+!-------------------------------------------------------
+
+!          -----------------------
+subroutine h_hier_basis_func_a_tet(x,y,z,xvert,yvert,zvert,degree,set,basis, &
+                                  basisx,basisy,basisz,basisxx,basisyy, &
+                                  basiszz,basisxy,basisxz,basisyz)
+!          -----------------------
+
+!----------------------------------------------------
+! This routine computes h-hierarchical basis functions and derivatives at
+! (x,y,z) for the tetrahedron given by (xvert,yvert,zvert).
+!
+! basis* are all optional; only those present are computed.  If (x,y,z) is a
+! scalar, then the basis* must come in groups (basis), (basisx,basisy,basisz),
+! (basisxx,basisyy,basiszz) and (basisxy,basisxz,basisyz), i.e. if any of
+! basisx, basisy or basisz is present, they must all be present.
+!
+! degree(1:6) is the degree of the grid%element%edge(1:6) bases
+! degree(7:10) is the degree of the grid%element%face(1:4) bases
+! degree(11) is the degree of the bubble bases.
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+
+real(my_real), intent(in) :: x(:), y(:), z(:), xvert(:), yvert(:), zvert(:)
+integer, intent(in) :: degree
+character(len=1), intent(in) :: set
+real(my_real), intent(out), optional :: basis(:,:), basisx(:,:), basisy(:,:), &
+                                        basisz(:,:), basisxx(:,:), &
+                                        basisyy(:,:), basiszz(:,:), &
+                                        basisxy(:,:), basisxz(:,:), basisyz(:,:)
+
+!----------------------------------------------------
+! Local variables:
+
+real(my_real) :: zeta(4,size(x)), dzetadx(4), dzetady(4), dzetadz(4)
+integer :: i
+!----------------------------------------------------
+! Begin executable code
+
+ierr = PHAML_INTERNAL_ERROR
+call fatal("have not written h-hierarchical basis functions for tetrahedra")
+stop
+
+end subroutine h_hier_basis_func_a_tet
+
+!          -----------------------
+subroutine h_hier_basis_func_s_tet(x,y,z,xvert,yvert,zvert,degree,set,basis, &
+                                   basisx,basisy,basisz,basisxx,basisyy, &
+                                   basiszz,basisxy,basisxz,basisyz)
+!          -----------------------
+
+!----------------------------------------------------
+! This routine is a version of nodal_basis_func_tet for a single point.  It
+! turns it into an array of size 1 and calls the version for an array of points.
+!
+! basis* are all optional; only those present are computed.  However, they
+! must come in groups (basis), (basisx,basisy,basisz), (basisxx,basisyy,basiszz)
+! and (basisxy,basisxz,basisyz), i.e. if any of basisx, basisy or basisz is
+! present, they must all be present.
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+
+real(my_real), intent(in) :: x, y, z, xvert(:), yvert(:), zvert(:)
+integer, intent(in) :: degree
+character(len=1), intent(in) :: set
+real(my_real), intent(out), optional :: basis(:), basisx(:), basisy(:), &
+                                        basisz(:), basisxx(:), basisyy(:), &
+                                        basiszz(:), basisxy(:), basisxz(:), &
+                                        basisyz(:)
+!----------------------------------------------------
+! Local variables:
+
+real(my_real) :: x_a(1), y_a(1), z_a(1)
+real(my_real), allocatable :: basis_a(:,:), basisx_a(:,:), basisy_a(:,:), &
+                              basisz_a(:,:), basisxx_a(:,:), basisyy_a(:,:), &
+                              basiszz_a(:,:), basisxy_a(:,:), basisxz_a(:,:), &
+                              basisyz_a(:,:)
+integer :: code, astat1, astat2, astat3, astat4
+!----------------------------------------------------
+! Begin executable code
+
+if ((present(basisx) .neqv. present(basisy)) .or. &
+    (present(basisx) .neqv. present(basisz))) then
+   ierr = PHAML_INTERNAL_ERROR
+   call fatal("h_hier_basis_s_tet: all or none of basisx, basisy, basisz must be present")
+   stop
+endif
+
+if ((present(basisxx) .neqv. present(basisyy)) .or. &
+    (present(basisxx) .neqv. present(basiszz))) then
+   ierr = PHAML_INTERNAL_ERROR
+   call fatal("h_hier_basis_s_tet: all or none of basisxx, basisyy, basiszz must be present")
+   stop
+endif
+
+if ((present(basisxy) .neqv. present(basisxz)) .or. &
+    (present(basisxy) .neqv. present(basisyz))) then
+   ierr = PHAML_INTERNAL_ERROR
+   call fatal("h_hier_basis_s_tet: all or none of basisxy, basisxz, basisyz must be present")
+   stop
+endif
+
+x_a = x
+y_a = y
+z_a = z
+
+code = 0
+astat1 = 0
+astat2 = 0
+astat3 = 0
+astat4 = 0
+
+if (present(basis)) then
+   allocate(basis_a(size(basis),1),stat=astat1)
+   code = code + 1
+endif
+
+if (present(basisx) .and. astat1 == 0) then
+   allocate(basisx_a(size(basisx),1),basisy_a(size(basisx),1), &
+            basisz_a(size(basisx),1),stat=astat2)
+   code = code + 2
+endif
+
+if (present(basisxx) .and. astat1 == 0 .and. astat2 == 0) then
+   allocate(basisxx_a(size(basisxx),1),basisyy_a(size(basisxx),1), &
+            basiszz_a(size(basisxx),1),stat=astat3)
+   code = code + 4
+endif
+
+if (present(basisxy) .and. astat1 == 0 .and. astat2 == 0 .and. astat3 == 0) then
+   allocate(basisxy_a(size(basisxy),1),basisxz_a(size(basisxy),1), &
+            basisyz_a(size(basisxy),1),stat=astat4)
+   code = code + 8
+endif
+
+select case (code)
+case(0)
+case(1)
+   call h_hier_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basis=basis_a)
+case(2)
+   call h_hier_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basisx=basisx_a,basisy=basisy_a,basisz=basisz_a)
+case(3)
+   call h_hier_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basis=basis_a, &
+                        basisx=basisx_a,basisy=basisy_a,basisz=basisz_a)
+case(4)
+   call h_hier_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basisxx=basisxx_a,basisyy=basisyy_a,basiszz=basiszz_a)
+case(5)
+   call h_hier_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basis=basis_a, &
+                        basisxx=basisxx_a,basisyy=basisyy_a,basiszz=basiszz_a)
+case(6)
+   call h_hier_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basisx=basisx_a,basisy=basisy_a,basisz=basisz_a, &
+                        basisxx=basisxx_a,basisyy=basisyy_a,basiszz=basiszz_a)
+case(7)
+   call h_hier_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basis=basis_a, &
+                        basisx=basisx_a,basisy=basisy_a,basisz=basisz_a, &
+                        basisxx=basisxx_a,basisyy=basisyy_a,basiszz=basiszz_a)
+case(8)
+   call h_hier_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basisxy=basisxy_a,basisxz=basisxz_a,basisyz=basisyz_a)
+case(9)
+   call h_hier_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basis=basis_a, &
+                        basisxy=basisxy_a,basisxz=basisxz_a,basisyz=basisyz_a)
+case(10)
+   call h_hier_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basisx=basisx_a,basisy=basisy_a,basisz=basisz_a, &
+                        basisxy=basisxy_a,basisxz=basisxz_a,basisyz=basisyz_a)
+case(11)
+   call h_hier_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basis=basis_a, &
+                        basisx=basisx_a,basisy=basisy_a,basisz=basisz_a, &
+                        basisxy=basisxy_a,basisxz=basisxz_a,basisyz=basisyz_a)
+case(12)
+   call h_hier_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basisxx=basisxx_a,basisyy=basisyy_a,basiszz=basiszz_a, &
+                        basisxy=basisxy_a,basisxz=basisxz_a,basisyz=basisyz_a)
+case(13)
+   call h_hier_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basis=basis_a, &
+                        basisxx=basisxx_a,basisyy=basisyy_a,basiszz=basiszz_a, &
+                        basisxy=basisxy_a,basisxz=basisxz_a,basisyz=basisyz_a)
+case(14)
+   call h_hier_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basisx=basisx_a,basisy=basisy_a,basisz=basisz_a, &
+                        basisxx=basisxx_a,basisyy=basisyy_a,basiszz=basiszz_a, &
+                        basisxy=basisxy_a,basisxz=basisxz_a,basisyz=basisyz_a)
+case(15)
+   call h_hier_basis_func_a_tet(x_a,y_a,z_a,xvert,yvert,zvert,degree,set, &
+                        basis=basis_a, &
+                        basisx=basisx_a,basisy=basisy_a,basisz=basisz_a, &
+                        basisxx=basisxx_a,basisyy=basisyy_a,basiszz=basiszz_a, &
+                        basisxy=basisxy_a,basisxz=basisxz_a,basisyz=basisyz_a)
+end select
+
+if (present(basis) ) basis  = basis_a(:,1)
+if (present(basisx)) then
+   basisx = basisx_a(:,1)
+   basisy = basisy_a(:,1)
+   basisz = basisz_a(:,1)
+endif
+if (present(basisxx)) then
+   basisxx = basisxx_a(:,1)
+   basisyy = basisyy_a(:,1)
+   basiszz = basiszz_a(:,1)
+endif
+if (present(basisxy)) then
+   basisxy = basisxy_a(:,1)
+   basisxz = basisxz_a(:,1)
+   basisyz = basisyz_a(:,1)
+endif
+
+end subroutine h_hier_basis_func_s_tet
 
 end module basis_functions

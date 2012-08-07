@@ -165,7 +165,7 @@ if (wdim /= 0) then
 ! encounter an unowned element.
 
    do i=1,nleaf
-      loc_gid = hash_unpack_key(gid(1:KEY_SIZE),(i-1)*KEY_SIZE+1)
+      loc_gid = hash_unpack_key(gid(1:nleaf*KEY_SIZE),(i-1)*KEY_SIZE+1)
       loc_lid = hash_decode_key(loc_gid,global_grid%elem_hash)
       if (loc_lid == HASH_NOT_FOUND) then
          ierr = ZOLTAN_FATAL
@@ -374,14 +374,14 @@ endif
 
 if (global_grid%element(loc_lid)%level == 1) then
    count = 0
-   do i=1,3
+   do i=1,NEIGHBORS_PER_ELEMENT
       if (global_grid%initial_neighbor(i,loc_lid) /= BOUNDARY) count = count + 1
    end do
 else
    count = 1
-   if (.not. (global_grid%element(loc_lid)%mate == BOUNDARY)) count = count + 1
-   parent=hash_decode_key(global_grid%element(loc_lid)%gid/2,global_grid%elem_hash)
-   if (.not. (global_grid%element(parent)%mate == BOUNDARY)) count = count + 1
+   if (.not. (global_grid%element(loc_lid)%mate==BOUNDARY)) count = count + 1
+   parent=hash_decode_key(global_grid%element(loc_lid)%gid/MAX_CHILD,global_grid%elem_hash)
+   if (.not. (global_grid%element(parent)%mate==BOUNDARY)) count = count + 1
 endif
 z_num_edge = count
 ierr = ZOLTAN_OK
@@ -412,7 +412,8 @@ integer(Zoltan_INT), intent(out) :: ierr
 ! Local variables:
 
 integer :: i, count, neigh, loc_lid
-integer :: loc_nbor(EDGES_PER_ELEMENT*KEY_SIZE), nbor_lid(EDGES_PER_ELEMENT)
+integer :: loc_nbor(NEIGHBORS_PER_ELEMENT*KEY_SIZE), &
+           nbor_lid(NEIGHBORS_PER_ELEMENT)
 type(hash_key) :: loc_gid
 !----------------------------------------------------
 ! Begin executable code
@@ -444,7 +445,7 @@ endif
 ! pack the gids
 
 count = 0
-do i=1,3
+do i=1,NEIGHBORS_PER_ELEMENT
    neigh = nbor_lid(i)
    if (neigh /= BOUNDARY) then
       call hash_pack_key(global_grid%element(neigh)%gid,loc_nbor, &
@@ -696,7 +697,7 @@ else
       num_vert(i) = VERTICES_PER_ELEMENT
       do j=1,VERTICES_PER_ELEMENT
          call hash_pack_key(global_grid%vertex(global_grid%element(elem)%vertex(j))%gid, &
-                            verts(1:MAX_CHILD*KEY_SIZE),ind)
+                            verts(1:2*VERTICES_PER_ELEMENT*KEY_SIZE),ind)
          ind = ind + KEY_SIZE
       end do
    end do
@@ -1201,7 +1202,7 @@ integer, pointer :: irecv(:)
 my_processor = my_proc(procs)
 nproc = num_proc(procs)
 
-allocate(elem_owner(size(grid%element)),stat=astat)
+allocate(elem_owner(grid%biggest_elem),stat=astat)
 if (astat /= 0) then
    ierr = ALLOC_FAILED
    call fatal("allocation failed in zoltan_partition",procs=procs)
@@ -1362,7 +1363,7 @@ if (my_processor == 1) then
 ! determine the new processor for each leaf.  This is needed because the
 ! export list doesn't tell which elements belong to processor 1
 
-   allocate(export_to(size(grid%element)),stat=astat)
+   allocate(export_to(grid%biggest_elem),stat=astat)
    if (astat /= 0) then
       ierr = ALLOC_FAILED
       call fatal("allocation failed in proc1_to_others",procs=procs)

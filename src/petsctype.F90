@@ -57,7 +57,7 @@ type petsc_matrix_type
    Mat :: A
    Vec :: b
    integer :: my_own_eq, my_total_eq, global_eq, my_global_low, my_global_hi
-   logical(small_logical), pointer :: iown(:)
+   logical(small_logical), pointer :: iown(:), dirich(:)
    integer, pointer :: petsc_index(:)
    type(hash_table_eq), pointer :: eq_hash
 end type petsc_matrix_type

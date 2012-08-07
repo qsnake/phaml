@@ -1,9 +1,10 @@
 ---------------------------------------------------------
-           PHAML   Version 1.9.1
+           PHAML   Version 1.11.0
 
 Output from slave number     1
   PDE id is     0
   Number of slave processors is     2
+  Number of OpenMP threads is       1
 
 Subroutine phaml_solve_pde parameters:
   max_elem           infinity
@@ -17,6 +18,10 @@ Subroutine phaml_solve_pde parameters:
   task               BALANCE_REFINE_SOLVE
   solve_init         true
   system_size                 1
+  pde_has_first_order_terms  false
+  pde_has_cross_derivative   false
+  laplacian_operator         true
+  isosceles_right_triangles  true
   print_grid_when    FINAL
   print_grid_who     SLAVES
   print_linsys_when  NEVER
@@ -37,7 +42,7 @@ Subroutine phaml_solve_pde parameters:
   errtype            ABSOLUTE_ERROR
   reftype            H_ADAPTIVE
   edge_rule          MINIMUM_RULE
-  refterm            DOUBLE_NEQ_SMOOTH
+  refterm            DOUBLE_NEQ
   derefine           true
   partition_method   RTK
   prebalance         BALANCE_ELEMENTS
@@ -53,20 +58,20 @@ Subroutine phaml_solve_pde parameters:
 ---------------------------------------------------------
 
 My Grid:
-   number of vertices       =         409
-   number of vertices I own =         362
-   number of elements       =        1462
-   number of leaf elements  =         735
-   leaf elements I own      =         661
+   number of vertices       =         329
+   number of vertices I own =         286
+   number of elements       =        1146
+   number of leaf elements  =         577
+   leaf elements I own      =         511
    number of levels         =          12
-   degrees of freedom       =         409
-   degrees of freedom I own =         362
+   degrees of freedom       =         329
+   degrees of freedom I own =         286
    min and max degree       =           1          1
 
 Norms of error:
-   L2 norm of error           2.5471171457E-03
-   L2 error estimate          7.0383497146E-04
-      effectivity             2.7632610956E-01
+   L2 norm of error           5.4422199121E-03
+   L2 error estimate          5.1330994901E-03
+      effectivity             9.4319957169E-01
 
 ---------------------------------------------------------
 phaml_solve_pde complete

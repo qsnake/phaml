@@ -59,7 +59,7 @@ nelem = 1000
 print *,"number of elements for the grid (for example, 1000)?"
 read *,nelem
 finalt = 0.1_my_real
-print *,"final time (for example, 0.1)?"
+print *,"final time (for example, 0.04)?"
 read *,finalt
 deltat = .001_my_real
 print *,"time step (for example, .001)?"
@@ -88,6 +88,9 @@ call phaml_send(soln%procs,graphics_proc(soln%procs),(/21,-1/),2, &
 call phaml_solve_pde(soln,                      &
                      max_elem=nelem,            &
                      task=SET_INITIAL,          &
+                     pde_has_first_order_terms = .false., &
+                     pde_has_cross_derivative = .false., &
+                     laplacian_operator = .false., &
                      error_estimator=INITIAL_CONDITION, &
                      print_header_who=NO_ONE,   &
                      print_trailer_who=NO_ONE,  &

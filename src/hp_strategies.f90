@@ -70,24 +70,6 @@ public mark_reftype, mark_reftype_one, set_numref, refine_refsoln, &
 !----------------------------------------------------
 ! Non-module procedures used are:
 
-interface
-
-   subroutine bconds(x,y,bmark,itype,c,rs)
-   use global
-   real(my_real), intent(in) :: x,y
-   integer, intent(in) :: bmark
-   integer, intent(out) :: itype(:)
-   real(my_real), intent(out) :: c(:,:),rs(:)
-   end subroutine bconds
-
-   function regularity(x,y)
-   use global
-   real(my_real), intent(in) :: x(3),y(3)
-   real(my_real) :: regularity
-   end function regularity
-
-end interface
-
 !----------------------------------------------------
 ! The following defined constants are defined:
 
@@ -180,10 +162,11 @@ integer, intent(inout) :: new_p(2)
 !----------------------------------------------------
 ! Local variables:
 
-integer :: add, mate
-real(my_real) :: energy_errind(max(1,grid%num_eval)), err, err2, reg
+integer :: add, mate, i
+real(my_real) :: energy_errind(max(1,grid%num_eval)), err, err2, reg, &
+                 z_coords(VERTICES_PER_ELEMENT)
 logical :: weight_by_dof = .false.! TEMP100722
-integer :: neigh(3) ! TEMP100722
+integer :: neigh(NEIGHBORS_PER_ELEMENT) ! TEMP100722
 !----------------------------------------------------
 ! Begin executable code
 
@@ -260,6 +243,11 @@ if (grid%element(elem)%isleaf .and. grid%element(elem)%iown) then
                          (grid%element(elem)%degree-2))/2 + &
                           grid%edge(grid%element(elem)%edge(3))%degree + &
                           grid%element(elem)%degree-1
+                  if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+                     ierr = PHAML_INTERNAL_ERROR
+                     call fatal("what to do with mate in HP_BIGGER_ERRIND?")
+                     stop
+                  endif
                   if (.not. grid%element(elem)%mate == BOUNDARY) then
 !                     mate = hash_decode_key(grid%element(elem)%mate, &
 !                                            grid%elem_hash)
@@ -308,9 +296,14 @@ if (grid%element(elem)%isleaf .and. grid%element(elem)%iown) then
 
                   select case(refine_control%hp_strategy)
                   case (HP_APRIORI)
-                     reg = regularity( &
-                             grid%vertex(grid%element(elem)%vertex)%coord%x, &
-                             grid%vertex(grid%element(elem)%vertex)%coord%y)
+                     do i=1,VERTICES_PER_ELEMENT
+                        z_coords(i) = &
+                         zcoord(grid%vertex(grid%element(elem)%vertex(i))%coord)
+                     end do
+                     reg = my_regularity( &
+                               grid%vertex(grid%element(elem)%vertex)%coord%x, &
+                               grid%vertex(grid%element(elem)%vertex)%coord%y, &
+                               z_coords)
                      add = 1
                   case (HP_PRIOR2P_E)
                      reg = prior2p_e_regularity(grid,elem)
@@ -487,8 +480,9 @@ integer, intent(inout) :: numhref(:), numpref(:)
 !----------------------------------------------------
 ! Local variables:
 
-real(my_real) :: theta_I, log2, r, p_0_k, theta_I_k, theta_T, nu_k
-real(my_real), dimension(size(grid%element)) :: mu_k, theta_0_k
+real(my_real) :: theta_I, log2, r, p_0_k, theta_I_k, theta_T, nu_k, &
+                 z_coords(VERTICES_PER_ELEMENT)
+real(my_real), dimension(grid%biggest_elem) :: mu_k, theta_0_k
 integer :: N_I, N_I_own, lev, elem, i
 !----------------------------------------------------
 ! Begin executable code
@@ -539,8 +533,13 @@ elseif (refine_control%t3s_reftype == H_ADAPTIVE) then
 ! get the regularity, which should be min(s+2,1+alpha) where rhs is in H^s(T)
 ! and alpha = pi/(angle of reentrant corner)
 
-            r = regularity(grid%vertex(grid%element(elem)%vertex)%coord%x, &
-                           grid%vertex(grid%element(elem)%vertex)%coord%y)
+            do i=1,VERTICES_PER_ELEMENT
+               z_coords(i) = &
+                  zcoord(grid%vertex(grid%element(elem)%vertex(i))%coord)
+            end do
+            r = my_regularity(grid%vertex(grid%element(elem)%vertex)%coord%x, &
+                              grid%vertex(grid%element(elem)%vertex)%coord%y, &
+                              z_coords)
 
             mu_k(elem) = min(real(grid%element(elem)%degree,my_real),r-1)
 ! TEMP only using first eigenvector
@@ -630,8 +629,13 @@ elseif (refine_control%t3s_reftype == P_ADAPTIVE) then
 ! get the regularity, which should be min(s+2,1+alpha) where rhs is in H^s(T)
 ! and alpha = pi/(angle of reentrant corner)
 
-            r = regularity(grid%vertex(grid%element(elem)%vertex)%coord%x, &
-                           grid%vertex(grid%element(elem)%vertex)%coord%y)
+            do i=1,VERTICES_PER_ELEMENT
+               z_coords(i) = &
+                  zcoord(grid%vertex(grid%element(elem)%vertex(i))%coord)
+            end do
+            r = my_regularity(grid%vertex(grid%element(elem)%vertex)%coord%x, &
+                              grid%vertex(grid%element(elem)%vertex)%coord%y, &
+                              z_coords)
 
 ! TEMP for smooth areas, say r>10, use nu=1, because I really don't understand
 
@@ -699,11 +703,14 @@ real(my_real) :: prior2p_e_regularity
 !----------------------------------------------------
 ! Local variables:
 
-real(my_real) :: xvert(VERTICES_PER_ELEMENT), yvert(VERTICES_PER_ELEMENT)
+real(my_real) :: xvert(VERTICES_PER_ELEMENT), yvert(VERTICES_PER_ELEMENT), &
+                 zvert(VERTICES_PER_ELEMENT)
 real(my_real), allocatable :: lmat(:,:), lrhs(:), solut(:)
-real(my_real) :: rmin, errest2, errest1, au
-integer :: degree(EDGES_PER_ELEMENT+1), bmark(EDGES_PER_ELEMENT), &
-           edge_type(EDGES_PER_ELEMENT,grid%system_size)
+real(my_real) :: errest2, errest1, au
+integer :: degree(EDGES_PER_ELEMENT+FACES_PER_ELEMENT+1), &
+           bmark(EDGES_PER_ELEMENT+FACES_PER_ELEMENT), &
+           edge_type(EDGES_PER_ELEMENT,grid%system_size), &
+           face_type(FACES_PER_ELEMENT,grid%system_size)
 integer, allocatable :: rowdeg(:)
 integer :: i, j, nleq, ss, isub, allocstat
 !----------------------------------------------------
@@ -724,7 +731,7 @@ nleq = VERTICES_PER_ELEMENT
 do i=1,EDGES_PER_ELEMENT
    nleq = nleq + grid%edge(grid%element(elem)%edge(i))%degree-1
 end do
-nleq = nleq + ((grid%element(elem)%degree-1)*(grid%element(elem)%degree-2))/2
+nleq = nleq + element_dof(grid%element(elem)%degree)
 nleq = nleq*ss
 
 allocate(rowdeg(nleq),lmat(nleq,nleq),lrhs(nleq),solut(nleq),stat=allocstat)
@@ -739,6 +746,7 @@ endif
 do i=1,VERTICES_PER_ELEMENT
    xvert(i) = grid%vertex(grid%element(elem)%vertex(i))%coord%x
    yvert(i) = grid%vertex(grid%element(elem)%vertex(i))%coord%y
+   zvert(i) = zcoord(grid%vertex(grid%element(elem)%vertex(i))%coord)
 end do
 
 do i=1,EDGES_PER_ELEMENT
@@ -746,13 +754,16 @@ do i=1,EDGES_PER_ELEMENT
    edge_type(i,:) = grid%edge_type(grid%element(elem)%edge(i),:)
    bmark(i) = grid%edge(grid%element(elem)%edge(i))%bmark
 end do
-degree(EDGES_PER_ELEMENT+1) = grid%element(elem)%degree
+do i=1,FACES_PER_ELEMENT
+   degree(EDGES_PER_ELEMENT+i) = grid%face(grid%element(elem)%face(i))%degree
+   face_type(i,:) = grid%face_type(grid%element(elem)%face(i),:)
+   bmark(EDGES_PER_ELEMENT+i) = grid%face(grid%element(elem)%face(i))%bmark
+end do
+degree(EDGES_PER_ELEMENT+FACES_PER_ELEMENT+1) = grid%element(elem)%degree
 
-rmin = 0
-
-call elemental_matrix(grid, xvert, yvert, degree, edge_type, bmark, &
-                      grid%system_size, 0, .false., elem, rmin, &
-                      "p","a",lmat, lrhs, loc_bconds_s=bconds)
+call elemental_matrix(grid, xvert, yvert, degree, edge_type, face_type, bmark, &
+                      grid%system_size, 0, .false., elem, &
+                      "p","a",lmat, lrhs, loc_bconds_s=my_bconds)
 
 ! set the degree and solution associated with each row
 
@@ -769,7 +780,7 @@ do i=1,EDGES_PER_ELEMENT
       isub = isub + ss
    end do
 end do
-do i=3,degree(4)
+do i=3,degree(EDGES_PER_ELEMENT+FACES_PER_ELEMENT+1)
    do j=1,i-2
       rowdeg(isub:isub+ss-1) = i
       solut(isub:isub+ss-1) = grid%element(elem)%solution(j+((i-2)*(i-3))/2,:,1)
@@ -784,19 +795,19 @@ end do
 errest2 = 0
 errest1 = 0
 do i=1,nleq
-   if (rowdeg(i) == degree(4)-1) then
+   if (rowdeg(i) == degree(EDGES_PER_ELEMENT+FACES_PER_ELEMENT+1)-1) then
       au = 0
       do j=1,nleq
-         if (rowdeg(j) == degree(4)-1) then
+         if (rowdeg(j) == degree(EDGES_PER_ELEMENT+FACES_PER_ELEMENT+1)-1) then
             au = au + lmat(i,j)*solut(j)
          endif
       enddo
       errest2 = errest2 + au*solut(i)
    endif
-   if (rowdeg(i) == degree(4)) then
+   if (rowdeg(i) == degree(EDGES_PER_ELEMENT+FACES_PER_ELEMENT+1)) then
       au = 0
       do j=1,nleq
-         if (rowdeg(j) == degree(4)) then
+         if (rowdeg(j) == degree(EDGES_PER_ELEMENT+FACES_PER_ELEMENT+1)) then
             au = au + lmat(i,j)*solut(j)
          endif
       enddo
@@ -809,9 +820,11 @@ errest1 = sqrt(errest1)
 ! the regularity comes from ||e_p-1||/||e_p-2|| = ((p-1)/(p-2))^-(m-1)
 
 if (errest1 == 0.0_my_real .or. errest2 == 0.0_my_real) then
-   prior2p_e_regularity = degree(4)
+   prior2p_e_regularity = degree(EDGES_PER_ELEMENT+FACES_PER_ELEMENT+1)
 else
-   prior2p_e_regularity = 1-log(errest1/errest2)/log(real(degree(4)-1)/(degree(4)-2))
+   prior2p_e_regularity = 1-log(errest1/errest2)/ &
+      log(real(degree(EDGES_PER_ELEMENT+FACES_PER_ELEMENT+1)-1)/ &
+      (degree(EDGES_PER_ELEMENT+FACES_PER_ELEMENT+1)-2))
 endif
 
 deallocate(rowdeg,lmat,lrhs,solut,stat=allocstat)
@@ -841,8 +854,9 @@ real(my_real) :: prior2p_h1_regularity
 real(my_real) :: xvert(VERTICES_PER_ELEMENT), yvert(VERTICES_PER_ELEMENT)
 real(my_real), allocatable :: vert_soln(:,:,:), edg1_soln(:,:,:), &
                               edg2_soln(:,:,:), edg3_soln(:,:,:), &
-                              elem_soln(:,:,:), ux(:,:,:), uy(:,:,:)
-real(my_real), pointer :: qweights(:), xquad(:), yquad(:)
+                              elem_soln(:,:,:), ux(:,:,:), uy(:,:,:), &
+                              uz(:,:,:)
+real(my_real), pointer :: qweights(:), xquad(:), yquad(:), zquad(:)
 real(my_real) :: errest1, errest2
 integer :: i, j, deg, astat, nqpoints, jerr
 !----------------------------------------------------
@@ -920,6 +934,7 @@ end do
 
 call quadrature_rule_tri(min(MAX_QUAD_ORDER_TRI,(deg-1)**2),xvert,yvert, &
                          nqpoints,qweights,xquad,yquad,jerr,stay_in=.true.)
+allocate(zquad(size(xquad))); zquad=0 ! TEMP3D
 
 if (jerr /= 0) then
    ierr = PHAML_INTERNAL_ERROR
@@ -968,21 +983,27 @@ do i=2,deg-2
    end do
 end do
 if (deg > 4) then
-   do i=1,((deg-4)*(deg-3))/2
+   do i=1,element_dof(deg-2)
       grid%element(elem)%solution(i,:,:) = 0
    end do
 endif
 
 ! evaluate the derivatives of the solution at the quadrature points
 
-allocate(ux(1,1,nqpoints),uy(1,1,nqpoints),stat=astat)
+allocate(ux(1,1,nqpoints),uy(1,1,nqpoints),uz(1,1,nqpoints),stat=astat)
 if (astat /= 0) then
    ierr = ALLOC_FAILED
    call fatal("memory allocation failed in prior2p_h1_regularity")
    stop
 endif
 
-call evaluate_soln_local(grid,xquad,yquad,elem,(/1/),(/1/),ux=ux,uy=uy)
+select case (global_element_kind)
+case (TRIANGULAR_ELEMENT)
+   call evaluate_soln_local(grid,xquad,yquad,elem,(/1/),(/1/),ux=ux,uy=uy)
+case (TETRAHEDRAL_ELEMENT)
+   call evaluate_soln_local(grid,xquad,yquad,elem,(/1/),(/1/),ux=ux,uy=uy, &
+                            z=zquad,uz=uz)
+end select
 
 ! compute the H^1 norm of the error estimate for the degree p-2 solution
 
@@ -1002,12 +1023,18 @@ do i=1,EDGES_PER_ELEMENT
 end do
 
 if (deg > 3) then
-   do i=1+((deg-4)*(deg-3))/2, ((deg-3)*(deg-2))/2
+   do i=element_dof(deg-2)+1,element_dof(deg-1)
       grid%element(elem)%solution(i,:,:) = 0
    end do
 endif
 
-call evaluate_soln_local(grid,xquad,yquad,elem,(/1/),(/1/),ux=ux,uy=uy)
+select case (global_element_kind)
+case (TRIANGULAR_ELEMENT)
+   call evaluate_soln_local(grid,xquad,yquad,elem,(/1/),(/1/),ux=ux,uy=uy)
+case (TETRAHEDRAL_ELEMENT)
+   call evaluate_soln_local(grid,xquad,yquad,elem,(/1/),(/1/),ux=ux,uy=uy, &
+                            z=zquad,uz=uz)
+end select
 
 errest1 = 0
 do i=1,nqpoints
@@ -1066,7 +1093,7 @@ function next3p_regularity(grid,elem)
 !----------------------------------------------------
 ! Dummy arguments
 
-type(grid_type), intent(in) :: grid
+type(grid_type), intent(inout) :: grid
 integer, intent(in) :: elem
 real(my_real) :: next3p_regularity
 !----------------------------------------------------
@@ -1170,8 +1197,16 @@ end function next3pfunc
 !  E CONTAINS THE PREVIOUS VALUE OF D
 !  M CONTAINS THE BISECTION QUANTITY (C-B)/2
 !
-      REAL(MY_REAL) F,A,B,T,TT,SA,SB,C,D,E,FA,FB,FC,TOL,M,P,Q,R,S
-      EXTERNAL F
+      REAL(MY_REAL) A,B,T,TT,SA,SB,C,D,E,FA,FB,FC,TOL,M,P,Q,R,S
+!      EXTERNAL F
+      interface
+         function f(x)
+         use global
+         real(my_real), intent(in) :: x
+         real(my_real) :: f
+         end function f
+      end interface
+
       DOUBLE PRECISION D1MACH
 
       TT = T
@@ -1307,17 +1342,20 @@ function typeparam_R(grid,elem)
 !----------------------------------------------------
 ! Dummy arguments
 
-type(grid_type), intent(in) :: grid
+type(grid_type), intent(inout) :: grid
 integer, intent(in) :: elem
 real(my_real) :: typeparam_R
 !----------------------------------------------------
 ! Local variables:
 
-real(my_real) :: xvert(VERTICES_PER_ELEMENT), yvert(VERTICES_PER_ELEMENT)
+real(my_real) :: xvert(VERTICES_PER_ELEMENT), yvert(VERTICES_PER_ELEMENT), &
+                 zvert(VERTICES_PER_ELEMENT)
 real(my_real), allocatable :: lmat(:,:), lrhs(:), solut(:)
-real(my_real) :: rmin, errest2(1), errest1, au
-integer :: degree(EDGES_PER_ELEMENT+1), bmark(EDGES_PER_ELEMENT), &
-           edge_type(EDGES_PER_ELEMENT,grid%system_size)
+real(my_real) :: errest2(1), errest1, au
+integer :: degree(EDGES_PER_ELEMENT+FACES_PER_ELEMENT+1), &
+           bmark(EDGES_PER_ELEMENT+FACES_PER_ELEMENT), &
+           edge_type(EDGES_PER_ELEMENT,grid%system_size), &
+           face_type(FACES_PER_ELEMENT,grid%system_size)
 integer, allocatable :: rowdeg(:)
 integer :: i, j, nleq, ss, isub, allocstat
 !----------------------------------------------------
@@ -1341,7 +1379,7 @@ else
    do i=1,EDGES_PER_ELEMENT
       nleq = nleq + grid%edge(grid%element(elem)%edge(i))%degree-1
    end do
-   nleq = nleq + ((grid%element(elem)%degree-1)*(grid%element(elem)%degree-2))/2
+   nleq = nleq + element_dof(grid%element(elem)%degree)
    nleq = nleq*ss
 
    allocate(rowdeg(nleq),lmat(nleq,nleq),lrhs(nleq),solut(nleq),stat=allocstat)
@@ -1356,6 +1394,7 @@ else
    do i=1,VERTICES_PER_ELEMENT
       xvert(i) = grid%vertex(grid%element(elem)%vertex(i))%coord%x
       yvert(i) = grid%vertex(grid%element(elem)%vertex(i))%coord%y
+      zvert(i) = zcoord(grid%vertex(grid%element(elem)%vertex(i))%coord)
    end do
 
    do i=1,EDGES_PER_ELEMENT
@@ -1363,15 +1402,21 @@ else
       edge_type(i,:) = grid%edge_type(grid%element(elem)%edge(i),:)
       bmark(i) = grid%edge(grid%element(elem)%edge(i))%bmark
    end do
-   degree(EDGES_PER_ELEMENT+1) = grid%element(elem)%degree
 
-   rmin = 0
+   do i=1,FACES_PER_ELEMENT
+      degree(EDGES_PER_ELEMENT+i) = grid%face(grid%element(elem)%face(i))%degree
+      face_type(i,:) = grid%face_type(grid%element(elem)%face(i),:)
+      bmark(EDGES_PER_ELEMENT+i) = grid%face(grid%element(elem)%face(i))%bmark
+   end do
+
+   degree(EDGES_PER_ELEMENT+FACES_PER_ELEMENT+1) = grid%element(elem)%degree
 
 ! TEMP should this be just "r"?
 
-   call elemental_matrix(grid, xvert, yvert, degree, edge_type, bmark, &
-                         grid%system_size, 0, .false., elem, rmin, &
-                         "p","a",lmat, lrhs, loc_bconds_s=bconds)
+   call elemental_matrix(grid, xvert, yvert, degree, edge_type, face_type, &
+                         bmark, &
+                         grid%system_size, 0, .false., elem, &
+                         "p","a",lmat, lrhs, loc_bconds_s=my_bconds)
 
 ! set the degree and solution associated with each row
 
@@ -1388,7 +1433,7 @@ else
          isub = isub + ss
       end do
    end do
-   do i=3,degree(4)
+   do i=3,degree(EDGES_PER_ELEMENT+FACES_PER_ELEMENT+1)
       do j=1,i-2
          rowdeg(isub:isub+ss-1) = i
          solut(isub:isub+ss-1) = grid%element(elem)%solution(j+((i-2)*(i-3))/2,:,1)
@@ -1402,10 +1447,10 @@ else
 
    errest1 = 0
    do i=1,nleq
-      if (rowdeg(i) == degree(4)) then
+      if (rowdeg(i) == degree(EDGES_PER_ELEMENT+FACES_PER_ELEMENT+1)) then
          au = 0
          do j=1,nleq
-            if (rowdeg(j) == degree(4)) then
+            if (rowdeg(j) == degree(EDGES_PER_ELEMENT+FACES_PER_ELEMENT+1)) then
                au = au + lmat(i,j)*solut(j)
             endif
          enddo
@@ -1595,7 +1640,7 @@ lcoefs=0.0_my_real
 
 ! vertex bases
 
-do i=1,3
+do i=1,VERTICES_PER_ELEMENT
    lcoefs(1)=lcoefs(1) + &
              abs(grid%vertex_solution(grid%element(elem)%vertex(i),1,1))
 end do
@@ -1603,7 +1648,7 @@ end do
 ! edge bases
 
 do i=1,grid%element(elem)%degree-1
-   do j=1,3
+   do j=1,EDGES_PER_ELEMENT
       if (grid%edge(grid%element(elem)%edge(j))%degree >= i+1) then
          lcoefs(i+1)=lcoefs(i+1) + &
                      abs(grid%edge(grid%element(elem)%edge(j))%solution(i,1,1))
@@ -1611,9 +1656,9 @@ do i=1,grid%element(elem)%degree-1
    end do
 end do
 
-! face bases
+! bubble bases
 
-do i=1,((grid%element(elem)%degree-2)*(grid%element(elem)%degree-1))/2
+do i=1,element_dof(grid%element(elem)%degree)
    deg = ceiling((3+sqrt(8.0*i+1))/2)
    lcoefs(deg)=lcoefs(deg) + abs(grid%element(elem)%solution(i,1,1))
 end do
@@ -1638,7 +1683,7 @@ function steepest_slope(grid,elem,new_p)
 !----------------------------------------------------
 ! Dummy arguments
 
-type(grid_type), intent(in) :: grid
+type(grid_type), intent(inout) :: grid
 integer, intent(in) :: elem
 integer, intent(out) :: new_p(2)
 character(len=1) :: steepest_slope
@@ -1651,7 +1696,7 @@ integer :: num_p_candidate, num_h_candidate, i, n, astat
 real(my_real) :: best, refnorm
 real(my_real), allocatable :: p_slope(:), h_slope(:)
 real(my_real), pointer :: A(:,:),b(:,:)
-integer :: neigh(3)
+integer :: neigh(NEIGHBORS_PER_ELEMENT)
 !----------------------------------------------------
 ! Begin executable code
 
@@ -1878,8 +1923,8 @@ subroutine make_h_candidate_linsys(A,b,n,p,elem,grid,neigh)
 real(my_real), pointer :: A(:,:), b(:,:)
 integer, intent(out) :: n
 integer, intent(in) :: p, elem
-type(grid_type), intent(in) :: grid
-integer, intent(in) :: neigh(3)
+type(grid_type), intent(inout) :: grid
+integer, intent(in) :: neigh(NEIGHBORS_PER_ELEMENT)
 
 !----------------------------------------------------
 ! Local variables:
@@ -2023,7 +2068,7 @@ subroutine h_candidate_matrix_size(p,neigh,nglobal,nprimary,nmate,nsecondary)
 ! Dummy arguments
 
 integer, intent(in) :: p
-integer, intent(in) :: neigh(3)
+integer, intent(in) :: neigh(NEIGHBORS_PER_ELEMENT)
 integer, intent(out) :: nglobal, nprimary(2), nmate(2), nsecondary(2)
 !----------------------------------------------------
 ! Local variables:
@@ -2080,8 +2125,11 @@ real(my_real), intent(out) :: Aelem(:,:), belem(:)
 !----------------------------------------------------
 ! Local variables:
 
-real(my_real) :: xvert(3), yvert(3), rmin
-integer :: degree(4), edge_type(3,1), bmark(3)
+real(my_real) :: xvert(VERTICES_PER_ELEMENT), yvert(VERTICES_PER_ELEMENT)
+integer :: degree(EDGES_PER_ELEMENT+FACES_PER_ELEMENT+1), &
+           edge_type(EDGES_PER_ELEMENT,1), &
+           face_type(FACES_PER_ELEMENT,1), &
+           bmark(EDGES_PER_ELEMENT+FACES_PER_ELEMENT)
 !----------------------------------------------------
 ! Begin executable code
 
@@ -2107,6 +2155,8 @@ degree = p
 
 ! get the edge_type and boundary marker from the parent; new edge is interior
 
+! TEMP3D what about face_type?
+
 edge_type(1,:) = INTERIOR
 bmark(1) = 0
 edge_type(2,:) = grid%edge_type(grid%element(elem)%edge(3),:)
@@ -2127,15 +2177,11 @@ if (grid%system_size /= 1) then
    stop
 endif
 
-! don't actually use rmin
-
-rmin = 0.0_my_real
-
 ! compute the elemental matrix
 
-call elemental_matrix(grid, xvert, yvert, degree, edge_type, bmark, &
-                      grid%system_size, 0, .false., elem, rmin, "p", "a", &
-                      Aelem, belem, loc_bconds_s=bconds)
+call elemental_matrix(grid, xvert, yvert, degree, edge_type, face_type, bmark, &
+                      grid%system_size, 0, .false., elem, "p", "a", &
+                      Aelem, belem, loc_bconds_s=my_bconds)
 
 end subroutine h_cand_elem_matrix_primary
 
@@ -2335,8 +2381,11 @@ real(my_real), intent(out) :: Aelem(:,:), belem(:)
 !----------------------------------------------------
 ! Local variables:
 
-real(my_real) :: xvert(3), yvert(3), rmin
-integer :: degree(4), edge_type(3,1), bmark(3)
+real(my_real) :: xvert(VERTICES_PER_ELEMENT), yvert(VERTICES_PER_ELEMENT)
+integer :: degree(EDGES_PER_ELEMENT+FACES_PER_ELEMENT+1), &
+           edge_type(EDGES_PER_ELEMENT,1), &
+           face_type(FACES_PER_ELEMENT,1), &
+           bmark(EDGES_PER_ELEMENT+FACES_PER_ELEMENT)
 !----------------------------------------------------
 ! Begin executable code
 
@@ -2350,6 +2399,12 @@ endif
 
 ! determine the vertices
 ! note different cases depending on whether or not the 3rd neighbor is the mate
+
+if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+   ierr = PHAML_INTERNAL_ERROR
+   call fatal("what to do with mate in h_cand_elem_matrix_mate?")
+   stop
+endif
 
 if (hash_decode_key(grid%element(neigh3)%mate,grid%elem_hash) == elem) then
 
@@ -2396,6 +2451,8 @@ degree(2) = p
 ! shared with elem.  Treat the third side as Dirichlet regardless of it's role
 ! in the global grid.
 
+! TEMP3D what about face_type?
+
 edge_type(1,:) = INTERIOR
 bmark(1) = 0
 edge_type(2,:) = INTERIOR
@@ -2411,15 +2468,11 @@ if (grid%system_size /= 1) then
    stop
 endif
 
-! don't actually use rmin
-
-rmin = 0.0_my_real
-
 ! compute the elemental matrix
 
-call elemental_matrix(grid, xvert, yvert, degree, edge_type, bmark, &
-                      grid%system_size, 0, .false., neigh3, rmin, "p", "a", &
-                      Aelem, belem, loc_bconds_s=bconds)
+call elemental_matrix(grid, xvert, yvert, degree, edge_type, face_type, bmark, &
+                      grid%system_size, 0, .false., neigh3, "p", "a", &
+                      Aelem, belem, loc_bconds_s=my_bconds)
 
 end subroutine h_cand_elem_matrix_mate
 
@@ -2496,14 +2549,17 @@ subroutine h_cand_elem_matrix_secondary(grid,elem,elem2,p,Aelem, &
 !----------------------------------------------------
 ! Dummy arguments
 
-type(grid_type), intent(in) :: grid
+type(grid_type), intent(inout) :: grid
 integer, intent(in) :: elem, elem2, p
 real(my_real), intent(out) :: Aelem(:,:), belem(:)
 !----------------------------------------------------
 ! Local variables:
 
-real(my_real) :: xvert(3), yvert(3), rmin
-integer :: i, degree(4), edge_type(3,1), neigh2(3), shared_edge, bmark(3)
+real(my_real) :: xvert(VERTICES_PER_ELEMENT), yvert(VERTICES_PER_ELEMENT)
+integer :: i, degree(EDGES_PER_ELEMENT+FACES_PER_ELEMENT+1), &
+           edge_type(EDGES_PER_ELEMENT,1), face_type(FACES_PER_ELEMENT,1), &
+           neigh2(NEIGHBORS_PER_ELEMENT), shared_edge, &
+           bmark(EDGES_PER_ELEMENT+FACES_PER_ELEMENT)
 !----------------------------------------------------
 ! Begin executable code
 
@@ -2511,12 +2567,12 @@ integer :: i, degree(4), edge_type(3,1), neigh2(3), shared_edge, bmark(3)
 
 neigh2 = get_neighbors(elem2,grid)
 shared_edge = 0
-do i=1,3
+do i=1,NEIGHBORS_PER_ELEMENT
    if (neigh2(i) == elem) shared_edge = i
 end do
 if (shared_edge == 0) then
    ierr = PHAML_INTERNAL_ERROR
-   call fatal("failed to find shared edge in p_cand_elem_matrix_secondary")
+   call fatal("failed to find shared edge in h_cand_elem_matrix_secondary")
    stop
 endif
 
@@ -2533,6 +2589,7 @@ degree(shared_edge) = p
 ! the edge_type and boundary marker are only used in elemental_matrix if the
 ! edge_type is NATURAL or MIXED.  For the local problem, two edges are
 ! DIRICHLET and one is INTERIOR, so it doesn't matter what we call them
+! TEMP3D is this true for faces too?
 
 edge_type = INTERIOR
 bmark = 0
@@ -2545,15 +2602,11 @@ if (grid%system_size /= 1) then
    stop
 endif
 
-! don't actually use rmin
-
-rmin = 0.0_my_real
-
 ! compute the elemental matrix
 
-call elemental_matrix(grid, xvert, yvert, degree, edge_type, bmark, &
-                      grid%system_size, 0, .false., elem2, rmin, "p", "a", &
-                      Aelem, belem, loc_bconds_s=bconds)
+call elemental_matrix(grid, xvert, yvert, degree, edge_type, face_type, bmark, &
+                      grid%system_size, 0, .false., elem2, "p", "a", &
+                      Aelem, belem, loc_bconds_s=my_bconds)
 
 end subroutine h_cand_elem_matrix_secondary
 
@@ -2657,14 +2710,14 @@ subroutine h_candidate_apply_dirich(grid,elem,neigh,p,A,b,zero)
 !----------------------------------------------------
 ! Dummy arguments
 
-type(grid_type), intent(in) :: grid
-integer, intent(in) :: elem, neigh(3), p
+type(grid_type), intent(inout) :: grid
+integer, intent(in) :: elem, neigh(NEIGHBORS_PER_ELEMENT), p
 real(my_real), intent(inout) :: A(:,:), b(:,:)
 logical, intent(in) :: zero
 !----------------------------------------------------
 ! Local variables:
 
-integer :: i, j, k, elem2, neigh2(3), eq, edge
+integer :: i, j, k, elem2, neigh2(NEIGHBORS_PER_ELEMENT), eq, edge
 !----------------------------------------------------
 ! Begin executable code
 
@@ -2687,6 +2740,12 @@ A(eq,:) = 0.0_my_real
 A(eq,eq) = 1.0_my_real
 
 ! if the mate exists, the opposite vertex is Dirichlet
+
+if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+   ierr = PHAML_INTERNAL_ERROR
+   call fatal("what to do with mate in h_candidate_apply_dirich?")
+   stop
+endif
 
 if (neigh(3) /= BOUNDARY) then
 
@@ -2748,7 +2807,7 @@ do i=1,2
    if (elem2 /= BOUNDARY) then
 
       neigh2 = get_neighbors(elem2,grid)
-      do j=1,3
+      do j=1,NEIGHBORS_PER_ELEMENT
          if (neigh2(j) == elem) exit
       end do
 
@@ -2804,7 +2863,7 @@ subroutine reference_norm(A,b,elem,grid,neigh,refnorm)
 
 real(my_real), intent(in) :: A(:,:), b(:,:)
 integer, intent(in) :: elem
-type(grid_type), intent(in) :: grid
+type(grid_type), intent(inout) :: grid
 integer, intent(in) :: neigh(:)
 real(my_real), intent(out) :: refnorm
 !----------------------------------------------------
@@ -2878,7 +2937,7 @@ subroutine compute_h_slope(A,b,grid,elem,neigh,refnorm,p,h_candidate, &
 ! Dummy arguments
 
 real(my_real), intent(in) :: A(:,:),b(:,:),refnorm
-type(grid_type), intent(in) :: grid
+type(grid_type), intent(inout) :: grid
 integer, intent(in) :: elem, neigh(:), p, h_candidate(:,:), num_h_candidate
 real(my_real), intent(out) :: h_slope(:)
 !----------------------------------------------------
@@ -3073,13 +3132,13 @@ subroutine make_p_candidate_linsys(A,b,n,pmax,elem,grid,neigh)
 real(my_real), pointer :: A(:,:), b(:,:)
 integer, intent(out) :: n
 integer, intent(in) :: pmax, elem
-type(grid_type), intent(in) :: grid
-integer, intent(in) :: neigh(3)
+type(grid_type), intent(inout) :: grid
+integer, intent(in) :: neigh(NEIGHBORS_PER_ELEMENT)
 
 !----------------------------------------------------
 ! Local variables:
 
-integer :: nglobal, nprimary, nsecondary(3), astat
+integer :: nglobal, nprimary, nsecondary(NEIGHBORS_PER_ELEMENT), astat
 integer :: i,j,k
 integer, allocatable :: elem2global(:)
 real(my_real), allocatable :: Aelem(:,:), belem(:)
@@ -3134,7 +3193,7 @@ deallocate(Aelem,belem,elem2global)
 ! for each secondary element, compute the elemental matrix, renumbering, and
 ! assemble into the global matrix
 
-do k=1,3
+do k=1,NEIGHBORS_PER_ELEMENT
    if (nsecondary(k) > 0) then
       allocate(Aelem(nsecondary(k),nsecondary(k)),belem(nsecondary(k)), &
                elem2global(nsecondary(k)),stat=astat)
@@ -3181,8 +3240,8 @@ subroutine p_candidate_matrix_size(pmax,grid,elem,neigh,nglobal,nprimary, &
 integer, intent(in) :: pmax
 type(grid_type), intent(in) :: grid
 integer, intent(in) :: elem
-integer, intent(in) :: neigh(3)
-integer, intent(out) :: nglobal, nprimary, nsecondary(3)
+integer, intent(in) :: neigh(NEIGHBORS_PER_ELEMENT)
+integer, intent(out) :: nglobal, nprimary, nsecondary(NEIGHBORS_PER_ELEMENT)
 !----------------------------------------------------
 ! Local variables:
 
@@ -3199,7 +3258,7 @@ nprimary = ((pmax+1)*(pmax+2))/2
 ! neighbor that exists.
 
 nglobal = nprimary
-do i=1,3
+do i=1,NEIGHBORS_PER_ELEMENT
    if (neigh(i) == BOUNDARY) then
       nsecondary(i) = 0
    else
@@ -3229,8 +3288,10 @@ real(my_real), intent(out) :: Aelem(:,:), belem(:)
 !----------------------------------------------------
 ! Local variables:
 
-real(my_real) :: xvert(3), yvert(3), rmin
-integer :: i, degree(4), edge_type(3,1), ss, bmark(3)
+real(my_real) :: xvert(VERTICES_PER_ELEMENT), yvert(VERTICES_PER_ELEMENT)
+integer :: i, degree(EDGES_PER_ELEMENT+FACES_PER_ELEMENT+1), &
+           edge_type(EDGES_PER_ELEMENT,1), face_type(FACES_PER_ELEMENT,1), ss, &
+           bmark(EDGES_PER_ELEMENT+FACES_PER_ELEMENT)
 !----------------------------------------------------
 ! Begin executable code
 
@@ -3250,6 +3311,11 @@ do i=1,EDGES_PER_ELEMENT
    bmark(i) = grid%edge(grid%element(elem)%edge(i))%bmark
 end do
 
+do i=1,FACES_PER_ELEMENT
+   face_type(EDGES_PER_ELEMENT+i,:) = grid%face_type(grid%element(elem)%face(i),:)
+   bmark(EDGES_PER_ELEMENT+i) = grid%face(grid%element(elem)%face(i))%bmark
+end do
+
 ! TEMP system size is 1
 
 if (grid%system_size /= 1) then
@@ -3258,15 +3324,11 @@ if (grid%system_size /= 1) then
    stop
 endif
 
-! don't actually use rmin
-
-rmin = 0.0_my_real
-
 ! compute the elemental matrix
 
-call elemental_matrix(grid, xvert, yvert, degree, edge_type, bmark, &
-                      grid%system_size, 0, .false., elem, rmin, "p", "a", &
-                      Aelem, belem, loc_bconds_s=bconds)
+call elemental_matrix(grid, xvert, yvert, degree, edge_type, face_type, bmark, &
+                      grid%system_size, 0, .false., elem, "p", "a", &
+                      Aelem, belem, loc_bconds_s=my_bconds)
 
 end subroutine p_cand_elem_matrix_primary
 
@@ -3370,14 +3432,17 @@ subroutine p_cand_elem_matrix_secondary(grid,elem,elem2,pmax,Aelem, &
 !----------------------------------------------------
 ! Dummy arguments
 
-type(grid_type), intent(in) :: grid
+type(grid_type), intent(inout) :: grid
 integer, intent(in) :: elem, elem2, pmax
 real(my_real), intent(out) :: Aelem(:,:), belem(:)
 !----------------------------------------------------
 ! Local variables:
 
-real(my_real) :: xvert(3), yvert(3), rmin
-integer :: i, degree(4), edge_type(3,1), ss, neigh2(3), shared_edge, bmark(3)
+real(my_real) :: xvert(VERTICES_PER_ELEMENT), yvert(VERTICES_PER_ELEMENT)
+integer :: i, degree(EDGES_PER_ELEMENT+FACES_PER_ELEMENT+1), &
+           edge_type(EDGES_PER_ELEMENT,1), face_type(FACES_PER_ELEMENT,1), ss, &
+           neigh2(NEIGHBORS_PER_ELEMENT), shared_edge, &
+           bmark(EDGES_PER_ELEMENT+FACES_PER_ELEMENT)
 !----------------------------------------------------
 ! Begin executable code
 
@@ -3385,7 +3450,7 @@ integer :: i, degree(4), edge_type(3,1), ss, neigh2(3), shared_edge, bmark(3)
 
 neigh2 = get_neighbors(elem2,grid)
 shared_edge = 0
-do i=1,3
+do i=1,NEIGHBORS_PER_ELEMENT
    if (neigh2(i) == elem) shared_edge = i
 end do
 if (shared_edge == 0) then
@@ -3408,6 +3473,7 @@ degree(shared_edge) = pmax
 ! the edge_type and boundary marker are only used in elemental_matrix if the
 ! edge_type is NATURAL or MIXED.  For the local problem, two edges are
 ! DIRICHLET and one is INTERIOR, so it doesn't matter what we call them
+! TEMP3D is this true for faces too?
 
 edge_type = INTERIOR
 bmark = 0
@@ -3420,15 +3486,11 @@ if (grid%system_size /= 1) then
    stop
 endif
 
-! don't actually use rmin
-
-rmin = 0.0_my_real
-
 ! compute the elemental matrix
 
-call elemental_matrix(grid, xvert, yvert, degree, edge_type, bmark, &
-                      grid%system_size, 0, .false., elem2, rmin, "p", "a", &
-                      Aelem, belem, loc_bconds_s=bconds)
+call elemental_matrix(grid, xvert, yvert, degree, edge_type, face_type, bmark, &
+                      grid%system_size, 0, .false., elem2, "p", "a", &
+                      Aelem, belem, loc_bconds_s=my_bconds)
 
 end subroutine p_cand_elem_matrix_secondary
 
@@ -3453,11 +3515,11 @@ subroutine p_candidate_renum_secondary(renum,p,secondary,grid,elem,elem2,neigh)
 integer, intent(out) :: renum(:)
 integer, intent(in) :: p, secondary
 type(grid_type), intent(in) :: grid
-integer, intent(in) :: elem, elem2, neigh(3)
+integer, intent(in) :: elem, elem2, neigh(NEIGHBORS_PER_ELEMENT)
 !----------------------------------------------------
 ! Local variables:
 
-integer :: i, j, k, primary2secondary(3), other_secondary
+integer :: i, j, k, primary2secondary(VERTICES_PER_ELEMENT), other_secondary
 !----------------------------------------------------
 ! Begin executable code
 
@@ -3475,8 +3537,8 @@ integer :: i, j, k, primary2secondary(3), other_secondary
 ! determine the index in the primary element of the two shared vertices
 
 primary2secondary = 0
-do i=1,3
-   do j=1,3
+do i=1,VERTICES_PER_ELEMENT
+   do j=1,VERTICES_PER_ELEMENT
       if (grid%element(elem)%vertex(j) == grid%element(elem2)%vertex(i)) then
          primary2secondary(j) = i
          exit
@@ -3540,14 +3602,14 @@ subroutine p_candidate_apply_dirich(grid,elem,neigh,p,A,b,zero)
 !----------------------------------------------------
 ! Dummy arguments
 
-type(grid_type), intent(in) :: grid
-integer, intent(in) :: elem, neigh(3), p
+type(grid_type), intent(inout) :: grid
+integer, intent(in) :: elem, neigh(NEIGHBORS_PER_ELEMENT), p
 real(my_real), intent(inout) :: A(:,:), b(:,:)
 logical, intent(in) :: zero
 !----------------------------------------------------
 ! Local variables:
 
-integer :: i, j, k, elem2, boundary_seen, neigh2(3), eq, edge
+integer :: i, j, k, elem2, boundary_seen, neigh2(NEIGHBORS_PER_ELEMENT), eq, edge
 !----------------------------------------------------
 ! Begin executable code
 
@@ -3568,7 +3630,7 @@ endif
 ! for each neighbor ...
 
 boundary_seen = 0
-do i=1,3
+do i=1,NEIGHBORS_PER_ELEMENT
    elem2 = neigh(i)
 
 ! if the neighbor exists, the opposite vertex is Dirichlet
@@ -3576,7 +3638,7 @@ do i=1,3
    if (elem2 /= BOUNDARY) then
 
       neigh2 = get_neighbors(elem2,grid)
-      do j=1,3
+      do j=1,NEIGHBORS_PER_ELEMENT
          if (neigh2(j) == elem) exit
       end do
 
@@ -3632,7 +3694,7 @@ subroutine compute_p_slope(A,b,grid,elem,neigh,refnorm,p_candidate, &
 ! Dummy arguments
 
 real(my_real), intent(in) :: A(:,:),b(:,:),refnorm
-type(grid_type), intent(in) :: grid
+type(grid_type), intent(inout) :: grid
 integer, intent(in) :: elem, neigh(:), p_candidate(:), num_p_candidate
 real(my_real), intent(out) :: p_slope(:)
 !----------------------------------------------------
@@ -3870,7 +3932,7 @@ type(io_options) :: loc_iocont
    loc_iocont%print_error_when = NEVER
    call refine_uniform_p(grid,loc_refcont)
    loc_refcont%reftype = H_UNIFORM
-   call refine_uniform_h(grid,loc_refcont)
+   call refine_uniform_h(grid,loc_refcont,solver_control)
    call solve(grid,procs,loc_iocont,solver_control,still_sequential,.false., &
               no_time=.true.)
    call copy_grid(grid,ref_soln)
@@ -3918,10 +3980,10 @@ type(refine_options), intent(in) :: refine_control
 !----------------------------------------------------
 ! Local variables:
 
-character(len=1) :: edge_reftype(size(old_grid%edge))
-real(my_real) :: guaranteed_edge_rate(size(old_grid%edge)), &
-                 diff_old(size(old_grid%edge)), edge_rate_max
-integer :: best_h(size(old_grid%edge))
+character(len=1) :: edge_reftype(old_grid%biggest_edge)
+real(my_real) :: guaranteed_edge_rate(old_grid%biggest_edge), &
+                 diff_old(old_grid%biggest_edge), edge_rate_max
+integer :: best_h(old_grid%biggest_edge)
 integer :: lev, elem, edge
 !----------------------------------------------------
 ! Begin executable code
@@ -4135,13 +4197,16 @@ real(my_real), intent(out) :: diff(3)
 ! Local variables:
 
 integer :: endpt(3), n, nmax, qorder, nqpoints, jerr, loop, qp, i, j, &
-           halfqp, child1, child2, child3, child4, degree(4), ss, comp, astat
+           halfqp, child1, child2, child3, child4, ss, comp, astat, &
+           degree(EDGES_PER_ELEMENT+FACES_PER_ELEMENT+1)
 integer, allocatable :: ipiv(:)
-real(my_real) :: du1dt, xline(2), yline(2), xtri(3), ytri(3), deltax, deltay, &
-                 edge_length, integrand
+real(my_real) :: du1dt, xline(2), yline(2), xtri(VERTICES_PER_ELEMENT), &
+                 ytri(VERTICES_PER_ELEMENT), deltax, deltay, edge_length, &
+                 integrand
 real(my_real), allocatable :: a(:,:), b(:,:), dphidx(:,:), dphidy(:,:), &
-                              dphidt(:,:),dudx(:,:,:), dudy(:,:,:), dudt(:,:,:)
-real(my_real), pointer :: qweights(:), xquad(:), yquad(:), yquadu(:), &
+                              dphidt(:,:),dudx(:,:,:),dudy(:,:,:),dudz(:,:,:), &
+                              dudt(:,:,:)
+real(my_real), pointer :: qweights(:), xquad(:), yquad(:), zquad(:),yquadu(:), &
                           qweightshalf(:), xquadhalf(:), yquadhalf(:)
 !----------------------------------------------------
 ! Begin executable code
@@ -4347,11 +4412,11 @@ real(my_real), pointer :: qweights(:), xquad(:), yquad(:), yquadu(:), &
             ytri(2) = ref_soln%vertex(ref_soln%element(elem)%vertex(2))%coord%y
             ytri(3) = ref_soln%vertex(ref_soln%element(elem)%vertex(3))%coord%y
             if (ref_soln%element(elem)%edge(1) == edge) then
-               degree = (/p(loop),0,0,0/)
+               degree(1:4) = (/p(loop),0,0,0/)
             elseif (ref_soln%element(elem)%edge(2) == edge) then
-               degree = (/0,p(loop),0,0/)
+               degree(1:4) = (/0,p(loop),0,0/)
             elseif (ref_soln%element(elem)%edge(3) == edge) then
-               degree = (/0,0,p(loop),0/)
+               degree(1:4) = (/0,0,p(loop),0/)
             else
                ierr = PHAML_INTERNAL_ERROR
                call fatal("weighted_H1_seminorm_diff_sq: didn't find edge in element")
@@ -4372,7 +4437,7 @@ real(my_real), pointer :: qweights(:), xquad(:), yquad(:), yquadu(:), &
                ytri(2)= ref_soln%vertex(ref_soln%element(child2)%vertex(2))%coord%y
                ytri(3)= ref_soln%vertex(ref_soln%element(child2)%vertex(3))%coord%y
             endif
-            degree = (/0,p(loop),0,0/)
+            degree(1:4) = (/0,p(loop),0,0/)
          endif
 
          if (n > 0) then
@@ -4393,8 +4458,8 @@ real(my_real), pointer :: qweights(:), xquad(:), yquad(:), yquadu(:), &
 
 ! evaluate the derivatives of u_fine at the quadrature points
 
-         allocate(dudx(1,1,nqpoints),dudy(1,1,nqpoints),dudt(1,1,nqpoints), &
-                  stat=astat)
+         allocate(dudx(1,1,nqpoints),dudy(1,1,nqpoints),dudz(1,1,nqpoints), &
+                  dudt(1,1,nqpoints),stat=astat)
          if (astat /= 0) then
             ierr = ALLOC_FAILED
             call fatal("memory allocation failed in weighted_H1_seminorm_diff_sq")
@@ -4408,30 +4473,74 @@ real(my_real), pointer :: qweights(:), xquad(:), yquad(:), yquadu(:), &
 ! points are all in the child that contains edge.  If there are two intervals,
 ! the quadrature points are all in the first or second child depending on loop.
 
+         allocate(zquad(size(xquad))); zquad=0 ! TEMP3D
          if (p(2)==0) then
             if (ref_soln%element(elem)%edge(1) == edge) then
-               call evaluate_soln_local(ref_soln,xquad,yquad,child2,(/comp/), &
-                                        (/1/),ux=dudx,uy=dudy)
+               select case (global_element_kind)
+               case (TRIANGULAR_ELEMENT)
+                  call evaluate_soln_local(ref_soln,xquad,yquad,child2, &
+                                           (/comp/),(/1/),ux=dudx,uy=dudy)
+               case (TETRAHEDRAL_ELEMENT)
+                  call evaluate_soln_local(ref_soln,xquad,yquad,child2, &
+                                           (/comp/),(/1/),ux=dudx,uy=dudy, &
+                                           z=zquad,uz=dudz)
+               end select
             elseif (ref_soln%element(elem)%edge(2) == edge) then
-               call evaluate_soln_local(ref_soln,xquad,yquad,child1,(/comp/), &
-                                        (/1/),ux=dudx,uy=dudy)
+               select case (global_element_kind)
+               case (TRIANGULAR_ELEMENT)
+                  call evaluate_soln_local(ref_soln,xquad,yquad,child1, &
+                                           (/comp/),(/1/),ux=dudx,uy=dudy)
+               case (TETRAHEDRAL_ELEMENT)
+                  call evaluate_soln_local(ref_soln,xquad,yquad,child1, &
+                                           (/comp/),(/1/),ux=dudx,uy=dudy, &
+                                           z=zquad,uz=dudz)
+               end select
             else
               halfqp = nqpoints/2
-              call evaluate_soln_local(ref_soln,xquad(1:halfqp), &
-                                       yquad(1:halfqp),child3,(/comp/),(/1/), &
-                                    ux=dudx(:,:,1:halfqp),uy=dudy(:,:,1:halfqp))
-              call evaluate_soln_local(ref_soln,xquad(halfqp+1:), &
-                                       yquad(halfqp+1:),child4,(/comp/),(/1/), &
-                                  ux=dudx(:,:,halfqp+1:),uy=dudy(:,:,halfqp+1:))
+              select case (global_element_kind)
+              case (TRIANGULAR_ELEMENT)
+                 call evaluate_soln_local(ref_soln,xquad(1:halfqp), &
+                                          yquad(1:halfqp),child3,(/comp/), &
+                                          (/1/),ux=dudx(:,:,1:halfqp), &
+                                          uy=dudy(:,:,1:halfqp))
+                 call evaluate_soln_local(ref_soln,xquad(halfqp+1:), &
+                                          yquad(halfqp+1:),child4,(/comp/), &
+                                          (/1/),ux=dudx(:,:,halfqp+1:), &
+                                          uy=dudy(:,:,halfqp+1:))
+              case (TETRAHEDRAL_ELEMENT)
+                 call evaluate_soln_local(ref_soln,xquad(1:halfqp), &
+                                          yquad(1:halfqp),child3,(/comp/), &
+                                          (/1/),ux=dudx(:,:,1:halfqp), &
+                                          uy=dudy(:,:,1:halfqp), &
+                                        z=zquad(1:halfqp),uz=dudz(:,:,1:halfqp))
+                 call evaluate_soln_local(ref_soln,xquad(halfqp+1:), &
+                                          yquad(halfqp+1:),child4,(/comp/), &
+                                          (/1/),ux=dudx(:,:,halfqp+1:), &
+                                          uy=dudy(:,:,halfqp+1:), &
+                                     z=zquad(halfqp+1:),uz=dudz(:,:,halfqp+1:))
+              end select
             endif
          else
-            if (loop==1) then
-               call evaluate_soln_local(ref_soln,xquad,yquad,child3,(/comp/), &
-                                        (/1/),ux=dudx,uy=dudy)
-            else
-               call evaluate_soln_local(ref_soln,xquad,yquad,child4,(/comp/), &
-                                        (/1/),ux=dudx,uy=dudy)
-            endif
+            select case (global_element_kind)
+            case (TRIANGULAR_ELEMENT)
+               if (loop==1) then
+                  call evaluate_soln_local(ref_soln,xquad,yquad,child3, &
+                                           (/comp/),(/1/),ux=dudx,uy=dudy)
+               else
+                  call evaluate_soln_local(ref_soln,xquad,yquad,child4, &
+                                           (/comp/),(/1/),ux=dudx,uy=dudy)
+               endif
+            case (TETRAHEDRAL_ELEMENT)
+               if (loop==1) then
+                  call evaluate_soln_local(ref_soln,xquad,yquad,child3, &
+                                           (/comp/),(/1/),ux=dudx,uy=dudy, &
+                                           z=zquad,uz=dudz)
+               else
+                  call evaluate_soln_local(ref_soln,xquad,yquad,child4, &
+                                           (/comp/),(/1/),ux=dudx,uy=dudy, &
+                                           z=zquad,uz=dudz)
+               endif
+            end select
          endif
          dudt = dudx*deltax/edge_length + dudy*deltay/edge_length
 
@@ -4440,11 +4549,11 @@ real(my_real), pointer :: qweights(:), xquad(:), yquad(:), yquadu(:), &
          a = 0
          b = 0
          do qp=1,nqpoints
-            do i=1,n
-               do j=1,n
+            do j=1,n
+               do i=1,n
                   a(i,j) = a(i,j) + qweights(qp)*dphidt(i,qp)*dphidt(j,qp)
                end do
-               b(i,1) = b(i,1) + qweights(qp)*(dudt(1,1,qp)-du1dt)*dphidt(i,qp)
+               b(j,1) = b(j,1) + qweights(qp)*(dudt(1,1,qp)-du1dt)*dphidt(j,qp)
             end do
          end do
 
@@ -4480,7 +4589,7 @@ real(my_real), pointer :: qweights(:), xquad(:), yquad(:), yquadu(:), &
 
 ! deallocate memory allocated in this loop
 
-         deallocate(qweights,xquad,yquad,dudx,dudy,dudt)
+         deallocate(qweights,xquad,yquad,zquad,dudx,dudy,dudz,dudt)
          if (n > 0) deallocate(dphidx,dphidy,dphidt)
 
 ! next component
@@ -4550,7 +4659,7 @@ real(my_real) :: diff_new(3), edge_rate, best_rate, diff_other(3)
 ! the edge).  This can probably also be justified in the same sense as using
 ! noncompetitive assignment of p's to the h refinement.
 
-   do side=1,3
+   do side=1,EDGES_PER_ELEMENT
       otheredge = old_grid%element(elem)%edge(side)
       degree(1) = old_grid%edge(otheredge)%degree
       degree(2) = 0
@@ -4562,6 +4671,12 @@ real(my_real) :: diff_new(3), edge_rate, best_rate, diff_other(3)
       edge_rate = diff_other(3)-diff_new(3)
       guaranteed_edge_rate = max(edge_rate, guaranteed_edge_rate)
    end do
+
+   if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+      ierr = PHAML_INTERNAL_ERROR
+      call fatal("what to do with mate in compute_guaranteed_edge_rate?")
+      stop
+   endif
 
    if (.not.(ref_soln%element(elem)%mate == BOUNDARY)) then
       mate = hash_decode_key(ref_soln%element(elem)%mate,ref_soln%elem_hash)
@@ -4723,7 +4838,7 @@ integer :: lev, elem, errcode
 ! it in the fine grid
 
             if (edge_reftype(old_grid%element(elem)%edge(3)) /= "h") then
-               call unbisect_triangle_pair(grid,elem,errcode,refine_control)
+               call h_coarsen_element(grid,elem,errcode,refine_control)
 
 ! if unrefinement returned error code -1, there are grandchildren of elem so
 ! the base will actually have to be h-refined
@@ -4764,7 +4879,7 @@ real(my_real), intent(in) :: diff_old(:)
 !----------------------------------------------------
 ! Local variables:
 
-logical :: visited(size(old_grid%edge))
+logical :: visited(old_grid%biggest_edge)
 integer :: lev, elem, side, edge, p, new_degree(2), children(2), mate
 real(my_real) :: guaranteed_edge_rate
 !----------------------------------------------------
@@ -4777,7 +4892,7 @@ real(my_real) :: guaranteed_edge_rate
       elem = old_grid%head_level_elem(lev)
       do while (elem /= END_OF_LIST)
          if (old_grid%element(elem)%isleaf) then
-            do side=1,3
+            do side=1,EDGES_PER_ELEMENT
                edge = old_grid%element(elem)%edge(side)
                if (.not. visited(edge)) then
                   visited(edge) = .true.
@@ -4814,6 +4929,11 @@ real(my_real) :: guaranteed_edge_rate
                                 grid%element(children(2))%edge(2),new_degree(2))
                      call set_edge_degree(grid,refine_control, &
                                 grid%element(children(1))%edge(1),1)
+                     if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+                        ierr = PHAML_INTERNAL_ERROR
+                        call fatal("what to do with mate in det_and_set_opt_deg_edges?")
+                        stop
+                     endif
                      if (.not.(grid%element(elem)%mate == BOUNDARY)) then
                         mate = hash_decode_key(grid%element(elem)%mate, &
                                                grid%elem_hash)
@@ -4860,7 +4980,7 @@ real(my_real), intent(in) :: edge_rate_max
 !----------------------------------------------------
 ! Local variables:
 
-real(my_real) :: guaranteed_element_rate(size(old_grid%element))
+real(my_real) :: guaranteed_element_rate(old_grid%biggest_elem)
 real(my_real) :: element_rate_max, rate_max
 integer :: lev, elem, ndescendants
 integer :: descendants(4), new_degree(4)
@@ -5038,19 +5158,19 @@ real(my_real), pointer :: temp1(:,:,:)
 ! adjust degrees of freedom count
 
       if (olddeg >= 3) grid%dof = grid%dof - &
-                                  grid%system_size*((olddeg-2)*(olddeg-1))/2
+                                  grid%system_size*element_dof(olddeg)
       if (newdeg >= 3) grid%dof = grid%dof + &
-                                  grid%system_size*((newdeg-2)*(newdeg-1))/2
+                                  grid%system_size*element_dof(newdeg)
       if (grid%element(elem)%iown) then
          if (olddeg >= 3) grid%dof_own=grid%dof_own - &
-                                  grid%system_size*((olddeg-2)*(olddeg-1))/2
+                                  grid%system_size*element_dof(olddeg)
          if (newdeg >= 3) grid%dof_own=grid%dof_own + &
-                                  grid%system_size*((newdeg-2)*(newdeg-1))/2
+                                  grid%system_size*element_dof(newdeg)
       endif
 
 ! make sure allocated memory is large enough
 
-      newsize = ((newdeg-1)*(newdeg-2))/2
+      newsize = element_dof(newdeg)
       if (associated(grid%element(elem)%solution)) then
          oldsize = size(grid%element(elem)%solution,dim=1)
       else
@@ -5165,7 +5285,7 @@ real(my_real) :: fudge=1.0d-14
 ! w_{hp} is the projection based interpolant on elem on the old grid
 
    call H1_elem_seminorm_diff_squared(ref_soln,grid,(/elem/),1,(/p/),diff_hp)
-   N_old = ((p-1)*(p-2))/2
+   N_old = element_dof(p)
 
 ! do until all descendants have degree >= p+1
 
@@ -5187,7 +5307,7 @@ real(my_real) :: fudge=1.0d-14
 
       N_new = 0
       do i=1,ndescendants
-         N_new = N_new + ((degree(i)-1)*(degree(i)-2))/2
+         N_new = N_new + element_dof(degree(i))
       end do
       N_new = max(N_old+1,N_new)
       element_rate = (diff_hp(2)-diff_new(ndescendants+1)) / (N_new - N_old)
@@ -5265,20 +5385,28 @@ real(my_real), intent(out) :: diff(ndescendants+1)
 !----------------------------------------------------
 ! Local variables:
 
-integer :: descend, nbasis, side, degree(4), endpt(2), elem, n_sofar, edge, &
-           n, qorder, sub_nqpoints, nqpoints, qp, i, j, jerr, have_it, &
-           container, num_leaf_descend, ss, comp, astat
+integer :: descend, nbasis, side, endpt(2), elem, &
+           n_sofar, edge, n, qorder, sub_nqpoints, nqpoints, qp, i, j, jerr, &
+           have_it, num_leaf_descend, ss, comp, astat, &
+           degree(EDGES_PER_ELEMENT+FACES_PER_ELEMENT+1)
 integer, allocatable :: ipiv(:)
 integer, pointer :: leaf_descend(:)
-real(my_real) :: xtri(3), ytri(3), xline(2), yline(2), deltax, deltay, du1dxi, &
-                 xvert(3), yvert(3), integrandx, integrandy, xvert_elem(3), &
-                 yvert_elem(3)
+real(my_real) :: xtri(VERTICES_PER_ELEMENT), ytri(VERTICES_PER_ELEMENT), &
+                 xline(2), yline(2), deltax, deltay, du1dxi, &
+                 xvert(VERTICES_PER_ELEMENT), yvert(VERTICES_PER_ELEMENT), &
+                 integrandx, integrandy, xvert_elem(VERTICES_PER_ELEMENT), &
+                 yvert_elem(VERTICES_PER_ELEMENT)
 real(my_real), allocatable :: interp(:), a(:,:), b(:,:), dphidxi(:,:), &
-                              dudx(:,:,:), dudy(:,:,:), phi(:,:), dphidx(:,:), &
-                              dphidy(:,:), du1u2dx(:), du1u2dy(:)
+                              dudx(:,:,:), dudy(:,:,:), dudz(:,:,:), &
+                              phi(:,:), dphidx(:,:), dphidy(:,:), &
+                              du1u2dx(:), du1u2dy(:)
 real(my_real), pointer :: sub_qweights(:), sub_xquad(:), sub_yquad(:), &
-                          xquadu(:), yquadu(:)
-real(my_real), allocatable :: qweights(:), xquad(:), yquad(:)
+                          xquadu(:), yquadu(:), zquadu(:)
+real(my_real), allocatable :: qweights(:), xquad(:), yquad(:), zquad(:)
+real(my_real), allocatable :: xquadu_subset(:), yquadu_subset(:), &
+                              dudx_subset(:,:,:), dudy_subset(:,:,:)
+integer, allocatable :: index_subset(:), container(:)
+integer :: nsubset, elem_subset
 !----------------------------------------------------
 ! Begin executable code
 
@@ -5301,8 +5429,12 @@ real(my_real), allocatable :: qweights(:), xquad(:), yquad(:)
 
 ! identify the degree of the edges and interior of this element
 
-      degree(1:3) = grid%edge(grid%element(elem)%edge)%degree
-      degree(4) = p(descend)
+      degree(1:EDGES_PER_ELEMENT) = grid%edge(grid%element(elem)%edge)%degree
+      if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+         degree(EDGES_PER_ELEMENT+1:EDGES_PER_ELEMENT+FACES_PER_ELEMENT) = &
+                                    grid%face(grid%element(elem)%face)%degree
+      endif
+      degree(EDGES_PER_ELEMENT+FACES_PER_ELEMENT+1) = p(descend)
 
 ! vertices of the element
 
@@ -5312,11 +5444,12 @@ real(my_real), allocatable :: qweights(:), xquad(:), yquad(:)
 ! interp will contain the coefficients of the interpolant, in the same order
 ! that the basis functions are returned
 
-      nbasis = 3
-      do side=1,3
+      nbasis = VERTICES_PER_ELEMENT
+      do side=1,EDGES_PER_ELEMENT
          nbasis = nbasis + degree(side)-1
       end do
-      nbasis = nbasis + ((degree(4)-1)*(degree(4)-2))/2
+      nbasis = nbasis + ((degree(EDGES_PER_ELEMENT+FACES_PER_ELEMENT+1)-1) * &
+                         (degree(EDGES_PER_ELEMENT+FACES_PER_ELEMENT+1)-2))/2
       allocate(interp(nbasis),stat=astat)
       if (astat /= 0) then
          ierr = ALLOC_FAILED
@@ -5338,13 +5471,13 @@ real(my_real), allocatable :: qweights(:), xquad(:), yquad(:)
 
 ! the linear interpolant is just the solution at the vertices
 
-         interp(1:3) = ref_soln%vertex_solution(ref_soln%element(elem)%vertex, &
-                                                comp,1)
-         n_sofar = 3
+         interp(1:VERTICES_PER_ELEMENT) = &
+           ref_soln%vertex_solution(ref_soln%element(elem)%vertex,comp,1)
+         n_sofar = VERTICES_PER_ELEMENT
 
 ! for each edge
 
-         do side=1,3
+         do side=1,EDGES_PER_ELEMENT
             edge = ref_soln%element(elem)%edge(side)
             endpt = ref_soln%edge(edge)%vertex
 
@@ -5399,10 +5532,12 @@ real(my_real), allocatable :: qweights(:), xquad(:), yquad(:)
 
             call quadrature_rule_line(qorder,xline,yline, &
                                       nqpoints,sub_qweights,xquadu,yquadu,jerr)
+            allocate(zquadu(size(xquadu))); zquadu=0 ! TEMP3D
             deallocate(sub_qweights)
             call quadrature_rule_line(qorder,xtri(1:2),ytri(1:2),nqpoints, &
                                       sub_qweights,sub_xquad,sub_yquad,jerr)
-            allocate(qweights(nqpoints),xquad(nqpoints),yquad(nqpoints),stat=astat)
+            allocate(qweights(nqpoints),xquad(nqpoints),yquad(nqpoints), &
+                     zquad(nqpoints),stat=astat)
             if (astat /= 0) then
                ierr = ALLOC_FAILED
                call fatal("memory allocation failed in H1_elem_seminorm_diff_squared")
@@ -5411,6 +5546,7 @@ real(my_real), allocatable :: qweights(:), xquad(:), yquad(:)
             qweights = sub_qweights
             xquad = sub_xquad
             yquad = sub_yquad
+            zquad = 0 ! TEMP3D
 
 ! evaluate the derivatives of the bubble basis functions at quadrature points
 
@@ -5427,37 +5563,87 @@ real(my_real), allocatable :: qweights(:), xquad(:), yquad(:)
             endif
 
 ! evaluate the derivatives of u_fine at the quadrature points
-! If elem is not a leaf in ref_soln, then the correct containing element must
-! be found to pass to evaluate_soln_local.  Since we don't know the clustering
-! of quadrature points in the descendants of elem, we have to do one quadrature
-! point at a time.
+! If elem is not a leaf in ref_soln, then the quadrature points are in
+! multiple elements.  Create subsets of the quadrature points contained in
+! each element to pass to evaluate_soln_local.
 
-            allocate(dudx(1,1,nqpoints),dudy(1,1,nqpoints),stat=astat)
+            allocate(dudx(1,1,nqpoints),dudy(1,1,nqpoints),dudz(1,1,nqpoints), &
+                     stat=astat)
             if (astat /= 0) then
                ierr = ALLOC_FAILED
                call fatal("memory allocation failed in H1_elem_seminorm_diff_squared")
                return
             endif
             if (ref_soln%element(elem)%isleaf) then
-               call evaluate_soln_local(ref_soln,xquadu,yquadu,elem,(/comp/), &
-                                        (/1/),ux=dudx,uy=dudy)
+               select case (global_element_kind)
+               case (TRIANGULAR_ELEMENT)
+                  call evaluate_soln_local(ref_soln,xquadu,yquadu,elem, &
+                                           (/comp/),(/1/),ux=dudx,uy=dudy)
+               case (TETRAHEDRAL_ELEMENT)
+                  call evaluate_soln_local(ref_soln,xquadu,yquadu,elem, &
+                                           (/comp/),(/1/),ux=dudx,uy=dudy, &
+                                           z=zquadu,uz=dudz)
+               end select
             else
+               allocate(xquadu_subset(nqpoints),yquadu_subset(nqpoints), &
+                        dudx_subset(1,1,nqpoints),dudy_subset(1,1,nqpoints), &
+                        index_subset(nqpoints), container(nqpoints), stat=astat)
+               if (astat /= 0) then
+                  ierr = ALLOC_FAILED
+                  call fatal("memory allocation failed in H1_elem_seminorm_diff_squared")
+                  stop
+               endif
                do qp=1,nqpoints
-                  call find_containing_leaf(xquadu(qp),yquadu(qp),elem,have_it,&
-                                            container,ref_soln)
-! TEMP when I parallelize this, note that have_it=0 and elem=0 if I don't
-!      own the element that contains the point.  for now, just check that its
-!      not zero, which it shouldn't be if nproc==1
-                  if (have_it==0) then
-                     ierr = PHAML_INTERNAL_ERROR
-                     call fatal("couldn't find containing element in H1_elem_seminorm_diff_squared")
-                     stop
-                  endif
-                  call evaluate_soln_local(ref_soln,xquadu(qp:qp), &
-                                           yquadu(qp:qp),container,(/comp/), &
-                                           (/1/),ux=dudx(:,:,qp:qp), &
-                                           uy=dudy(:,:,qp:qp))
-               enddo
+                  call find_containing_element(xquadu(qp),yquadu(qp),have_it,&
+                                               container(qp),ref_soln,elem)
+               end do
+               do
+                  qp = 1
+                  do while (container(qp) == 0)
+                     qp = qp + 1
+                     if (qp > nqpoints) exit
+                  end do
+                  if (qp > nqpoints) exit
+                  elem_subset = container(qp)
+                  nsubset = 1
+                  xquadu_subset(nsubset) = xquadu(qp)
+                  yquadu_subset(nsubset) = yquadu(qp)
+                  index_subset(nsubset) = qp
+                  container(qp) = 0
+                  qp = qp + 1
+                  do while (qp <= nqpoints)
+                     if (container(qp) == elem_subset) then
+                        nsubset = nsubset + 1
+                        xquadu_subset(nsubset) = xquadu(qp)
+                        yquadu_subset(nsubset) = yquadu(qp)
+                        index_subset(nsubset) = qp
+                        container(qp) = 0
+                     endif
+                     qp = qp + 1
+                  end do
+                  select case (global_element_kind)
+                  case (TRIANGULAR_ELEMENT)
+                     call evaluate_soln_local(ref_soln, &
+                                              xquadu_subset(1:nsubset), &
+                                              yquadu_subset(1:nsubset), &
+                                              elem_subset,(/comp/),(/1/), &
+                                              ux=dudx_subset,uy=dudy_subset)
+                  case (TETRAHEDRAL_ELEMENT)
+                     call evaluate_soln_local(ref_soln, &
+                                              xquadu_subset(1:nsubset), &
+                                              yquadu_subset(1:nsubset), &
+                                              elem_subset,(/comp/),(/1/), &
+                                              ux=dudx_subset,uy=dudy_subset, &
+                                              z=zquadu(qp:qp), &
+                                              uz=dudz(:,:,qp:qp))
+                  end select
+                  do qp=1,nsubset
+                     dudx(1,1,index_subset(qp)) = dudx_subset(1,1,qp)
+                     dudy(1,1,index_subset(qp)) = dudy_subset(1,1,qp)
+                  end do
+               end do
+               deallocate(xquadu_subset,yquadu_subset,dudx_subset,dudy_subset, &
+                          index_subset,container)
             endif
 
 ! compute the integrals
@@ -5465,11 +5651,11 @@ real(my_real), allocatable :: qweights(:), xquad(:), yquad(:)
             a = 0
             b = 0
             do qp=1,nqpoints
-               do i=1,n
-                  do j=1,n
+               do j=1,n
+                  do i=1,n
                      a(i,j) = a(i,j) + qweights(qp)*dphidxi(i,qp)*dphidxi(j,qp)
                   end do
-                  b(i,1) = b(i,1) + qweights(qp)*dphidxi(i,qp)* &
+                  b(j,1) = b(j,1) + qweights(qp)*dphidxi(j,qp)* &
                            (deltax*dudx(1,1,qp)+deltay*dudy(1,1,qp)-du1dxi)
                end do
             end do
@@ -5502,7 +5688,7 @@ real(my_real), allocatable :: qweights(:), xquad(:), yquad(:)
 ! deallocate memory allocated in this loop
 
             deallocate(a,b,ipiv,sub_qweights,sub_xquad,sub_yquad,qweights, &
-                       xquad,yquad,xquadu,yquadu,dudx,dudy)
+                       xquad,yquad,zquad,xquadu,yquadu,zquadu,dudx,dudy,dudz)
             if (n > 0) deallocate(dphidxi)
 
 ! next edge
@@ -5542,8 +5728,9 @@ real(my_real), allocatable :: qweights(:), xquad(:), yquad(:)
             if (i==1) then
                nqpoints = sub_nqpoints * num_leaf_descend
                allocate(qweights(nqpoints),xquad(nqpoints),yquad(nqpoints), &
-                        phi(nbasis,nqpoints),dphidx(nbasis,nqpoints), &
-                        dphidy(nbasis,nqpoints),stat=astat)
+                        zquad(nqpoints),phi(nbasis,nqpoints), &
+                        dphidx(nbasis,nqpoints),dphidy(nbasis,nqpoints), &
+                        stat=astat)
                if (astat /= 0) then
                   ierr = ALLOC_FAILED
                   call fatal("memory allocation failed in H1_elem_seminorm_diff_squared")
@@ -5556,6 +5743,7 @@ real(my_real), allocatable :: qweights(:), xquad(:), yquad(:)
             qweights(1+(i-1)*sub_nqpoints:i*sub_nqpoints) = sub_qweights
             xquad(1+(i-1)*sub_nqpoints:i*sub_nqpoints) = sub_xquad
             yquad(1+(i-1)*sub_nqpoints:i*sub_nqpoints) = sub_yquad
+            zquad = 0 ! TEMP3D
 
 ! evaluate the derivatives of all basis functions at the quadrature points
 
@@ -5586,19 +5774,32 @@ real(my_real), allocatable :: qweights(:), xquad(:), yquad(:)
 
 ! evaluate the derivatives of u_fine at the quadrature points
 
-         allocate(dudx(1,1,nqpoints),dudy(1,1,nqpoints),stat=astat)
+         allocate(dudx(1,1,nqpoints),dudy(1,1,nqpoints),dudz(1,1,nqpoints), &
+                  stat=astat)
          if (astat /= 0) then
             ierr = ALLOC_FAILED
             call fatal("memory allocation failed in H1_elem_seminorm_diff_squared")
             return
          endif
          do i=1,num_leaf_descend
-            call evaluate_soln_local(ref_soln, &
+            select case (global_element_kind)
+            case (TRIANGULAR_ELEMENT)
+               call evaluate_soln_local(ref_soln, &
                              xquad(1+(i-1)*sub_nqpoints:i*sub_nqpoints), &
                              yquad(1+(i-1)*sub_nqpoints:i*sub_nqpoints), &
                              leaf_descend(i),(/comp/),(/1/), &
                              ux=dudx(:,:,1+(i-1)*sub_nqpoints:i*sub_nqpoints), &
                              uy=dudy(:,:,1+(i-1)*sub_nqpoints:i*sub_nqpoints))
+            case (TETRAHEDRAL_ELEMENT)
+               call evaluate_soln_local(ref_soln, &
+                             xquad(1+(i-1)*sub_nqpoints:i*sub_nqpoints), &
+                             yquad(1+(i-1)*sub_nqpoints:i*sub_nqpoints), &
+                             leaf_descend(i),(/comp/),(/1/), &
+                             ux=dudx(:,:,1+(i-1)*sub_nqpoints:i*sub_nqpoints), &
+                             uy=dudy(:,:,1+(i-1)*sub_nqpoints:i*sub_nqpoints), &
+                             z=zquad(1+(i-1)*sub_nqpoints:i*sub_nqpoints), &
+                             uz=dudz(:,:,1+(i-1)*sub_nqpoints:i*sub_nqpoints))
+            end select
 
          end do
 
@@ -5617,15 +5818,15 @@ real(my_real), allocatable :: qweights(:), xquad(:), yquad(:)
          a = 0
          b = 0
          do qp=1,nqpoints
-            do i=1,n
-               do j=1,n
+            do j=1,n
+               do i=1,n
                   a(i,j) = a(i,j) + qweights(qp)* &
                                 (dphidx(i+n_sofar,qp)*dphidx(j+n_sofar,qp) + &
                                  dphidy(i+n_sofar,qp)*dphidy(j+n_sofar,qp))
                end do
-               b(i,1) = b(i,1) + qweights(qp)*( &
-                         (dudx(1,1,qp)-du1u2dx(qp))*dphidx(i+n_sofar,qp) + &
-                         (dudy(1,1,qp)-du1u2dy(qp))*dphidy(i+n_sofar,qp))
+               b(j,1) = b(j,1) + qweights(qp)*( &
+                         (dudx(1,1,qp)-du1u2dx(qp))*dphidx(j+n_sofar,qp) + &
+                         (dudy(1,1,qp)-du1u2dy(qp))*dphidy(j+n_sofar,qp))
 
             end do
          end do
@@ -5671,7 +5872,8 @@ real(my_real), allocatable :: qweights(:), xquad(:), yquad(:)
 ! deallocate memory
 
          deallocate(a,b,ipiv,dudx,dudy,du1u2dx,du1u2dy,phi,dphidx,dphidy, &
-                    sub_qweights,sub_xquad,sub_yquad,qweights,xquad,yquad)
+                    sub_qweights,sub_xquad,sub_yquad,qweights,xquad,yquad, &
+                    dudz,zquad)
 
 ! next component
 
@@ -5767,8 +5969,8 @@ type(refine_options), intent(in) :: refine_control
 !----------------------------------------------------
 ! Local variables:
 
-logical :: visited(size(grid%edge))
-integer :: neighbors(3), lev, elem, side, edge, newdeg
+logical :: visited(grid%biggest_edge)
+integer :: neighbors(NEIGHBORS_PER_ELEMENT), lev, elem, side, edge, newdeg
 !----------------------------------------------------
 ! Begin executable code
 
@@ -5780,7 +5982,7 @@ integer :: neighbors(3), lev, elem, side, edge, newdeg
       do while (elem /= END_OF_LIST)
          if (grid%element(elem)%isleaf) then
             neighbors = get_neighbors(elem,grid)
-            do side = 1,3
+            do side = 1,EDGES_PER_ELEMENT
                edge = grid%element(elem)%edge(side)
                if (.not. visited(edge)) then
                   visited(edge) = .true.
@@ -6014,7 +6216,7 @@ type(io_options) :: loc_iocont
    loc_iocont = io_control
    loc_iocont%print_linsys_when = NEVER
    loc_iocont%print_error_when = NEVER
-   call refine_uniform_h(ref_soln,loc_refcont)
+   call refine_uniform_h(ref_soln,loc_refcont,solver_control)
    loc_refcont%reftype = P_UNIFORM
    call refine_uniform_p(ref_soln,loc_refcont)
    call solve(ref_soln,procs,loc_iocont,solver_control,still_sequential, &
@@ -6029,7 +6231,7 @@ endif
 
 ! Determine and perform refinements
 
-   call det_and_perf_opt_ref_elem(grid,ref_soln,refine_control)
+   call det_and_perf_opt_ref_elem(grid,ref_soln,refine_control,solver_control)
 
 ! Destroy the reference solution
 
@@ -6038,7 +6240,8 @@ endif
 end subroutine refine_refsoln_elem
 
 !          -------------------------
-subroutine det_and_perf_opt_ref_elem(grid,ref_soln,refine_control)
+subroutine det_and_perf_opt_ref_elem(grid,ref_soln,refine_control, &
+                                     solver_control)
 !          -------------------------
 
 !----------------------------------------------------
@@ -6053,6 +6256,7 @@ subroutine det_and_perf_opt_ref_elem(grid,ref_soln,refine_control)
 type(grid_type), intent(inout) :: grid
 type(grid_type), intent(in) :: ref_soln
 type(refine_options), intent(in) :: refine_control
+type(solver_options), intent(in) :: solver_control
 !----------------------------------------------------
 ! Local variables:
 
@@ -6066,7 +6270,7 @@ call det_opt_ref_elem(grid,ref_soln,opt_ref,refine_control)
 
 ! perform the refinements
 
-call perform_refinements_elem(grid,opt_ref,refine_control)
+call perform_refinements_elem(grid,opt_ref,refine_control,solver_control)
 
 end subroutine det_and_perf_opt_ref_elem
 
@@ -6160,15 +6364,21 @@ integer :: p0, p_u, p_ref, child1, child2, nqpoints_child1, nqpoints_child2, &
            nbasis_children, adim, candidate, nbasis_u, P, Q, R, nkept, winner, &
            ss, i2, astat
 integer, allocatable :: subset(:), ipiv(:), renum(:), invrenum(:)
-real(my_real) :: xvert_elem(3), yvert_elem(3), xvert_child1(3), &
-                 yvert_child1(3), xvert_child2(3), yvert_child2(3), &
+real(my_real) :: xvert_elem(VERTICES_PER_ELEMENT), &
+                 yvert_elem(VERTICES_PER_ELEMENT), &
+                 xvert_child1(VERTICES_PER_ELEMENT), &
+                 yvert_child1(VERTICES_PER_ELEMENT), &
+                 xvert_child2(VERTICES_PER_ELEMENT), &
+                 yvert_child2(VERTICES_PER_ELEMENT), &
                  projerr(11), proj, projx, projy, projerr_u, logprojerr_u, &
                  logprojerr(11), ave, sd, biggest, reduction
 real(my_real), pointer :: qweights_child1(:),xquad_child1(:),yquad_child1(:), &
-                          qweights_child2(:),xquad_child2(:),yquad_child2(:)
+                          qweights_child2(:),xquad_child2(:),yquad_child2(:), &
+                          zquad_child1(:), zquad_child2(:)
 real(my_real), allocatable ::  u_ref_child1(:,:,:), ux_ref_child1(:,:,:), &
                               uy_ref_child1(:,:,:),  u_ref_child2(:,:,:), &
                               ux_ref_child2(:,:,:), uy_ref_child2(:,:,:), &
+                              uz_ref_child1(:,:,:), uz_ref_child2(:,:,:), &
                                basis_elem_child1(:,:), basisx_elem_child1(:,:),&
                               basisy_elem_child1(:,:),  basis_elem_child2(:,:),&
                               basisx_elem_child2(:,:), basisy_elem_child2(:,:),&
@@ -6199,10 +6409,18 @@ child2 = get_child_lid(ref_soln%element(elem)%gid,2,ref_soln%elem_hash)
 
 xvert_elem = grid%vertex(grid%element(elem)%vertex)%coord%x
 yvert_elem = grid%vertex(grid%element(elem)%vertex)%coord%y
-xvert_child1 = (/xvert_elem(1),xvert_elem(3),(xvert_elem(1)+xvert_elem(2))/2/)
-yvert_child1 = (/yvert_elem(1),yvert_elem(3),(yvert_elem(1)+yvert_elem(2))/2/)
-xvert_child2 = (/xvert_elem(2),xvert_elem(3),(xvert_elem(1)+xvert_elem(2))/2/)
-yvert_child2 = (/yvert_elem(2),yvert_elem(3),(yvert_elem(1)+yvert_elem(2))/2/)
+xvert_child1(1) = xvert_elem(1)
+xvert_child1(2) = xvert_elem(3)
+xvert_child1(3) = (xvert_elem(1)+xvert_elem(2))/2
+yvert_child1(1) = yvert_elem(1)
+yvert_child1(2) = yvert_elem(3)
+yvert_child1(3) = (yvert_elem(1)+yvert_elem(2))/2
+xvert_child2(1) = xvert_elem(2)
+xvert_child2(2) = xvert_elem(3)
+xvert_child2(3) = (xvert_elem(1)+xvert_elem(2))/2
+yvert_child2(1) = yvert_elem(2)
+yvert_child2(2) = yvert_elem(3)
+yvert_child2(3) = (yvert_elem(1)+yvert_elem(2))/2
 
 ! quadratures are with polynomials up to degree (p_u+2)**2
 ! get quadrature rules for both of the children; quadratures on elem will be
@@ -6216,26 +6434,40 @@ call quadrature_rule_tri(min((p_u+2)**2,MAX_QUAD_ORDER_TRI), &
                          xvert_child2,yvert_child2,nqpoints_child2, &
                          qweights_child2,xquad_child2,yquad_child2,jerr, &
                          stay_in=.true.)
+allocate(zquad_child1(size(xquad_child1)),zquad_child2(size(xquad_child2))) ! TEMP3D
+zquad_child1=0; zquad_child2=0 ! TEMP3D
 
 ! evaluate the reference solution and first derivatives at the quadrature points
 
 allocate( u_ref_child1(ss,1,nqpoints_child1), &
          ux_ref_child1(ss,1,nqpoints_child1), &
          uy_ref_child1(ss,1,nqpoints_child1), &
+         uz_ref_child1(ss,1,nqpoints_child1), &
           u_ref_child2(ss,1,nqpoints_child2), &
          ux_ref_child2(ss,1,nqpoints_child2), &
-         uy_ref_child2(ss,1,nqpoints_child2),stat=astat)
+         uy_ref_child2(ss,1,nqpoints_child2), &
+         uz_ref_child2(ss,1,nqpoints_child2),stat=astat)
 if (astat /= 0) then
    ierr = ALLOC_FAILED
    call fatal("memory allocation failed in det_one_opt_ref_elem")
    return
 endif
-call evaluate_soln_local(ref_soln,xquad_child1,yquad_child1,child1, &
-                         (/(i,i=1,ss)/),(/1/),u_ref_child1,ux_ref_child1, &
-                         uy_ref_child1)
-call evaluate_soln_local(ref_soln,xquad_child2,yquad_child2,child2, &
-                         (/(i,i=1,ss)/),(/1/),u_ref_child2,ux_ref_child2, &
-                         uy_ref_child2)
+select case (global_element_kind)
+case (TRIANGULAR_ELEMENT)
+   call evaluate_soln_local(ref_soln,xquad_child1,yquad_child1,child1, &
+                            (/(i,i=1,ss)/),(/1/),u_ref_child1,ux_ref_child1, &
+                            uy_ref_child1)
+   call evaluate_soln_local(ref_soln,xquad_child2,yquad_child2,child2, &
+                            (/(i,i=1,ss)/),(/1/),u_ref_child2,ux_ref_child2, &
+                            uy_ref_child2)
+case (TETRAHEDRAL_ELEMENT)
+   call evaluate_soln_local(ref_soln,xquad_child1,yquad_child1,child1, &
+                            (/(i,i=1,ss)/),(/1/),u_ref_child1,ux_ref_child1, &
+                            uy_ref_child1,z=zquad_child1,uz=uz_ref_child1)
+   call evaluate_soln_local(ref_soln,xquad_child2,yquad_child2,child2, &
+                            (/(i,i=1,ss)/),(/1/),u_ref_child2,ux_ref_child2, &
+                            uy_ref_child2,z=zquad_child2,uz=uz_ref_child2)
+end select
 
 ! evaluate the basis functions of elem up to degree p+2
 
@@ -6291,31 +6523,35 @@ if (astat /= 0) then
 endif
 ip_a = 0.0_my_real
 ip_b = 0.0_my_real
-do i=1,nbasis_elem
+do k=1,nqpoints_child1
    do j=1,nbasis_elem
-      do k=1,nqpoints_child1
+      do i=1,nbasis_elem
          ip_a(i,j) = ip_a(i,j) + qweights_child1(k) * &
                             (basisx_elem_child1(i,k)*basisx_elem_child1(j,k) + &
                              basisy_elem_child1(i,k)*basisy_elem_child1(j,k) + &
                               basis_elem_child1(i,k)* basis_elem_child1(j,k))
       end do
-      do k=1,nqpoints_child2
-         ip_a(i,j) = ip_a(i,j) + qweights_child2(k) * &
-                            (basisx_elem_child2(i,k)*basisx_elem_child2(j,k) + &
-                             basisy_elem_child2(i,k)*basisy_elem_child2(j,k) + &
-                              basis_elem_child2(i,k)* basis_elem_child2(j,k))
-      end do
    end do
-   do k=1,nqpoints_child1
-      do l=1,ss
+   do l=1,ss
+      do i=1,nbasis_elem
          ip_b(i,l) = ip_b(i,l) + qweights_child1(k) * &
                                (ux_ref_child1(l,1,k)*basisx_elem_child1(i,k) + &
                                 uy_ref_child1(l,1,k)*basisy_elem_child1(i,k) + &
                                  u_ref_child1(l,1,k)* basis_elem_child1(i,k))
       end do
    end do
-   do k=1,nqpoints_child2
-      do l=1,ss
+end do
+do k=1,nqpoints_child2
+   do j=1,nbasis_elem
+      do i=1,nbasis_elem
+         ip_a(i,j) = ip_a(i,j) + qweights_child2(k) * &
+                            (basisx_elem_child2(i,k)*basisx_elem_child2(j,k) + &
+                             basisy_elem_child2(i,k)*basisy_elem_child2(j,k) + &
+                              basis_elem_child2(i,k)* basis_elem_child2(j,k))
+      end do
+   end do
+   do l=1,ss
+      do i=1,nbasis_elem
          ip_b(i,l) = ip_b(i,l) + qweights_child2(k) * &
                                (ux_ref_child2(l,1,k)*basisx_elem_child2(i,k) + &
                                 uy_ref_child2(l,1,k)*basisy_elem_child2(i,k) + &
@@ -6349,11 +6585,13 @@ if (astat /= 0) then
    call fatal("memory allocation failed in det_one_opt_ref_elem")
    return
 endif
-do i=1,nbasis_u
-   do j=1,nbasis_u
+do j=1,nbasis_u
+   do i=1,nbasis_u
       a(i,j) = ip_a(subset(i),subset(j))
    end do
-   do j=1,ss
+end do
+do j=1,ss
+   do i=1,nbasis_u
       b(i,j) = ip_b(subset(i),j)
    end do
 end do
@@ -6439,11 +6677,13 @@ nsubset = nbasis(candidate)
 
 ! copy the inner products needed for the projection on (elem,p+1)
 
-do i=1,nsubset
-   do j=1,nsubset
+do j=1,nsubset
+   do i=1,nsubset
       a(i,j) = ip_a(subset(i),subset(j))
    end do
-   do j=1,ss
+end do
+do j=1,ss
+   do i=1,nsubset
       b(i,j) = ip_b(subset(i),j)
    end do
 end do
@@ -6626,17 +6866,17 @@ end do
 
 ip_a = 0.0_my_real
 ip_b = 0.0_my_real
-do i=1,nbasis_child
+do k=1,nqpoints_child1
    do j=1,nbasis_child
-      do k=1,nqpoints_child1
+      do i=1,nbasis_child
          ip_a(i,j) = ip_a(i,j) + qweights_child1(k) * &
                                  (basisx_child1(i,k)*basisx_child1(j,k) + &
                                   basisy_child1(i,k)*basisy_child1(j,k) + &
                                    basis_child1(i,k)* basis_child1(j,k))
       end do
    end do
-   do k=1,nqpoints_child1
-      do j=1,ss
+   do j=1,ss
+      do i=1,nbasis_child
          ip_b(i,j) = ip_b(i,j) + qweights_child1(k) * &
                           (ux_ref_child1(j,1,k)*basisx_child1(i,k) + &
                            uy_ref_child1(j,1,k)*basisy_child1(i,k) + &
@@ -6644,9 +6884,9 @@ do i=1,nbasis_child
       end do
    end do
 end do
-do i=1,nbasis_child
+do k=1,nqpoints_child2
    do j=1,nbasis_child
-      do k=1,nqpoints_child2
+      do i=1,nbasis_child
          ip_a(renum(i),renum(j)) = ip_a(renum(i),renum(j)) + &
                                    qweights_child2(k) * &
                                    (basisx_child2(i,k)*basisx_child2(j,k) + &
@@ -6654,8 +6894,8 @@ do i=1,nbasis_child
                                      basis_child2(i,k)* basis_child2(j,k))
       end do
    end do
-   do k=1,nqpoints_child2
-      do j=1,ss
+   do j=1,ss
+      do i=1,nbasis_child
          ip_b(renum(i),j) = ip_b(renum(i),j) + qweights_child2(k) * &
                              (ux_ref_child2(j,1,k)*basisx_child2(i,k) + &
                               uy_ref_child2(j,1,k)*basisy_child2(i,k) + &
@@ -6699,11 +6939,13 @@ do i=0,2
 
 ! copy the inner products needed for the projection on (p0+i,p0+j)
 
-      do k=1,nsubset
-         do l=1,nsubset
+      do l=1,nsubset
+         do k=1,nsubset
             a(k,l) = ip_a(subset(k),subset(l))
          end do
-         do l=1,ss
+      end do
+      do l=1,ss
+         do k=1,nsubset
             b(k,l) = ip_b(subset(k),l)
          end do
       end do
@@ -6774,7 +7016,8 @@ end do
 deallocate(u_ref_child1,ux_ref_child1, uy_ref_child1,u_ref_child2, &
            ux_ref_child2,uy_ref_child2,basis_child1,basisx_child1, &
            basisy_child1,basis_child2,basisx_child2,basisy_child2, &
-           ip_a,ip_b,subset,a,b,ipiv,renum,invrenum)
+           ip_a,ip_b,subset,a,b,ipiv,renum,invrenum,uz_ref_child1, &
+           uz_ref_child2)
 
 ! discard candidates that do not reduce the projection error; flag them
 ! by setting the projection error to -1
@@ -6849,7 +7092,7 @@ endif
 end function det_one_opt_ref_elem
 
 !          ------------------------
-subroutine perform_refinements_elem(grid,opt_ref,refine_control)
+subroutine perform_refinements_elem(grid,opt_ref,refine_control,solver_control)
 !          ------------------------
 
 !----------------------------------------------------
@@ -6862,10 +7105,11 @@ subroutine perform_refinements_elem(grid,opt_ref,refine_control)
 type(grid_type), intent(inout) :: grid
 integer, intent(inout) :: opt_ref(:,:)
 type(refine_options), intent(in) :: refine_control
+type(solver_options), intent(in) :: solver_control
 !----------------------------------------------------
 ! Local variables:
 
-integer :: lev, elem, err, children(MAX_CHILD), reduce_p_max
+integer :: lev, elem, err, children(MAX_CHILD), reduce_p_max, refedge
 !----------------------------------------------------
 ! Begin executable code
 
@@ -6887,8 +7131,9 @@ do lev=1,grid%nlev
 
          if (opt_ref(elem,2) /= -1) then
             if (grid%element(elem)%isleaf) then
-               call bisect_triangle_pair(grid,elem,err,refine_control, &
-                                         reduce_p=0,reduce_p_max=reduce_p_max)
+               call h_refine_element(grid,elem,err,refedge,refine_control, &
+                                     solver_control,reduce_p=0, &
+                                     reduce_p_max=reduce_p_max)
             endif
 
 ! use p-refinement to set the degrees of the children
@@ -6960,7 +7205,7 @@ end subroutine perform_refinements_elem
 !===========================================================================
 
 !          ----------
-subroutine refine_nlp(grid,procs,refine_control,still_sequential)
+subroutine refine_nlp(grid,procs,refine_control,solver_control,still_sequential)
 !          ----------
 
 !----------------------------------------------------
@@ -6973,6 +7218,7 @@ subroutine refine_nlp(grid,procs,refine_control,still_sequential)
 type(grid_type), intent(inout) :: grid
 type(proc_info), intent(in) :: procs
 type(refine_options), intent(in) :: refine_control
+type(solver_options), intent(in) :: solver_control
 logical, intent(in) :: still_sequential
 !----------------------------------------------------
 ! Local variables:
@@ -7082,7 +7328,7 @@ endif
 
 ! perform the refinements
 
-call nlp_refine_grid(grid,new_level,new_degree,refine_control)
+call nlp_refine_grid(grid,new_level,new_degree,refine_control,solver_control)
 
 ! free memory
 
@@ -7203,8 +7449,8 @@ integer :: lev, elem, astat
 !----------------------------------------------------
 ! Begin executable code
 
-allocate(nlp_elem_list(size(grid%element)), &
-         nlp_inverse_elem(size(grid%element)), stat=astat)
+allocate(nlp_elem_list(grid%biggest_elem), &
+         nlp_inverse_elem(grid%biggest_elem), stat=astat)
 if (astat /= 0) then
    ierr = ALLOC_FAILED
    call fatal("memory allocation failed in create_nlp_elem_list")
@@ -7409,7 +7655,8 @@ derrest = derrest/nlp_tau
 end subroutine nlp_derrest
 
 !          ---------------
-subroutine nlp_refine_grid(grid,new_level,new_degree,refine_control)
+subroutine nlp_refine_grid(grid,new_level,new_degree,refine_control, &
+                           solver_control)
 !          ---------------
 
 !----------------------------------------------------
@@ -7422,6 +7669,7 @@ subroutine nlp_refine_grid(grid,new_level,new_degree,refine_control)
 type(grid_type), intent(inout) :: grid
 integer, intent(in) :: new_level(:), new_degree(:)
 type(refine_options), intent(in) :: refine_control
+type(solver_options), intent(in) :: solver_control
 !----------------------------------------------------
 ! Local variables:
 
@@ -7466,7 +7714,7 @@ do i=1,nlp_nelem
    elem = nlp_elem_list(i)
    elem_gid = grid%element(elem)%gid
    do j=1,-nrefine(i)
-      parent_gid = elem_gid/2
+      parent_gid = elem_gid/MAX_CHILD
       elem_check = hash_decode_key(elem_gid,grid%elem_hash)
       if (elem_check /= HASH_NOT_FOUND) then
          parent = hash_decode_key(parent_gid,grid%elem_hash)
@@ -7475,7 +7723,7 @@ do i=1,nlp_nelem
             call fatal("didn't find parent in hash table in nlp_refine_grid")
             stop
          endif
-         call unbisect_triangle_pair(grid,parent,errcode,refine_control)
+         call h_coarsen_element(grid,parent,errcode,refine_control)
       endif
       elem_gid = parent_gid
    end do
@@ -7489,21 +7737,24 @@ do i=1,nlp_nelem
    if (nrefine(i) > 0) then
       elem = hash_decode_key(list_gid(i),grid%elem_hash)
       if (elem == HASH_NOT_FOUND) then
-         call create_element(grid,list_gid(i),refine_control,errcode)
+         call create_element(grid,list_gid(i),refine_control, &
+                             solver_control,errcode)
          elem = hash_decode_key(list_gid(i),grid%elem_hash)
       endif
 
 ! then use a recursive routine to perform nrefine refinements making sure the
 ! whole binary tree of descendants is created
 
-      call nlp_refine_grid_recur(grid,elem,refine_control,nrefine(i))
+      call nlp_refine_grid_recur(grid,elem,refine_control,solver_control, &
+                                 nrefine(i))
    endif
 end do
 
 end subroutine nlp_refine_grid
 
 !                    ---------------------
-recursive subroutine nlp_refine_grid_recur(grid,elem,refine_control,nrefine)
+recursive subroutine nlp_refine_grid_recur(grid,elem,refine_control, &
+                                           solver_control,nrefine)
 !                    ---------------------
 
 !----------------------------------------------------
@@ -7516,11 +7767,12 @@ recursive subroutine nlp_refine_grid_recur(grid,elem,refine_control,nrefine)
 type(grid_type), intent(inout) :: grid
 integer, intent(in) :: elem
 type(refine_options), intent(in) :: refine_control
+type(solver_options), intent(in) :: solver_control
 integer, intent(in) :: nrefine
 !----------------------------------------------------
 ! Local variables:
 
-integer :: child(MAX_CHILD), errcode
+integer :: child(MAX_CHILD), errcode, refedge
 !----------------------------------------------------
 ! Begin executable code
 
@@ -7529,7 +7781,8 @@ if (nrefine > 0) then
 ! refine this element
 
    if (grid%element(elem)%isleaf) then
-      call bisect_triangle_pair(grid,elem,errcode,refine_control)
+      call h_refine_element(grid,elem,errcode,refedge,refine_control, &
+                            solver_control)
    endif
 
 ! refine the children
@@ -7537,8 +7790,10 @@ if (nrefine > 0) then
    if (nrefine > 1) then
       child = get_child_lid(grid%element(elem)%gid,ALL_CHILDREN,grid%elem_hash)
       if (child(1) /= NO_CHILD) then
-         call nlp_refine_grid_recur(grid,child(1),refine_control,nrefine-1)
-         call nlp_refine_grid_recur(grid,child(2),refine_control,nrefine-1)
+         call nlp_refine_grid_recur(grid,child(1),refine_control, &
+                                    solver_control,nrefine-1)
+         call nlp_refine_grid_recur(grid,child(2),refine_control, &
+                                    solver_control,nrefine-1)
       endif
    endif
 endif
@@ -8050,7 +8305,7 @@ end module hp_strategies
 !              it equal to zero.
  
 !     LOCAL VARIABLES
-      integer elem, neigh_index, all_neighbors(3), neigh
+      integer elem, neigh_index, all_neighbors(NEIGHBORS_PER_ELEMENT), neigh
 
 !     Constraints
 
@@ -8151,7 +8406,8 @@ end module hp_strategies
 !     OF YOUR CONSTRAINTS: 
 !     ******************************************************************
 
-      integer :: i, elem, neigh_index, all_neighbors(3), neigh
+      integer :: i, elem, neigh_index, all_neighbors(NEIGHBORS_PER_ELEMENT), &
+                 neigh
 
       flag = 0
 

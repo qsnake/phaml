@@ -26,8 +26,9 @@ module phaml
 ! The routines are: phaml_solve_pde, phaml_create, phaml_destroy, 
 !                   phaml_evaluate, phaml_evaluate_old, phaml_get_grid_soln,
 !                   phaml_copy_soln_to_old, phaml_integrate, phaml_connect,
-!                   phaml_store, phaml_restore, phaml_store_matrix, phaml_popen,
-!                   phaml_pclose, phaml_query, phaml_scale, phaml_compress
+!                   phaml_store, phaml_restore, phaml_store_matrix, 
+!                   phaml_store_grid, phaml_popen, phaml_pclose, phaml_query,
+!                   phaml_scale, phaml_compress
 ! See doc/user_guide.pdf for a complete description of the interface
 ! to these routines.
 !
@@ -56,6 +57,7 @@ use load_balance
 use error_estimators
 use linsys_io
 use phaml_type_mod
+use omp_lib
 
 !----------------------------------------------------
 
@@ -64,7 +66,7 @@ private
 public evaluate_slave ! TEMP080428 for time dependent Schroedinger
 public phaml_solution_type, my_real, phaml_solve_pde, phaml_create, &
        phaml_destroy, phaml_evaluate, phaml_evaluate_old, phaml_get_grid_soln, &
-       phaml_copy_soln_to_old, phaml_integrate, &
+       phaml_copy_soln_to_old, phaml_integrate, phaml_store_grid, &
        phaml_connect, phaml_store, phaml_restore, phaml_store_matrix, &
        phaml_popen, phaml_pclose, phaml_slave, phaml_query, phaml_scale, &
        phaml_compress, pde, &
@@ -82,18 +84,22 @@ public phaml_solution_type, my_real, phaml_solve_pde, phaml_create, &
        INITIAL_CONDITION, EXPLICIT_ERRIND, EQUILIBRATED_RESIDUAL, &
        RTK, ZOLTAN_RCB, ZOLTAN_OCT, ZOLTAN_METIS, ZOLTAN_REFTREE, ZOLTAN_RIB, &
        ZOLTAN_HSFC, ZOLTAN_FILE, BALANCE_REFINE_SOLVE, SET_INITIAL,  &
-       BALANCE_ONLY, SOLVE_ONLY, REFINE_ONLY
+       BALANCE_ONLY, SOLVE_ONLY, REFINE_ONLY, &
+       GRIDFILE_POLY, GRIDFILE_POLY_SOLN, GRIDFILE_MSH, GRIDFILE_MSH_SOLN
 public MG_NO_TOL, MG_ERREST_TOL, &
        MG_SOLVER, LAPACK_INDEFINITE_SOLVER, LAPACK_SPD_SOLVER, &
        CG_SOLVER, GMRES_SOLVER, &
        PETSC_RICHARDSON_SOLVER, PETSC_CHEBYCHEV_SOLVER, PETSC_CG_SOLVER, &
        PETSC_GMRES_SOLVER, PETSC_TCQMR_SOLVER, PETSC_BCGS_SOLVER, &
        PETSC_CGS_SOLVER, PETSC_TFQMR_SOLVER, PETSC_CR_SOLVER, &
-       PETSC_LSQR_SOLVER, PETSC_BICG_SOLVER, MUMPS_SPD_SOLVER, &
-       MUMPS_NONSYM_SOLVER, MUMPS_GEN_SOLVER, &
-       SUPERLU_SOLVER, HYPRE_BOOMERAMG_SOLVER, &
-       HYPRE_PCG_SOLVER, HYPRE_GMRES_SOLVER, &
-       ARPACK_SOLVER, BLOPEX_SOLVER, TEST_PRECONDITION, &
+       PETSC_LSQR_SOLVER, PETSC_BICG_SOLVER, PETSC_MUMPS_GEN_SOLVER, &
+       PETSC_MUMPS_SPD_SOLVER, PETSC_SUPERLU_SOLVER, &
+       HYPRE_BOOMERAMG_SOLVER, HYPRE_PCG_SOLVER, HYPRE_GMRES_SOLVER, &
+       SLEPC_POWER, SLEPC_SUBSPACE, SLEPC_ARNOLDI, SLEPC_LANCZOS, &
+       SLEPC_KRYLOV_SCHUR, SLEPC_GEN_DAVIDSON, SLEPC_JACOBI_DAVIDSON, &
+       SLEPC_LAPACK, SLEPC_ARPACK, &
+       SLEPC_BLOPEX, ST_NONE, ST_SHIFT_ORIGIN, ST_FOLD, ST_SHIFT_INVERT, &
+       ST_CAYLEY, TEST_PRECONDITION, &
        NO_PRECONDITION, MG_PRECONDITION, COARSE_GRID_PRECONDITION,&
        PETSC_JACOBI_PRECONDITION, PETSC_BJACOBI_PRECONDITION,&
        PETSC_SOR_PRECONDITION, PETSC_EISENSTAT_PRECONDITION, &
@@ -102,16 +108,16 @@ public MG_NO_TOL, MG_ERREST_TOL, &
        HYPRE_BOOMERAMG_PRECONDITION, HYPRE_PARASAILS_PRECONDITION, &
        MGCOMM_NONE, MGCOMM_FUDOP, MGCOMM_CONVENTIONAL, &
        ELLIPTIC, EIGENVALUE, NORMAL_SPAWN, DEBUG_SLAVE, DEBUG_GRAPHICS, &
-       DEBUG_BOTH, DOUBLE_NVERT, DOUBLE_NVERT_SMOOTH, DOUBLE_NELEM, &
-       DOUBLE_NELEM_SMOOTH, DOUBLE_NEQ, HALVE_ERREST, KEEP_NVERT, &
-       KEEP_NVERT_SMOOTH, KEEP_NELEM, KEEP_NELEM_SMOOTH, KEEP_NEQ, KEEP_ERREST,&
-       DOUBLE_NEQ_SMOOTH, KEEP_NEQ_SMOOTH, ONE_REF, ONE_REF_HALF_ERRIND, &
+       DEBUG_BOTH, VTUNE_SLAVE, VTUNE_GRAPHICS, VTUNE_BOTH, &
+       DOUBLE_NVERT, DOUBLE_NELEM, &
+       DOUBLE_NEQ, HALVE_ERREST, KEEP_NVERT, &
+       KEEP_NELEM, KEEP_NEQ, KEEP_ERREST,&
+       ONE_REF, ONE_REF_HALF_ERRIND, &
        H_UNIFORM, H_ADAPTIVE, P_UNIFORM, P_ADAPTIVE, HP_ADAPTIVE, &
        HP_BIGGER_ERRIND, HP_APRIORI, HP_PRIOR2P_E, HP_PRIOR2P_H1, HP_T3S, &
        HP_ALTERNATE, HP_TYPEPARAM, HP_COEF_DECAY, HP_COEF_ROOT, HP_SMOOTH_PRED,&
        HP_NEXT3P, HP_REFSOLN_EDGE, HP_REFSOLN_ELEM, HP_NLP, HP_STEEPEST_SLOPE, &
-       MINIMUM_RULE, MAXIMUM_RULE, SCALE_LINF, SCALE_L2, SCALE_M, EIGEN_LEFT, &
-       EIGEN_RIGHT, EIGEN_BOTH, SHIFT_INVERT, SHIFT_SQUARE
+       MINIMUM_RULE, MAXIMUM_RULE, SCALE_LINF, SCALE_L2, SCALE_M
 
 !----------------------------------------------------
 ! The following generic interfaces are defined:
@@ -144,9 +150,11 @@ subroutine phaml_solve_pde(phaml_solution, iterm, max_elem, max_vert, max_eq, &
    preconditioner, mg_cycles, mg_tol, mg_prerelax, mg_postrelax,              &
    mg_prerelax_ho, mg_postrelax_ho, dd_iterations, krylov_iter,               &
    krylov_restart, krylov_tol, mg_comm, ignore_quad_err, eigensolver,         &
-   num_eval, lambda0, lambda0_side, transformation, scale_evec, arpack_ncv,   &
-   arpack_maxit, arpack_tol, blopex_maxit, blopex_atol, blopex_rtol,          &
-   degree, inc_quad_order,                                                    &
+   num_eval, lambda0, transformation, st_shift, st_antishift,                 &
+   harmonic_extraction, slepc_true_residual, scale_evec,                      &
+   eigen_ncv, eigen_maxit, eigen_tol, degree, inc_quad_order,                 &
+   pde_has_first_order_terms, pde_has_cross_derivative,                       &
+   laplacian_operator, isosceles_right_triangles,                             &
    hypre_BoomerAMG_MaxLevels,hypre_BoomerAMG_MaxIter,hypre_BoomerAMG_Tol,     &
    hypre_BoomerAMG_StrongThreshold,hypre_BoomerAMG_MaxRowSum,                 &
    hypre_BoomerAMG_CoarsenType,hypre_BoomerAMG_MeasureType,                   &
@@ -184,7 +192,11 @@ logical, optional, intent(in) :: pause_after_draw, pause_at_start, &
                                  pause_at_end, pause_after_phases, &
                                  ignore_quad_err, petsc_matrix_free, &
                                  derefine, print_warnings, solve_init, &
-                                 stop_on_maxlev, stop_on_maxdeg
+                                 stop_on_maxlev, stop_on_maxdeg, &
+                                 pde_has_first_order_terms, &
+                                 pde_has_cross_derivative, &
+                                 laplacian_operator, isosceles_right_triangles,&
+                                 harmonic_extraction, slepc_true_residual
 integer, optional, intent(in) :: max_elem, max_vert, max_eq, max_lev, max_deg, &
            print_grid_when, print_error_when, print_time_when, print_eval_when,&
            print_linsys_when, print_linsys_who, print_grid_who, &
@@ -198,12 +210,12 @@ integer, optional, intent(in) :: max_elem, max_vert, max_eq, max_lev, max_deg, &
            mg_prerelax_ho, mg_postrelax_ho, dd_iterations, edge_rule, &
            reftype, refterm, hp_strategy, t3s_nunif, t3s_maxref, t3s_maxdeginc,&
            nlp_max_h_dec, nlp_max_h_inc, nlp_max_p_dec, nlp_max_p_inc, &
-           eigensolver, num_eval, arpack_ncv, arpack_maxit, blopex_maxit, &
-           coarse_size, coarse_method, lambda0_side, transformation, &
+           eigensolver, num_eval, eigen_ncv, eigen_maxit, &
+           coarse_size, coarse_method, transformation, &
            scale_evec, krylov_iter, krylov_restart
 real(my_real), optional, intent(in) :: term_energy_err, term_Linf_err, &
                                        term_L2_err, inc_factor, lambda0, &
-                                       arpack_tol, blopex_atol, blopex_rtol, &
+                                       eigen_tol, st_shift, st_antishift, &
                                        mg_tol, reftol, krylov_tol, &
                                        t3s_gamma, t3s_eta, tp_gamma, &
                                        sp_gamma_h, sp_gamma_p, refsoln_pbias
@@ -250,8 +262,7 @@ logical, optional, intent(in) :: hypre_has_NumGridSweeps, &
 integer :: loc_clocks, loc_sequential_vert, loc_max_refsolveloop, &
            loc_partition_method, loc_task, loc_prebalance, &
            loc_postbalance, loc_print_header_who, &
-           loc_print_trailer_who, loc_print_eval_when, loc_print_eval_who, &
-           loc_degree
+           loc_print_trailer_who, loc_degree
 logical :: loc_solve_init
 type (io_options) :: io_control
 type (solver_options) :: solver_control
@@ -261,7 +272,7 @@ real (my_real) :: no_reals(1)
 real (my_real), allocatable :: send_real(:)
 integer, pointer :: recv_int(:)
 real (my_real), pointer :: recv_real(:)
-logical :: still_sequential, ltemp, t3s_no_stall
+logical :: still_sequential, ltemp, t3s_no_stall, stalled
 integer :: total_elem,total_vert, total_nlev, total_dof, astat, nvert1, &
            nvert2, nelem1, nelem2, ndof1, ndof2, total_deg
 integer :: i, init_nvert, init_nelem, init_dof, ierr1, ierr2, comp, evec, soln
@@ -309,7 +320,7 @@ if (refine_control%reftype == HP_ADAPTIVE .and. &
       call refine(phaml_solution%grid,procs,refine_control,solver_control, &
                   io_control,phaml_solution%lb,phaml_solution%still_sequential,&
                   0,0,0,0,loc_partition_method,loc_prebalance, &
-                  loc_prebalance/=BALANCE_NONE)
+                  loc_prebalance/=BALANCE_NONE,stalled)
       i = i-1
    end do
 endif
@@ -326,6 +337,11 @@ if (loc_solve_init .and. &
                          phaml_solution%still_sequential, &
                          (/PHASES,FREQUENTLY,TOO_MUCH/),240,reduction=.true., &
                          errest=refine_control%error_estimator)
+   if (phaml_solution%eq_type == EIGENVALUE) then
+      call print_eigenvalues(phaml_solution%grid,procs,io_control, &
+                             refine_control,still_sequential, &
+                             (/PHASES,FREQUENTLY,TOO_MUCH/),110)
+   endif
    call draw_grid(phaml_solution%grid,procs,io_control,refine_control, &
                   phaml_solution%i_draw_grid,phaml_solution%master_draws_grid, &
                   phaml_solution%still_sequential, &
@@ -433,9 +449,10 @@ mainloop: do
 
    if (still_sequential .and. PARALLEL/=SEQUENTIAL) then
       call check_end_sequential(phaml_solution,grid,procs,refine_control, &
-                                io_control,loc_sequential_vert,loc_prebalance, &
-                                loc_postbalance,loc_partition_method, &
-                                loop,loop_end_sequential,still_sequential)
+                                solver_control,io_control,loc_sequential_vert, &
+                                loc_prebalance,loc_postbalance, &
+                                loc_partition_method,loop,loop_end_sequential, &
+                                still_sequential)
    endif
 
 ! load balance before refinement
@@ -447,9 +464,9 @@ mainloop: do
          if (use_old_refinement(refine_control,procs, &
                                 loc_prebalance/=BALANCE_NONE)) then
 
-            call balance(phaml_solution,grid,procs,io_control,refine_control, &
-                         loc_partition_method,loc_prebalance,still_sequential, &
-                         loop, loop_end_sequential, .true.)
+            call balance(phaml_solution, grid,procs,io_control,refine_control, &
+                         solver_control, loc_partition_method, loc_prebalance, &
+                         still_sequential, loop, loop_end_sequential, .true.)
 
          endif
       endif
@@ -476,10 +493,11 @@ mainloop: do
          call refine(grid,procs,refine_control,solver_control,io_control, &
                      phaml_solution%lb,still_sequential,init_nvert,init_nelem, &
                      init_dof,loop,loc_partition_method,loc_prebalance, &
-                     loc_prebalance/=BALANCE_NONE)
+                     loc_prebalance/=BALANCE_NONE,stalled)
          if (use_old_refinement(refine_control,procs, &
                                 loc_prebalance/=BALANCE_NONE)) then
-            call reconcile(grid,procs,refine_control,still_sequential)
+            call reconcile(grid,procs,refine_control,solver_control, &
+                           still_sequential)
          endif
          if (refine_control%reftype == HP_ADAPTIVE .and. &
              refine_control%hp_strategy == HP_T3S) then
@@ -515,8 +533,8 @@ mainloop: do
       if (loc_postbalance /= BALANCE_NONE) then
 
          call balance(phaml_solution, grid, procs, io_control, refine_control, &
-                      loc_partition_method, loc_postbalance, still_sequential, &
-                      loop, -1, .false.)
+                      solver_control, loc_partition_method, loc_postbalance, &
+                      still_sequential, loop, -1, .false.)
       endif
    endif
 
@@ -545,71 +563,11 @@ mainloop: do
                          (/PHASES,FREQUENTLY,TOO_MUCH/),240+loop, &
                          reduction=.true., &
                          errest=refine_control%error_estimator)
-
-! print eigenvalues
-
-   if (phaml_solution%eq_type == EIGENVALUE .and. &
-       loc_print_eval_when == PHASES) then
-
-      allocate(send_real(2*grid%num_eval),stat=astat)
-      if (astat /= 0) then
-         ierr = ALLOC_FAILED
-         call fatal("memory allocation failed for eigenvalues in phaml_solve_pde")
-         stop
-      endif
-      if (my_proc(procs) == MASTER) then
-         if (loc_print_eval_who == MASTER .or. &
-             loc_print_eval_who == EVERYONE) then
-            send_real = 0.0_my_real
-            do i=1,num_proc(phaml_solution%procs)
-               call phaml_recv(procs,proc,recv_int,ni,recv_real,nr,111)
-               if (proc==1) then
-                  send_real(1:2*grid%num_eval:2)=recv_real(1:2*grid%num_eval:2)
-                  send_real(2:2*grid%num_eval:2)=send_real(2:2*grid%num_eval:2)&
-                                      + recv_real(2:2*grid%num_eval:2)**2
-               elseif (.not. still_sequential) then
-                  send_real(2:2*grid%num_eval:2)=send_real(2:2*grid%num_eval:2)&
-                                      + recv_real(2:2*grid%num_eval:2)**2
-               endif
-               if (associated(recv_real)) deallocate(recv_real,stat=astat)
-            end do
-            send_real(2:2*grid%num_eval:2)=sqrt(send_real(2:2*grid%num_eval:2))
-            write(outunit,"(A)")
-            write(outunit,"(A)") "Eigenvalues and error estimates:"
-            do i=1,size(send_real),2
-               write(outunit,"(SS,1P,A,2E18.10E2)") "   ",send_real(i), &
-                                                          send_real(i+1)
-            end do
-         endif
-
-      else ! slave
-
-         if (loc_print_eval_who == MASTER .or. loc_print_eval_who == EVERYONE &
-                                          .or. loc_print_eval_who == SLAVES)then
-            do i=0,grid%num_eval-1
-               send_real(2*i+1) = grid%eigenvalue(i+1)
-               call error_estimate(grid,procs,refine_control%error_estimator, &
-                                   i+1,errest_eigenvalue=send_real(2*i+2))
-            end do
-         endif
-         if (loc_print_eval_who == MASTER .or. loc_print_eval_who == EVERYONE) then
-            call phaml_send(procs,MASTER,send_int,0,send_real,&
-                            size(send_real),111)
-         endif
-         if (loc_print_eval_who == SLAVES .or. loc_print_eval_who == EVERYONE) then
-            write(outunit,"(A)")
-            write(outunit,"(A)") "Eigenvalues and error estimates:"
-            do i=1,size(send_real),2
-               write(outunit,"(SS,1P,A,2E18.10E2)") "   ",send_real(i),send_real(i+1)
-            end do
-         endif
-         if (loc_print_eval_who == MASTER .or. loc_print_eval_who == EVERYONE &
-                                          .or. loc_print_eval_who == SLAVES)then
-         endif
-      endif
-      deallocate(send_real)
+   if (phaml_solution%eq_type == EIGENVALUE) then
+      call print_eigenvalues(grid,procs,io_control,refine_control, &
+                             still_sequential,(/PHASES,FREQUENTLY,TOO_MUCH/), &
+                             110+loop)
    endif
-
    call draw_grid(grid,procs,io_control,refine_control, &
                   phaml_solution%i_draw_grid, &
                   phaml_solution%master_draws_grid,still_sequential, &
@@ -746,12 +704,15 @@ mainloop: do
       call get_grid_info(grid,procs,still_sequential,265+loop, &
                          total_nvert=nvert2,total_nelem_leaf=nelem2, &
                          total_dof=ndof2,no_master=.true.)
+! TEMP I shouldn't need check_stall_special now that I check stalling in
+!      the refine loop
       if (ierr == NO_ERROR .and. nvert1==nvert2 .and. nelem1==nelem2 .and. ndof1==ndof2) then
          if (refine_control%reftype == P_ADAPTIVE .or. &
              refine_control%reftype == HP_ADAPTIVE) then
             if (check_stall_special(grid,2)) ierr = REFINEMENT_STALLED
          endif
       endif
+      if (ierr == NO_ERROR .and. stalled) ierr = REFINEMENT_STALLED
    endif
 
 ! coordinate ierr using global max; processor 1 sends it to the master.
@@ -813,66 +774,9 @@ call print_grid_info(grid,procs,io_control,still_sequential, &
 call print_error_info(grid,procs,io_control,still_sequential, &
                       (/FREQUENTLY,PHASES,FINAL/),121, &
                       errest=refine_control%error_estimator)
-if (phaml_solution%eq_type == EIGENVALUE .and. &
-    loc_print_eval_when == FINAL) then
-
-   allocate(send_real(2*grid%num_eval),stat=astat)
-   if (astat /= 0) then
-      ierr = ALLOC_FAILED
-      call fatal("memory allocation failed for final eigenvalues in phaml_solve_pde")
-      stop
-   endif
-   if (my_proc(procs) == MASTER) then
-      if (loc_print_eval_who == MASTER .or. &
-          loc_print_eval_who == EVERYONE) then
-         send_real = 0.0_my_real
-         do i=1,num_proc(phaml_solution%procs)
-            call phaml_recv(procs,proc,recv_int,ni,recv_real,nr,112)
-            if (proc==1) then
-               send_real(1:2*grid%num_eval:2)=recv_real(1:2*grid%num_eval:2)
-               send_real(2:2*grid%num_eval:2)=send_real(2:2*grid%num_eval:2)&
-                                   + recv_real(2:2*grid%num_eval:2)**2
-            elseif (.not. still_sequential) then
-               send_real(2:2*grid%num_eval:2)=send_real(2:2*grid%num_eval:2)&
-                                   + recv_real(2:2*grid%num_eval:2)**2
-            endif
-            if (associated(recv_real)) deallocate(recv_real,stat=astat)
-         end do
-         send_real(2:2*grid%num_eval:2)=sqrt(send_real(2:2*grid%num_eval:2))
-         write(outunit,"(A)")
-         write(outunit,"(A)") "Eigenvalues and error estimates:"
-         do i=1,size(recv_real),2
-            write(outunit,"(SS,1P,A,2E18.10E2)") "   ",send_real(i), &
-                                                       send_real(i+1)
-         end do
-      endif
-
-   else ! slave
-
-      if (loc_print_eval_who == MASTER .or. loc_print_eval_who == EVERYONE &
-                                       .or. loc_print_eval_who == SLAVES)then
-         do i=0,grid%num_eval-1
-            send_real(2*i+1) = grid%eigenvalue(i+1)
-            call error_estimate(grid,procs,refine_control%error_estimator, &
-                                i+1,errest_eigenvalue=send_real(2*i+2))
-         end do
-      endif
-      if (loc_print_eval_who == MASTER .or. loc_print_eval_who == EVERYONE) then
-         call phaml_send(procs,MASTER,send_int,0,send_real,&
-                         size(send_real),112)
-      endif
-      if (loc_print_eval_who == SLAVES .or. loc_print_eval_who == EVERYONE) then
-         write(outunit,"(A)")
-         write(outunit,"(A)") "Eigenvalues and error estimates:"
-         do i=1,size(send_real),2
-            write(outunit,"(SS,1P,A,2E18.10E2)") "   ",send_real(i),send_real(i+1)
-         end do
-      endif
-      if (loc_print_eval_who == MASTER .or. loc_print_eval_who == EVERYONE &
-                                       .or. loc_print_eval_who == SLAVES)then
-      endif
-   endif
-   deallocate(send_real)
+if (phaml_solution%eq_type == EIGENVALUE) then
+   call print_eigenvalues(grid,procs,io_control,refine_control, &
+                          still_sequential,(/FREQUENTLY,PHASES,FINAL/),122)
 endif
 call draw_grid(grid,procs,io_control,refine_control,phaml_solution%i_draw_grid,&
                phaml_solution%master_draws_grid,still_sequential,(/FINAL/), &
@@ -886,7 +790,7 @@ select case(io_control%print_time_when)
       which_time = 'both'
 end select
 call print_time_info(procs,io_control,(/PHASES,FINAL,LAST,LAST_AND_FINAL/), &
-                     which_time,122)
+                     which_time,125)
 call print_trailer
 call terminate(phaml_solution,procs,solver_control,still_sequential, &
                pause_at_end)
@@ -906,7 +810,7 @@ subroutine defaults
 !----------------------------------------------------
 
 use hash_mod
-logical :: doit
+logical :: doit, first_order, cross, laplacian, iso_right_tri
 
 ! print warnings
 
@@ -941,13 +845,13 @@ endif
 if (present(refterm)) then
    refine_control%refterm = refterm
 else
-   refine_control%refterm = DOUBLE_NEQ_SMOOTH
+   refine_control%refterm = DOUBLE_NEQ
 endif
 
 if (present(hp_strategy)) then
    refine_control%hp_strategy = hp_strategy
 else
-   refine_control%hp_strategy = HP_PRIOR2P_H1
+   refine_control%hp_strategy = HP_SMOOTH_PRED
 endif
 
 if (present(inc_factor)) then
@@ -1053,7 +957,13 @@ endif
 if (present(derefine)) then
    refine_control%derefine = derefine
 else
-   refine_control%derefine = .true.
+! TEMP 3D
+   select case (element_kind)
+   case (TRIANGULAR_ELEMENT)
+      refine_control%derefine = .true.
+   case (TETRAHEDRAL_ELEMENT)
+      refine_control%derefine = .false.
+   end select
 endif
 
 if (refine_control%reftype == HP_ADAPTIVE .and. &
@@ -1066,7 +976,13 @@ endif
 if (present(error_estimator)) then
    refine_control%error_estimator = error_estimator
 else
-   refine_control%error_estimator = EXPLICIT_ERRIND
+! TEMP 3D
+   select case (element_kind)
+   case (TRIANGULAR_ELEMENT)
+      refine_control%error_estimator = EXPLICIT_ERRIND
+   case (TETRAHEDRAL_ELEMENT)
+      refine_control%error_estimator = HIERARCHICAL_COEFFICIENT
+   end select
 endif
 
 if (loc_task == SET_INITIAL .and. &
@@ -1103,7 +1019,13 @@ endif
 if (present(prebalance)) then
    loc_prebalance = prebalance
 else
-   loc_prebalance = BALANCE_ELEMENTS
+! TEMP 3D
+   select case (element_kind)
+   case (TRIANGULAR_ELEMENT)
+      loc_prebalance = BALANCE_ELEMENTS
+   case (TETRAHEDRAL_ELEMENT)
+      loc_prebalance = BALANCE_NONE
+   end select
 endif
 
 if (present(postbalance)) then
@@ -1115,7 +1037,16 @@ endif
 ! polynomial degree
 
 if (present(degree)) then
-   loc_degree = degree
+! TEMP 3D
+   select case (element_kind)
+   case (TRIANGULAR_ELEMENT)
+      loc_degree = degree
+   case (TETRAHEDRAL_ELEMENT)
+      loc_degree = 1
+      if (degree > 1) then
+         call warning("only linear elements supported in 3D at this time; setting degree to 1")
+      endif
+   end select
 else
    loc_degree = 0
 endif
@@ -1125,36 +1056,88 @@ endif
 if (present(solver)) then
    solver_control%solver = solver
 else
-   solver_control%solver = MG_SOLVER
+   if (phaml_solution%eq_type==EIGENVALUE) then
+      solver_control%solver = DEFAULT_SOLVER
+   else
+      select case (element_kind)
+      case (TRIANGULAR_ELEMENT)
+         solver_control%solver = MG_SOLVER
+      case (TETRAHEDRAL_ELEMENT)
+         solver_control%solver = PETSC_CG_SOLVER
+      end select
+   endif
 endif
 
 if (present(preconditioner)) then
    solver_control%preconditioner = preconditioner
 else
-   select case(solver_control%solver)
-   case (MG_SOLVER,LAPACK_INDEFINITE_SOLVER,LAPACK_SPD_SOLVER, &
-         MUMPS_SPD_SOLVER, MUMPS_GEN_SOLVER, MUMPS_NONSYM_SOLVER, &
-         SUPERLU_SOLVER, HYPRE_BOOMERAMG_SOLVER)
-      solver_control%preconditioner = NO_PRECONDITION
-   case (CG_SOLVER, GMRES_SOLVER)
-      solver_control%preconditioner = MG_PRECONDITION
-   case(PETSC_RICHARDSON_SOLVER, PETSC_CHEBYCHEV_SOLVER, PETSC_CG_SOLVER, &
-        PETSC_GMRES_SOLVER, PETSC_TCQMR_SOLVER, PETSC_BCGS_SOLVER, &
-        PETSC_CGS_SOLVER, PETSC_TFQMR_SOLVER, PETSC_CR_SOLVER, &
-        PETSC_LSQR_SOLVER, PETSC_BICG_SOLVER)
-      solver_control%preconditioner = MG_PRECONDITION
-   case(HYPRE_GMRES_SOLVER, HYPRE_PCG_SOLVER)
-      solver_control%preconditioner = HYPRE_BOOMERAMG_PRECONDITION
-   case default
-      call warning("illegal value for choice of solver")
-      solver_control%preconditioner = NO_PRECONDITION
-   end select
+   if (phaml_solution%eq_type==EIGENVALUE) then
+      solver_control%preconditioner = DEFAULT_PRECONDITION
+   else
+      select case (element_kind)
+      case (TRIANGULAR_ELEMENT)
+         select case(solver_control%solver)
+         case (MG_SOLVER,LAPACK_INDEFINITE_SOLVER,LAPACK_SPD_SOLVER, &
+               HYPRE_BOOMERAMG_SOLVER, PETSC_MUMPS_GEN_SOLVER, &
+               PETSC_MUMPS_SPD_SOLVER, PETSC_SUPERLU_SOLVER)
+            solver_control%preconditioner = NO_PRECONDITION
+         case (CG_SOLVER, GMRES_SOLVER)
+            solver_control%preconditioner = MG_PRECONDITION
+         case(PETSC_RICHARDSON_SOLVER, PETSC_CHEBYCHEV_SOLVER, PETSC_CG_SOLVER,&
+              PETSC_GMRES_SOLVER, PETSC_TCQMR_SOLVER, PETSC_BCGS_SOLVER, &
+              PETSC_CGS_SOLVER, PETSC_TFQMR_SOLVER, PETSC_CR_SOLVER, &
+              PETSC_LSQR_SOLVER, PETSC_BICG_SOLVER)
+            solver_control%preconditioner = MG_PRECONDITION
+         case(HYPRE_GMRES_SOLVER, HYPRE_PCG_SOLVER)
+            solver_control%preconditioner = HYPRE_BOOMERAMG_PRECONDITION
+         case default
+            call warning("illegal value for choice of solver")
+            solver_control%preconditioner = NO_PRECONDITION
+         end select
+      case (TETRAHEDRAL_ELEMENT)
+         solver_control%preconditioner = PETSC_SOR_PRECONDITION
+      end select
+   endif
 endif
 
 if (present(inc_quad_order)) then
    solver_control%inc_quad_order = inc_quad_order
 else
    solver_control%inc_quad_order = 0
+endif
+
+if (.not. present(pde_has_first_order_terms) .or. &
+    .not. present(pde_has_cross_derivative)  .or. &
+    .not. present(laplacian_operator)) then
+   call check_pde_terms(phaml_solution%grid,first_order,cross,laplacian)
+endif
+
+if (.not. present(isosceles_right_triangles)) then
+   call check_triangle_shapes(phaml_solution%grid,iso_right_tri)
+endif
+
+if (present(pde_has_first_order_terms)) then
+   solver_control%pde_has_first_order_terms = pde_has_first_order_terms
+else
+   solver_control%pde_has_first_order_terms = first_order
+endif
+
+if (present(pde_has_cross_derivative)) then
+   solver_control%pde_has_cross_derivative = pde_has_cross_derivative
+else
+   solver_control%pde_has_cross_derivative = cross
+endif
+
+if (present(laplacian_operator)) then
+   solver_control%laplacian_operator = laplacian_operator
+else
+   solver_control%laplacian_operator = laplacian
+endif
+
+if (present(isosceles_right_triangles)) then
+   solver_control%isosceles_right_triangles = isosceles_right_triangles
+else
+   solver_control%isosceles_right_triangles = iso_right_tri
 endif
 
 if (present(mg_tol)) then
@@ -1270,7 +1253,7 @@ endif
 if (present(eigensolver)) then
    solver_control%eigensolver = eigensolver
 else
-   solver_control%eigensolver = ARPACK_SOLVER
+   solver_control%eigensolver = SLEPC_KRYLOV_SCHUR
 endif
 
 if (present(num_eval)) then
@@ -1292,59 +1275,51 @@ else
 endif
 
 if (present(transformation)) then
-   solver_control%transformation = transformation
+   solver_control%eigen_cntl%transformation = transformation
 else
-   solver_control%transformation = SHIFT_INVERT
+   solver_control%eigen_cntl%transformation = ST_NONE
 endif
 
-if (present(lambda0_side)) then
-   solver_control%lambda0_side = lambda0_side
+if (present(st_shift)) then
+   solver_control%eigen_cntl%st_shift = st_shift
 else
-   if (solver_control%eigensolver == ARPACK_SOLVER) then
-      solver_control%lambda0_side = EIGEN_BOTH
-   else ! BLOPEX
-      if (solver_control%transformation == SHIFT_INVERT) then
-         solver_control%lambda0_side = EIGEN_RIGHT
-      else ! SHIFT_SQUARE
-         solver_control%lambda0_side = EIGEN_BOTH
-      endif
-   endif
+   solver_control%eigen_cntl%st_shift = -huge(0.0_my_real)
 endif
 
-if (present(arpack_ncv)) then
-   solver_control%arpack_cntl%ncv = arpack_ncv
+if (present(st_antishift)) then
+   solver_control%eigen_cntl%st_antishift = st_antishift
 else
-   solver_control%arpack_cntl%ncv = 20
+   solver_control%eigen_cntl%st_antishift = -huge(0.0_my_real)
 endif
 
-if (present(arpack_maxit)) then
-   solver_control%arpack_cntl%maxit = arpack_maxit
+if (present(harmonic_extraction)) then
+   solver_control%eigen_cntl%harmonic_extraction = harmonic_extraction
 else
-   solver_control%arpack_cntl%maxit = 100
+   solver_control%eigen_cntl%harmonic_extraction = .false.
 endif
 
-if (present(arpack_tol)) then
-   solver_control%arpack_cntl%tol = arpack_tol
+if (present(slepc_true_residual)) then
+   solver_control%eigen_cntl%true_residual = slepc_true_residual
 else
-   solver_control%arpack_cntl%tol = 1.0e-10_my_real
+   solver_control%eigen_cntl%true_residual = .false.
 endif
 
-if (present(blopex_maxit)) then
-   solver_control%blopex_cntl%maxit = blopex_maxit
+if (present(eigen_ncv)) then
+   solver_control%eigen_cntl%ncv = eigen_ncv
 else
-   solver_control%blopex_cntl%maxit = 100
+   solver_control%eigen_cntl%ncv = -1
 endif
 
-if (present(blopex_atol)) then
-   solver_control%blopex_cntl%atol = blopex_atol
+if (present(eigen_maxit)) then
+   solver_control%eigen_cntl%maxit = eigen_maxit
 else
-   solver_control%blopex_cntl%atol = 1.0e-6_my_real
+   solver_control%eigen_cntl%maxit = -1
 endif
 
-if (present(blopex_rtol)) then
-   solver_control%blopex_cntl%rtol = blopex_rtol
+if (present(eigen_tol)) then
+   solver_control%eigen_cntl%tol = eigen_tol
 else
-   solver_control%blopex_cntl%rtol = 1.0e-6_my_real
+   solver_control%eigen_cntl%tol = 1.0e-10_my_real
 endif
 
 ! termination criteria
@@ -1547,22 +1522,22 @@ else
 endif
 
 if (present(print_eval_when)) then
-   loc_print_eval_when = print_eval_when
+   io_control%print_eval_when = print_eval_when
 else
-   loc_print_eval_when = NEVER
+   io_control%print_eval_when = NEVER
 endif
 
 if (present(print_eval_who)) then
-   loc_print_eval_who = print_eval_who
+   io_control%print_eval_who = print_eval_who
    if (PARALLEL==SEQUENTIAL .and. &
        (print_eval_who == MASTER .or. print_eval_who == MASTER_ALL)) then
-      loc_print_eval_who = SLAVES
+      io_control%print_eval_who = SLAVES
    endif
 else
    if (PARALLEL/=SEQUENTIAL) then
-      loc_print_eval_who = MASTER
+      io_control%print_eval_who = MASTER
    else
-      loc_print_eval_who = SLAVES
+      io_control%print_eval_who = SLAVES
    endif
 endif
 
@@ -1922,7 +1897,11 @@ endif
 if (present(petsc_maxits)) then
    solver_control%petsc_cntl%petsc_maxits = petsc_maxits
 else
-   solver_control%petsc_cntl%petsc_maxits = huge(0)
+   if (solver_control%eigensolver == SLEPC_JACOBI_DAVIDSON) then
+      solver_control%petsc_cntl%petsc_maxits = 10
+   else
+      solver_control%petsc_cntl%petsc_maxits = huge(0)
+   endif
 endif
 
 if (present(petsc_ilu_levels)) then
@@ -1974,13 +1953,6 @@ if (refine_control%refterm == ONE_REF .and. &
    stop
 endif
 
-if (PARALLEL/=MPI1 .and. PARALLEL/=MPI2 .and. &
-    phaml_solution%eq_type==EIGENVALUE .and. &
-    num_proc(phaml_solution%procs)>1) then
-   call fatal("Parallel ARPACK requires MPI",procs=procs)
-   stop
-endif
-
 if (PARALLEL /= MPI1 .and. PARALLEL /= MPI2 .and. &
     num_proc(phaml_solution%procs) > 1 .and. &
     (loc_partition_method == ZOLTAN_RCB .or. &
@@ -2005,18 +1977,21 @@ if (PARALLEL /= MPI1 .and. PARALLEL /= MPI2 .and. &
      solver_control%solver == PETSC_TFQMR_SOLVER .or. &
      solver_control%solver == PETSC_CR_SOLVER .or. &
      solver_control%solver == PETSC_LSQR_SOLVER .or. &
-     solver_control%solver == PETSC_BICG_SOLVER)) then
+     solver_control%solver == PETSC_BICG_SOLVER .or. &
+     solver_control%solver == PETSC_MUMPS_GEN_SOLVER .or. &
+     solver_control%solver == PETSC_MUMPS_SPD_SOLVER .or. &
+     solver_control%solver == PETSC_SUPERLU_SOLVER)) then
    call fatal("PETSc requires MPI",procs=procs)
 endif
 
 if (solver_control%petsc_matrix_free .and. &
-    (solver_control%solver == PETSC_JACOBI_PRECONDITION .or. &
-     solver_control%solver == PETSC_BJACOBI_PRECONDITION .or. &
-     solver_control%solver == PETSC_SOR_PRECONDITION .or. &
-     solver_control%solver == PETSC_EISENSTAT_PRECONDITION .or. &
-     solver_control%solver == PETSC_ICC_PRECONDITION .or. &
-     solver_control%solver == PETSC_ILU_PRECONDITION .or. &
-     solver_control%solver == PETSC_ASM_PRECONDITION)) then
+    (solver_control%preconditioner == PETSC_JACOBI_PRECONDITION .or. &
+     solver_control%preconditioner == PETSC_BJACOBI_PRECONDITION .or. &
+     solver_control%preconditioner == PETSC_SOR_PRECONDITION .or. &
+     solver_control%preconditioner == PETSC_EISENSTAT_PRECONDITION .or. &
+     solver_control%preconditioner == PETSC_ICC_PRECONDITION .or. &
+     solver_control%preconditioner == PETSC_ILU_PRECONDITION .or. &
+     solver_control%preconditioner == PETSC_ASM_PRECONDITION)) then
    call warning("PETSc preconditioners require the matrix in a PETSc data structure.", &
                 "Setting petsc_matrix_free to .false.")
    solver_control%petsc_matrix_free = .false.
@@ -2058,16 +2033,8 @@ if ((solver_control%solver == CG_SOLVER .or. &
    call fatal("native Krylov solvers can only be preconditioned with NO_PRECONDITION and MG_PRECONDITION",procs=procs)
 endif
 
-if (solver_control%coarse_method /= LAPACK_INDEFINITE_SOLVER .and. &
-    solver_control%coarse_method /= MUMPS_GEN_SOLVER .and. &
-    solver_control%coarse_method /= SUPERLU_SOLVER) then
-   call fatal("coarse_method must be one of LAPACK_INDEFINITE_SOLVER, MUMPS_GEN_SOLVER, or SUPERLU_SOLVER",procs=procs)
-endif
-
-if (solver_control%coarse_method == MUMPS_GEN_SOLVER .or. &
-    solver_control%coarse_method == SUPERLU_SOLVER) then
-   call warning("Use of MUMPS or SUPERLU as coarse_method has not yet been implemented.", &
-                "Using LAPACK instead.")
+if (solver_control%coarse_method /= LAPACK_INDEFINITE_SOLVER) then
+   call warning("Coarse_method must be LAPACK_INDEFINITE_SOLVER; resetting")
    solver_control%coarse_method = LAPACK_INDEFINITE_SOLVER
 endif
 
@@ -2083,66 +2050,184 @@ if (solver_control%mg_tol <= 0.0_my_real .and. &
    solver_control%mg_tol = MG_ERREST_TOL
 endif
 
-if (solver_control%num_eval < 1) then
-   call warning("num_eval must be at least 1.  Setting to 1")
-   solver_control%num_eval = 1
+if ((solver_control%pde_has_first_order_terms .or. &
+     solver_control%pde_has_cross_derivative) .and. &
+    (solver_control%solver == MG_SOLVER .or. &
+     solver_control%solver == CG_SOLVER .or. &
+     solver_control%solver == PETSC_CHEBYCHEV_SOLVER .or. &
+     solver_control%solver == PETSC_CR_SOLVER .or. &
+     solver_control%solver == PETSC_CG_SOLVER .or. &
+     solver_control%solver == HYPRE_PCG_SOLVER .or. &
+     solver_control%solver == LAPACK_SPD_SOLVER .or. &
+     solver_control%solver == PETSC_MUMPS_SPD_SOLVER .or. &
+     solver_control%preconditioner == MG_PRECONDITION .or. &
+     solver_control%preconditioner == PETSC_ICC_PRECONDITION)) then
+   call fatal("if the PDE contains first order or cross derivative terms,", &
+              " you must use a nonsymmetric solver and, if applicable, preconditioner")
 endif
 
-if (solver_control%eigensolver == BLOPEX_SOLVER .and. &
-    solver_control%transformation == SHIFT_INVERT .and. &
-    solver_control%lambda0_side == EIGEN_BOTH) then
-   call warning("BLOPEX_SOLVER does not currently support EIGEN_BOTH with SHIFT_INVERT.  Setting to EIGEN_RIGHT")
-   solver_control%lambda0_side = EIGEN_RIGHT
-endif
+! Eigenvalue requirements
 
-if (solver_control%eigensolver == BLOPEX_SOLVER .and. &
-    solver_control%transformation == SHIFT_SQUARE .and. &
-    solver_control%lambda0_side /= EIGEN_BOTH) then
-   call warning("BLOPEX_SOLVER does not currently support EIGEN_LEFT or EIGEN_RIGHT with SHIFT_SQUARE.  Setting to EIGEN_BOTH")
-   solver_control%lambda0_side = EIGEN_BOTH
-endif
+if (phaml_solution%eq_type==EIGENVALUE) then
 
-if (solver_control%eigensolver == ARPACK_SOLVER .and. &
-    solver_control%transformation == SHIFT_SQUARE) then
-   call warning("ARPACK SOLVER does not currently support SHIFT_SQUARE.  Setting to SHIFT_INVERT")
-   solver_control%transformation = SHIFT_INVERT
-endif
+   if (solver_control%num_eval < 1) then
+      call warning("num_eval must be at least 1.  Setting to 1")
+      solver_control%num_eval = 1
+   endif
 
-if (solver_control%arpack_cntl%ncv < 1) then
-   call warning("arpack_ncv must be positive.  Setting to the default 20")
-   solver_control%arpack_cntl%ncv = 20
-endif
+   if (.not. &
+         (solver_control%solver == PETSC_RICHARDSON_SOLVER .or. &
+          solver_control%solver == PETSC_CHEBYCHEV_SOLVER  .or. &
+          solver_control%solver == PETSC_CG_SOLVER         .or. &
+          solver_control%solver == PETSC_GMRES_SOLVER      .or. &
+          solver_control%solver == PETSC_TCQMR_SOLVER      .or. &
+          solver_control%solver == PETSC_BCGS_SOLVER       .or. &
+          solver_control%solver == PETSC_CGS_SOLVER        .or. &
+          solver_control%solver == PETSC_TFQMR_SOLVER      .or. &
+          solver_control%solver == PETSC_CR_SOLVER         .or. &
+          solver_control%solver == PETSC_LSQR_SOLVER       .or. &
+          solver_control%solver == PETSC_BICG_SOLVER       .or. &
+          solver_control%solver == PETSC_MUMPS_GEN_SOLVER  .or. &
+          solver_control%solver == PETSC_MUMPS_SPD_SOLVER  .or. &
+          solver_control%solver == PETSC_SUPERLU_SOLVER    .or. &
+          solver_control%solver == DEFAULT_SOLVER)) then
+      call fatal("SLEPc eigensolvers require using a PETSc solver")
+      stop
+   endif
 
-if (solver_control%arpack_cntl%maxit < 1) then
-   call warning("arpack_maxit must be positive.  Setting to the default 100")
-   solver_control%arpack_cntl%maxit = 100
-endif
+   if (.not. &
+         (solver_control%preconditioner == PETSC_JACOBI_PRECONDITION    .or. &
+          solver_control%preconditioner == PETSC_BJACOBI_PRECONDITION   .or. &
+          solver_control%preconditioner == PETSC_SOR_PRECONDITION       .or. &
+          solver_control%preconditioner == PETSC_EISENSTAT_PRECONDITION .or. &
+          solver_control%preconditioner == PETSC_ICC_PRECONDITION       .or. &
+          solver_control%preconditioner == PETSC_ILU_PRECONDITION       .or. &
+          solver_control%preconditioner == PETSC_ASM_PRECONDITION       .or. &
+          solver_control%preconditioner == NO_PRECONDITION              .or. &
+          solver_control%preconditioner == DEFAULT_PRECONDITION)) then
+      call fatal("SLEPc eigensolvers require using a PETSc preconditioner")
+      stop
+   endif
 
-if (solver_control%arpack_cntl%tol <= 0.0_my_real) then
-   call warning("arpack_tol must be positive.  Setting to the default 1.0d-10")
-   solver_control%arpack_cntl%tol = 1.0e-10_my_real
-endif
+   if (solver_control%pde_has_first_order_terms .or. &
+       solver_control%pde_has_cross_derivative) then
+      if (solver_control%eigensolver == SLEPC_LANCZOS .or. &
+          solver_control%eigensolver == SLEPC_BLOPEX) then
+         call fatal("the selected eigensolver requires a Hermitian matrix,", &
+                    " i.e. no first order or mixed derivative terms in the PDE")
+         stop
+      endif
+   endif
 
-if (solver_control%blopex_cntl%maxit < 0) then
-   call warning("blopex_maxit must be nonnegative.  Setting to the default 100")
-   solver_control%blopex_cntl%maxit = 100
-endif
+   if (solver_control%lambda0 /= -huge(0.0_my_real)) then
+      if (solver_control%eigensolver == SLEPC_POWER    .or. &
+          solver_control%eigensolver == SLEPC_SUBSPACE .or. &
+          solver_control%eigensolver == SLEPC_BLOPEX) then
+         call fatal("cannot ask for interior eigenvalues with the selected eigensolver")
+         stop
+      endif
+   endif
 
-if (solver_control%blopex_cntl%atol <= 0.0_my_real) then
-   call warning("blopex_atol must be positive.  Setting to the default 1.0d-6")
-   solver_control%blopex_cntl%atol = 1.0e-6_my_real
-endif
+   if (solver_control%eigen_cntl%harmonic_extraction) then
+      if (solver_control%lambda0 == -huge(0.0_my_real)) then
+         call fatal("harmonic extraction requires lambda0 not be minus infinity")
+         stop
+      endif
+   endif
 
-if (solver_control%blopex_cntl%rtol <= 0.0_my_real) then
-   call warning("blopex_rtol must be positive.  Setting to the default 1.0d-6")
-   solver_control%blopex_cntl%rtol = 1.0e-6_my_real
-endif
+   if (solver_control%eigen_cntl%harmonic_extraction) then
+      if (solver_control%eigensolver == SLEPC_LANCZOS) then
+         call fatal("harmonic extraction is not available for the selected eigensolver")
+         stop
+      endif
+   endif
+
+   if (solver_control%eigen_cntl%harmonic_extraction) then
+      if (solver_control%eigen_cntl%transformation == ST_FOLD .or. &
+          solver_control%eigen_cntl%transformation == ST_SHIFT_INVERT .or. &
+          solver_control%eigen_cntl%transformation == ST_FOLD) then
+         call fatal("harmonic extraction should not be used with a spectral transformation")
+         stop
+      endif
+   endif
+
+   if (solver_control%eigen_cntl%ncv < 1 .and. &
+       solver_control%eigen_cntl%ncv /= -1) then
+      call warning("eigen_ncv must be positive.  Setting to the default.")
+      solver_control%eigen_cntl%ncv = -1
+   endif
+
+   if (solver_control%eigen_cntl%maxit < 1 .and. &
+       solver_control%eigen_cntl%maxit /= -1) then
+      call warning("eigen_maxit must be positive.  Setting to the default.")
+      solver_control%eigen_cntl%maxit = -1
+   endif
+
+   if (solver_control%eigen_cntl%tol <= 0.0_my_real) then
+      call warning("eigen_tol must be positive.  Setting to the default 1.0d-10")
+      solver_control%eigen_cntl%tol = 1.0e-10_my_real
+   endif
+
+endif ! eigenvalue problems
 
 if (refine_control%reftype == HP_ADAPTIVE .and. &
     refine_control%hp_strategy == HP_SMOOTH_PRED .and. &
     refine_control%derefine) then
    call warning("derefinement not implemented for HP_SMOOTH_PRED strategy.  Setting derefine=.false.")
    refine_control%derefine = .false.
+endif
+
+! Things that are not yet supported for tetrahedra
+
+if (element_kind == TETRAHEDRAL_ELEMENT) then
+
+   if (refine_control%error_estimator /= HIERARCHICAL_COEFFICIENT) then
+      call fatal("Only the hierarchical coefficient error estimator is currently supported for 3D")
+      stop
+   endif
+
+   if (refine_control%reftype /= H_UNIFORM .and. &
+       refine_control%reftype /= H_ADAPTIVE) then
+      call fatal("Only h refinement is currently supported for 3D")
+      stop
+   endif
+
+   if (refine_control%derefine) then
+      call fatal("Derefinement is not yet supported for 3D")
+      stop
+   endif
+
+   if (loc_prebalance /= BALANCE_NONE .or. loc_postbalance /= BALANCE_NONE) then
+
+      if (loc_partition_method /= RTK) then
+         call fatal("Only RTK partitioning is currently supported for 3D")
+         stop
+      endif
+
+      if (loc_partition_method == RTK) then
+         call fatal("RTK partitioning is not yet supported for 3D")
+         stop
+      endif
+
+   endif
+
+   if (solver_control%solver == MG_SOLVER .or. &
+       solver_control%solver == CG_SOLVER .or. &
+       solver_control%solver == GMRES_SOLVER) then
+      call fatal("Native solvers are not yet supported for 3D")
+      stop
+   endif
+
+   if (loc_degree /= 0 .and. loc_degree /= 1) then
+      call fatal("Only linear elements are currently supported for 3D")
+      stop
+   endif
+
+   if (num_proc(procs) /= 1) then
+      call fatal("MPI parallel is not yet supported in 3D")
+      stop
+   endif
+
 endif
 
 end subroutine defaults
@@ -2178,6 +2263,11 @@ else
 endif
 write(outunit,"(A,I5)") "  PDE id is ",phaml_solution%pde_id
 write(outunit,"(A,I5)") "  Number of slave processors is ",num_proc(procs)
+!$omp parallel
+!$omp master
+write(outunit,"(A,I5)") "  Number of OpenMP threads is   ",omp_get_num_threads()
+!$omp end master
+!$omp end parallel
 write(outunit,"(A)")
 write(outunit,"(A)") "Subroutine phaml_solve_pde parameters:"
 if (refine_control%max_elem == huge(0)) then
@@ -2242,6 +2332,26 @@ else
    write(outunit,"(A)") "  solve_init         false"
 endif
 write(outunit,"(A,I11)") "  system_size       ",phaml_solution%system_size
+if (solver_control%pde_has_first_order_terms) then
+   write(outunit,"(A)") "  pde_has_first_order_terms  true"
+else
+   write(outunit,"(A)") "  pde_has_first_order_terms  false"
+endif
+if (solver_control%pde_has_cross_derivative) then
+   write(outunit,"(A)") "  pde_has_cross_derivative   true"
+else
+   write(outunit,"(A)") "  pde_has_cross_derivative   false"
+endif
+if (solver_control%laplacian_operator) then
+   write(outunit,"(A)") "  laplacian_operator         true"
+else
+   write(outunit,"(A)") "  laplacian_operator         false"
+endif
+if (solver_control%isosceles_right_triangles) then
+   write(outunit,"(A)") "  isosceles_right_triangles  true"
+else
+   write(outunit,"(A)") "  isosceles_right_triangles  false"
+endif
 select case(io_control%print_grid_when)
 case (NEVER)
    write(outunit,"(A)") "  print_grid_when    NEVER"
@@ -2439,7 +2549,7 @@ if (io_control%print_time_when /= NEVER) then
    end select
 endif
 if (phaml_solution%eq_type == EIGENVALUE) then
-   select case(loc_print_eval_when)
+   select case(io_control%print_eval_when)
    case (NEVER)
       write(outunit,"(A)") "  print_eval_when    NEVER"
    case (FINAL)
@@ -2447,10 +2557,10 @@ if (phaml_solution%eq_type == EIGENVALUE) then
    case (PHASES)
       write(outunit,"(A)") "  print_eval_when    PHASES"
    case default
-      write(outunit,"(A,I11)") "  print_eval_when    ",loc_print_eval_when
+      write(outunit,"(A,I11)") "  print_eval_when    ",io_control%print_eval_when
    end select
-   if (loc_print_eval_when /= NEVER) then
-      select case(loc_print_eval_who)
+   if (io_control%print_eval_when /= NEVER) then
+      select case(io_control%print_eval_who)
       case (MASTER)
          write(outunit,"(A)") "  print_eval_who     MASTER"
       case (SLAVES)
@@ -2460,7 +2570,7 @@ if (phaml_solution%eq_type == EIGENVALUE) then
       case (NO_ONE)
          write(outunit,"(A)") "  print_eval_who     NO_ONE"
       case default
-         write(outunit,"(A,I11)") "  print_eval_who     ",loc_print_eval_who
+         write(outunit,"(A,I11)") "  print_eval_who     ",io_control%print_eval_who
       end select
    endif
 endif
@@ -2648,32 +2758,20 @@ endif
 select case(refine_control%refterm)
 case (DOUBLE_NVERT)
    write(outunit,"(A)") "  refterm            DOUBLE_NVERT"
-case (DOUBLE_NVERT_SMOOTH)
-   write(outunit,"(A)") "  refterm            DOUBLE_NVERT_SMOOTH"
 case (DOUBLE_NELEM)
    write(outunit,"(A)") "  refterm            DOUBLE_NELEM"
-case (DOUBLE_NELEM_SMOOTH)
-   write(outunit,"(A)") "  refterm            DOUBLE_NELEM_SMOOTH"
 case (DOUBLE_NEQ)
    write(outunit,"(A)") "  refterm            DOUBLE_NEQ"
 case (HALVE_ERREST)
    write(outunit,"(A)") "  refterm            HALVE_ERREST"
 case (KEEP_NVERT)
    write(outunit,"(A)") "  refterm            KEEP_NVERT"
-case (KEEP_NVERT_SMOOTH)
-   write(outunit,"(A)") "  refterm            KEEP_NVERT_SMOOTH"
 case (KEEP_NELEM)
    write(outunit,"(A)") "  refterm            KEEP_NELEM"
-case (KEEP_NELEM_SMOOTH)
-   write(outunit,"(A)") "  refterm            KEEP_NELEM_SMOOTH"
 case (KEEP_NEQ)
    write(outunit,"(A)") "  refterm            KEEP_NEQ"
-case (KEEP_NEQ_SMOOTH)
-   write(outunit,"(A)") "  refterm            KEEP_NEQ_SMOOTH"
 case (KEEP_ERREST)
    write(outunit,"(A)") "  refterm            KEEP_ERREST"
-case (DOUBLE_NEQ_SMOOTH)
-   write(outunit,"(A)") "  refterm            DOUBLE_NEQ_SMOOTH"
 case (ONE_REF)
    write(outunit,"(A)") "  refterm            ONE_REF"
 case (ONE_REF_HALF_ERRIND)
@@ -2748,14 +2846,6 @@ case (LAPACK_INDEFINITE_SOLVER)
    write(outunit,"(A)") "  solver             LAPACK_INDEFINITE_SOLVER"
 case (LAPACK_SPD_SOLVER)
    write(outunit,"(A)") "  solver             LAPACK_SPD_SOLVER"
-case (MUMPS_NONSYM_SOLVER)
-   write(outunit,"(A)") "  solver             MUMPS_NONSYM_SOLVER"
-case (MUMPS_SPD_SOLVER)
-   write(outunit,"(A)") "  solver             MUMPS_SPD_SOLVER"
-case (MUMPS_GEN_SOLVER)
-   write(outunit,"(A)") "  solver             MUMPS_GEN_SOLVER"
-case (SUPERLU_SOLVER)
-   write(outunit,"(A)") "  solver             SUPERLU_SOLVER"
 case (PETSC_RICHARDSON_SOLVER)
    write(outunit,"(A)") "  solver             PETSC_RICHARDSON_SOLVER"
 case (PETSC_CHEBYCHEV_SOLVER)
@@ -2778,12 +2868,20 @@ case (PETSC_LSQR_SOLVER)
    write(outunit,"(A)") "  solver             PETSC_LSQR_SOLVER"
 case (PETSC_BICG_SOLVER)
    write(outunit,"(A)") "  solver             PETSC_BICG_SOLVER"
+case (PETSC_MUMPS_GEN_SOLVER)
+   write(outunit,"(A)") "  solver             PETSC_MUMPS_GEN_SOLVER"
+case (PETSC_MUMPS_SPD_SOLVER)
+   write(outunit,"(A)") "  solver             PETSC_MUMPS_SPD_SOLVER"
+case (PETSC_SUPERLU_SOLVER)
+   write(outunit,"(A)") "  solver             PETSC_SUPERLU_SOLVER"
 case (HYPRE_BOOMERAMG_SOLVER)
    write(outunit,"(A)") "  solver             HYPRE_BOOMERAMG_SOLVER"
 case (HYPRE_PCG_SOLVER)
    write(outunit,"(A)") "  solver             HYPRE_PCG_SOLVER"
 case (HYPRE_GMRES_SOLVER)
    write(outunit,"(A)") "  solver             HYPRE_GMRES_SOLVER"
+case (DEFAULT_SOLVER)
+   write(outunit,"(A)") "  solver             default"
 case default
    write(outunit,"(A,I11)") "  solver             ",solver_control%solver
 end select
@@ -2801,7 +2899,8 @@ if (solver_control%solver == PETSC_RICHARDSON_SOLVER .or. &
     solver_control%solver == CG_SOLVER               .or. &
     solver_control%solver == GMRES_SOLVER            .or. &
     solver_control%solver == HYPRE_PCG_SOLVER        .or. &
-    solver_control%solver == HYPRE_GMRES_SOLVER) then
+    solver_control%solver == HYPRE_GMRES_SOLVER      .or. &
+    solver_control%solver == DEFAULT_SOLVER) then
    select case(solver_control%preconditioner)
    case (NO_PRECONDITION)
       write(outunit,"(A)") "  preconditioner     NO_PRECONDITION"
@@ -2831,6 +2930,8 @@ if (solver_control%solver == PETSC_RICHARDSON_SOLVER .or. &
       write(outunit,"(A)") "  preconditioner     HYPRE_BOOMERAMG_PRECONDITION"
    case (HYPRE_PARASAILS_PRECONDITION)
       write(outunit,"(A)") "  preconditioner     HYPRE_PARASAILS_PRECONDITION"
+   case (DEFAULT_PRECONDITION)
+      write(outunit,"(A)") "  preconditioner     default"
    case default
       write(outunit,"(A,I11)") "  preconditioner     ",solver_control%preconditioner
    end select
@@ -2840,10 +2941,6 @@ if (solver_control%preconditioner == COARSE_GRID_PRECONDITION) then
    select case (solver_control%coarse_method)
    case (LAPACK_INDEFINITE_SOLVER)
       write(outunit,"(A)") "  coarse_method      LAPACK_INDEFINITE_SOLVER"
-   case (MUMPS_GEN_SOLVER)
-      write(outunit,"(A)") "  coarse_method      MUMPS_GEN_SOLVER"
-   case (SUPERLU_SOLVER)
-      write(outunit,"(A)") "  coarse_method      SUPERLU_SOLVER"
    case default
       write(outunit,"(A,I11)") "  coarse_method      ",solver_control%coarse_method
    end select
@@ -3007,10 +3104,26 @@ if (solver_control%solver == PETSC_RICHARDSON_SOLVER .or. &
 endif
 if (phaml_solution%eq_type == EIGENVALUE) then
    select case (solver_control%eigensolver)
-   case (ARPACK_SOLVER)
-      write(outunit,"(A)") "  eigensolver        ARPACK_SOLVER"
-   case (BLOPEX_SOLVER)
-      write(outunit,"(A)") "  eigensolver        BLOPEX_SOLVER"
+   case (SLEPC_POWER)
+      write(outunit,"(A)") "  eigensolver        SLEPC_POWER"
+   case (SLEPC_SUBSPACE)
+      write(outunit,"(A)") "  eigensolver        SLEPC_SUBSPACE"
+   case (SLEPC_ARNOLDI)
+      write(outunit,"(A)") "  eigensolver        SLEPC_ARNOLDI"
+   case (SLEPC_LANCZOS)
+      write(outunit,"(A)") "  eigensolver        SLEPC_LANCZOS"
+   case (SLEPC_KRYLOV_SCHUR)
+      write(outunit,"(A)") "  eigensolver        SLEPC_KRYLOV_SCHUR"
+   case (SLEPC_GEN_DAVIDSON)
+      write(outunit,"(A)") "  eigensolver        SLEPC_GEN_DAVIDSON"
+   case (SLEPC_JACOBI_DAVIDSON)
+      write(outunit,"(A)") "  eigensolver        SLEPC_JACOBI_DAVIDSON"
+   case (SLEPC_LAPACK)
+      write(outunit,"(A)") "  eigensolver        SLEPC_LAPACK"
+   case (SLEPC_ARPACK)
+      write(outunit,"(A)") "  eigensolver        SLEPC_ARPACK"
+   case (SLEPC_BLOPEX)
+      write(outunit,"(A)") "  eigensolver        SLEPC_BLOPEX"
    case default
       write(outunit,"(A,I11)") "  eigensolver       ",solver_control%eigensolver
    end select
@@ -3030,36 +3143,55 @@ if (phaml_solution%eq_type == EIGENVALUE) then
    case default
       write(outunit,"(A,I11)") "  scale_evec        ",solver_control%scale_evec
    end select
-   if (solver_control%lambda0 /= -huge(0.0_my_real)) then
-      select case (solver_control%lambda0_side)
-      case (EIGEN_LEFT)
-         write(outunit,"(A)") "  lambda0_side       EIGEN_LEFT"
-      case (EIGEN_RIGHT)
-         write(outunit,"(A)") "  lambda0_side       EIGEN_RIGHT"
-      case (EIGEN_BOTH)
-         write(outunit,"(A)") "  lambda0_side       EIGEN_BOTH"
-      case default
-         write(outunit,"(A,I11)") "  lambda0_side      ",solver_control%lambda0_side
-      end select
-      select case (solver_control%transformation)
-      case (SHIFT_INVERT)
-         write(outunit,"(A)") "  transformation     SHIFT_INVERT"
-      case (SHIFT_SQUARE)
-         write(outunit,"(A)") "  transformation     SHIFT_SQUARE"
-      case default
-         write(outunit,"(A,I11)") "  transformation    ",solver_control%transformation
-      end select
-   endif
-   select case (solver_control%eigensolver)
-   case (ARPACK_SOLVER)
-      write(outunit,"(A,I11)") "  arpack_ncv        ",solver_control%arpack_cntl%ncv
-      write(outunit,"(A,I11)") "  arpack_maxit      ",solver_control%arpack_cntl%maxit
-      write(outunit,"(SS,1P,A,E18.10E2)") "  arpack_tol        ",solver_control%arpack_cntl%tol
-   case (BLOPEX_SOLVER)
-      write(outunit,"(A,I11)") "  blopex_maxit      ",solver_control%blopex_cntl%maxit
-      write(outunit,"(SS,1P,A,E18.10E2)") "  blopex_atol       ",solver_control%blopex_cntl%atol
-      write(outunit,"(SS,1P,A,E18.10E2)") "  blopex_rtol       ",solver_control%blopex_cntl%rtol
+   select case (solver_control%eigen_cntl%transformation)
+   case (ST_NONE)
+      write(outunit,"(A)") "  transformation     ST_NONE"
+   case (ST_SHIFT_ORIGIN)
+      write(outunit,"(A)") "  transformation     ST_SHIFT_ORIGIN"
+   case (ST_FOLD)
+      write(outunit,"(A)") "  transformation     ST_FOLD"
+   case (ST_SHIFT_INVERT)
+      write(outunit,"(A)") "  transformation     ST_SHIFT_INVERT"
+   case (ST_CAYLEY)
+      write(outunit,"(A)") "  transformation     ST_CAYLEY"
+   case default
+      write(outunit,"(A,I11)") "  transformation    ",solver_control%eigen_cntl%transformation
    end select
+   if (solver_control%eigen_cntl%transformation /= ST_NONE) then
+      if (solver_control%eigen_cntl%st_shift == -huge(0.0_my_real)) then
+         write(outunit,"(A)") "  st_shift           lambda0"
+      else
+         write(outunit,"(SS,1P,A,E18.10E2)") "  st_shift          ",solver_control%eigen_cntl%st_shift
+      endif
+      if (solver_control%eigen_cntl%transformation == ST_CAYLEY) then
+         if (solver_control%eigen_cntl%st_antishift == -huge(0.0_my_real)) then
+            write(outunit,"(A)") "  st_antishift       st_shift"
+         else
+            write(outunit,"(SS,1P,A,E18.10E2)") "  st_antishift      ",solver_control%eigen_cntl%st_antishift
+         endif
+      endif
+   endif
+   if (solver_control%eigen_cntl%ncv <= 0) then
+      write(outunit,"(A,I11)") "  eigen_ncv          default"
+   else
+      write(outunit,"(A,I11)") "  eigen_ncv        ",solver_control%eigen_cntl%ncv
+   endif
+   if (solver_control%eigen_cntl%maxit <= 0) then
+      write(outunit,"(A,I11)") "  eigen_maxit        default"
+   else
+      write(outunit,"(A,I11)") "  eigen_maxit      ",solver_control%eigen_cntl%maxit
+   endif
+   write(outunit,"(SS,1P,A,E18.10E2)") "  eigen_tol        ",solver_control%eigen_cntl%tol
+   if (solver_control%eigen_cntl%harmonic_extraction) then
+      write(outunit,"(A)") "  harmonic_extraction  true"
+   else
+      write(outunit,"(A)") "  harmonic_extraction  false"
+   endif
+   if (solver_control%eigen_cntl%true_residual) then
+      write(outunit,"(A)") "  true_residual        true"
+   else
+      write(outunit,"(A)") "  true_residual        false"
+   endif
 endif
 if (solver_control%solver == HYPRE_PCG_SOLVER) then
    if (solver_control%hypre_cntl%PCG_Tol == huge(0.0d0)) then
@@ -3317,8 +3449,8 @@ integer, allocatable :: send_int(:)
 real(my_real), allocatable :: send_real(:)
 !----------------------------------------------------
 
-ni = 105 + FN_LEN
-nr = 35
+ni = 111 + FN_LEN
+nr = 37
 
 if (associated(solver_control%hypre_cntl%BoomerAMG_NumGridSweeps)) then
    ni = ni + 1 + size(solver_control%hypre_cntl%BoomerAMG_NumGridSweeps)
@@ -3419,7 +3551,7 @@ endif
 send_int(40) = solver_control%krylov_iter
 send_int(41) = solver_control%krylov_restart
 send_int(42) = solver_control%num_eval
-send_int(43) = solver_control%arpack_cntl%ncv
+send_int(43) = 0                               ! AVAILABLE
 if (phaml_solution%master_draws_grid) then
    send_int(44) = 1
 else
@@ -3432,8 +3564,8 @@ else
 endif
 send_int(46) = refine_control%t3s_maxref
 send_int(47) = refine_control%t3s_maxdeginc
-send_int(48) = loc_print_eval_when
-send_int(49) = loc_print_eval_who
+send_int(48) = io_control%print_eval_when
+send_int(49) = io_control%print_eval_who
 if (solver_control%petsc_matrix_free) then
    send_int(50) = 1
 else
@@ -3447,7 +3579,11 @@ send_int(52) = solver_control%hypre_cntl%BoomerAMG_MaxIter
 send_int(53) = solver_control%hypre_cntl%BoomerAMG_CoarsenType
 send_int(54) = solver_control%hypre_cntl%BoomerAMG_MeasureType
 send_int(55) = solver_control%hypre_cntl%BoomerAMG_CycleType
-send_int(56) = solver_control%blopex_cntl%maxit
+if (solver_control%laplacian_operator) then
+   send_int(56) = 1
+else
+   send_int(56) = 0
+endif
 send_int(57) = solver_control%hypre_cntl%BoomerAMG_DebugFlag
 send_int(58) = solver_control%hypre_cntl%ParaSails_nlevels
 send_int(59) = solver_control%hypre_cntl%ParaSails_sym
@@ -3460,7 +3596,11 @@ send_int(65) = solver_control%hypre_cntl%PCG_Logging
 send_int(66) = solver_control%hypre_cntl%GMRES_KDim
 send_int(67) = solver_control%hypre_cntl%GMRES_MaxIter
 send_int(68) = solver_control%hypre_cntl%GMRES_Logging
-send_int(69) = solver_control%arpack_cntl%maxit
+if (solver_control%isosceles_right_triangles) then
+   send_int(69) = 1
+else
+   send_int(69) = 0
+endif
 send_real(3) = solver_control%hypre_cntl%BoomerAMG_Tol
 send_real(4) = solver_control%hypre_cntl%BoomerAMG_StrongThreshold
 send_real(5) = solver_control%hypre_cntl%BoomerAMG_MaxRowSum
@@ -3469,7 +3609,7 @@ send_real(7) = solver_control%hypre_cntl%ParaSails_filter
 send_real(8) = solver_control%hypre_cntl%ParaSails_loadbal
 send_real(9) = solver_control%hypre_cntl%PCG_Tol
 send_real(10) = solver_control%hypre_cntl%GMRES_Tol
-send_real(11) = solver_control%arpack_cntl%tol
+send_real(11) = 0                                           ! EMPTY
 
 send_int(70) = solver_control%petsc_cntl%petsc_gmres_max_steps
 send_int(71) = solver_control%petsc_cntl%petsc_maxits
@@ -3493,7 +3633,7 @@ send_real(17) = solver_control%petsc_cntl%petsc_dtol
 send_real(18) = 0                                     ! SPACE AVAILABLE
 send_real(19) = solver_control%petsc_cntl%petsc_sor_omega
 send_real(20) = solver_control%petsc_cntl%petsc_eisenstat_omega
-send_real(21) = 0                                     ! CHOOSE ME!!
+send_real(21) = solver_control%eigen_cntl%tol
 send_real(22) = solver_control%mg_tol
 send_real(23) = refine_control%term_energy_err
 send_real(24) = refine_control%tp_gamma
@@ -3503,13 +3643,15 @@ send_real(27) = refine_control%t3s_gamma
 send_real(28) = refine_control%t3s_eta
 send_real(29) = refine_control%reftol
 send_real(30) = solver_control%krylov_tol
-send_real(31) = solver_control%blopex_cntl%atol
-send_real(32) = solver_control%blopex_cntl%rtol
+send_real(31) = 0                                      ! CHOOSE ME
+send_real(32) = 0                                      ! AND ME TOO
 send_real(33) = refine_control%sp_gamma_h
 send_real(34) = refine_control%sp_gamma_p
 send_real(35) = refine_control%refsoln_pbias
+send_real(36) = solver_control%eigen_cntl%st_shift
+send_real(37) = solver_control%eigen_cntl%st_antishift
 
-send_int(79) = solver_control%lambda0_side
+send_int(79) = 0                                       ! I'M AVAILABLE
 send_int(80) = solver_control%coarse_size
 send_int(81) = solver_control%coarse_method
 send_int(82) = solver_control%scale_evec
@@ -3525,7 +3667,7 @@ send_int(91) = refine_control%max_dof
 send_int(92) = refine_control%max_deg
 send_int(93) = solver_control%prerelax_ho
 send_int(94) = solver_control%postrelax_ho
-send_int(95) = solver_control%transformation
+send_int(95) = solver_control%eigen_cntl%transformation
 if (loc_solve_init) then
    send_int(96) = 1
 else
@@ -3548,13 +3690,35 @@ send_int(102) = refine_control%nlp_max_p_dec
 send_int(103) = refine_control%nlp_max_p_inc
 send_int(104) = io_control%print_solver_when
 send_int(105) = io_control%print_solver_who
+if (solver_control%pde_has_first_order_terms) then
+   send_int(106) = 1
+else
+   send_int(106) = 0
+endif
+if (solver_control%pde_has_cross_derivative) then
+   send_int(107) = 1
+else
+   send_int(107) = 0
+endif
+send_int(108) = solver_control%eigen_cntl%ncv
+send_int(109) = solver_control%eigen_cntl%maxit
+if (solver_control%eigen_cntl%harmonic_extraction) then
+   send_int(110) = 1
+else
+   send_int(110) = 0
+endif
+if (solver_control%eigen_cntl%true_residual) then
+   send_int(111) = 1
+else
+   send_int(111) = 0
+endif
 
 do i=1,FN_LEN
-   send_int(105+i:105+i) = ichar(phaml_solution%zoltan_param_file(i:i))
+   send_int(111+i:111+i) = ichar(phaml_solution%zoltan_param_file(i:i))
 end do
 
-ipos = 105 + FN_LEN
-rpos = 35
+ipos = 111 + FN_LEN
+rpos = 37
 
 if (associated(solver_control%hypre_cntl%BoomerAMG_NumGridSweeps)) then
    dim1 = size(solver_control%hypre_cntl%BoomerAMG_NumGridSweeps)
@@ -3607,7 +3771,6 @@ end do
 
 deallocate(send_int, send_real, stat=astat)
 
-return
 end subroutine slaves_solve
 
 end subroutine phaml_solve_pde
@@ -3709,17 +3872,21 @@ integer :: iterm, max_elem, max_vert, max_eq, max_lev, max_deg, &
            mg_prerelax_ho, mg_postrelax_ho, dd_iterations, errtype, edge_rule, &
            reftype, refterm, hp_strategy, t3s_nunif, t3s_maxref, t3s_maxdeginc,&
            nlp_max_h_dec, nlp_max_h_inc, nlp_max_p_dec, nlp_max_p_inc, &
-           eigensolver, num_eval, arpack_ncv, arpack_maxit, blopex_maxit, &
+           eigensolver, num_eval, eigen_ncv, eigen_maxit, &
            astat, kernel, comp1, comp2, eigen1, eigen2, p, q, coarse_size, &
            coarse_method, degree, inc_quad_order, scale_evec, krylov_iter, &
-           krylov_restart, mg_comm, lambda0_side, transformation
+           krylov_restart, mg_comm, transformation
 integer, pointer :: recv_int(:)
 real (my_real), pointer :: recv_real(:)
 logical :: pause_after_draw, pause_at_start, pause_at_end, &
            pause_after_phases, petsc_matrix_free, ignore_quad_err, derefine, &
-           solve_init, stop_on_maxlev, stop_on_maxdeg
+           solve_init, stop_on_maxlev, stop_on_maxdeg, &
+           pde_has_first_order_terms, pde_has_cross_derivative, &
+           laplacian_operator, isosceles_right_triangles, &
+           harmonic_extraction, true_residual
 real (my_real) :: term_energy_err, term_Linf_err, term_L2_err, inc_factor, &
-                  lambda0, arpack_tol, blopex_atol, blopex_rtol, dum, mg_tol, &
+                  lambda0, dum, mg_tol, &
+                  eigen_tol, st_shift, st_antishift, &
                   reftol, krylov_tol, t3s_gamma, t3s_eta, tp_gamma, &
                   sp_gamma_h, sp_gamma_p, refsoln_pbias
 character(len=FN_LEN) :: zoltan_param_file
@@ -3820,7 +3987,6 @@ do
       krylov_iter       = recv_int(40)
       krylov_restart    = recv_int(41)
       num_eval          = recv_int(42)
-      arpack_ncv        = recv_int(43)
       my_pde%master_draws_grid    = (recv_int(44)==1)
       my_pde%i_draw_grid          = (recv_int(45)==1)
       t3s_maxref        = recv_int(46)
@@ -3836,7 +4002,7 @@ do
       hypre_BoomerAMG_CoarsenType = recv_int(53)
       hypre_BoomerAMG_MeasureType = recv_int(54)
       hypre_BoomerAMG_CycleType   = recv_int(55)
-      blopex_maxit                = recv_int(56)
+      laplacian_operator          = (recv_int(56)==1)
       hypre_BoomerAMG_DebugFlag   = recv_int(57)
       hypre_ParaSails_nlevels     = recv_int(58)
       hypre_ParaSails_sym         = recv_int(59)
@@ -3849,7 +4015,7 @@ do
       hypre_GMRES_KDim            = recv_int(66)
       hypre_GMRES_MaxIter         = recv_int(67)
       hypre_GMRES_Logging         = recv_int(68)
-      arpack_maxit                = recv_int(69)
+      isosceles_right_triangles   = (recv_int(69)==1)
       hypre_BoomerAMG_Tol             = recv_real(3)
       hypre_BoomerAMG_StrongThreshold = recv_real(4)
       hypre_BoomerAMG_MaxRowSum       = recv_real(5)
@@ -3858,7 +4024,6 @@ do
       hypre_ParaSails_loadbal         = recv_real(8)
       hypre_PCG_Tol                   = recv_real(9)
       hypre_GMRES_Tol                 = recv_real(10)
-      arpack_tol                      = recv_real(11)
 
       petsc_gmres_max_steps           = recv_int(70)
       petsc_maxits                    = recv_int(71)
@@ -3876,6 +4041,7 @@ do
       petsc_dtol                      = recv_real(17)
       petsc_sor_omega                 = recv_real(19)
       petsc_eisenstat_omega           = recv_real(20)
+      eigen_tol                       = recv_real(21)
       mg_tol                          = recv_real(22)
       term_energy_err                 = recv_real(23)
       tp_gamma                        = recv_real(24)
@@ -3885,13 +4051,12 @@ do
       t3s_eta                         = recv_real(28)
       reftol                          = recv_real(29)
       krylov_tol                      = recv_real(30)
-      blopex_atol                     = recv_real(31)
-      blopex_rtol                     = recv_real(32)
       sp_gamma_h                      = recv_real(33)
       sp_gamma_p                      = recv_real(34)
       refsoln_pbias                   = recv_real(35)
+      st_shift                        = recv_real(36)
+      st_antishift                    = recv_real(37)
 
-      lambda0_side                    = recv_int(79)
       coarse_size                     = recv_int(80)
       coarse_method                   = recv_int(81)
       scale_evec                      = recv_int(82)
@@ -3918,13 +4083,19 @@ do
       nlp_max_p_inc                   = recv_int(103)
       print_solver_when               = recv_int(104)
       print_solver_who                = recv_int(105)
+      pde_has_first_order_terms       = (recv_int(106)==1)
+      pde_has_cross_derivative        = (recv_int(107)==1)
+      eigen_ncv                       = recv_int(108)
+      eigen_maxit                     = recv_int(109)
+      harmonic_extraction             = (recv_int(110)==1)
+      true_residual                   = (recv_int(111)==1)
 
       do i=1,FN_LEN
-         zoltan_param_file(i:i) = char(recv_int(105+i))
+         zoltan_param_file(i:i) = char(recv_int(111+i))
       end do
 
-      ipos = 105 + FN_LEN
-      rpos = 35
+      ipos = 111 + FN_LEN
+      rpos = 37
 
       dim1 = recv_int(ipos+1)
       if (dim1 /= 0) then
@@ -4043,10 +4214,12 @@ do
                      mg_postrelax, mg_prerelax_ho, mg_postrelax_ho,          &
                      dd_iterations, krylov_iter, krylov_restart, krylov_tol, &
                      mg_comm, ignore_quad_err, eigensolver, num_eval,        &
-                     lambda0, lambda0_side, transformation, scale_evec,      &
-                     arpack_ncv, arpack_maxit, arpack_tol,                   &
-                     blopex_maxit, blopex_atol, blopex_rtol,                 &
+                     lambda0, transformation, st_shift,                      &
+                     st_antishift, harmonic_extraction, true_residual,       &
+                     scale_evec, eigen_ncv, eigen_maxit, eigen_tol,          &
                      degree, inc_quad_order,                                 &
+                     pde_has_first_order_terms, pde_has_cross_derivative,    &
+                     laplacian_operator, isosceles_right_triangles,          &
    hypre_BoomerAMG_MaxLevels,hypre_BoomerAMG_MaxIter,hypre_BoomerAMG_Tol,     &
    hypre_BoomerAMG_StrongThreshold,hypre_BoomerAMG_MaxRowSum,                 &
    hypre_BoomerAMG_CoarsenType,hypre_BoomerAMG_MeasureType,                   &
@@ -4080,14 +4253,21 @@ do
 
    case (3) ! evaluate the solution
 
-      first_int = 9
+      first_int = 11
       first_real = 1
       call unpack_procs(invoker_procs,recv_int,first_int,recv_real,first_real)
       first_real = first_real-1
       nr = nr - first_real
-      call evaluate_slave(my_pde,recv_real(first_real+1:first_real+nr/2),&
-                          recv_real(first_real+1+nr/2:first_real+nr), &
-                          invoker_procs,recv_int(2),recv_int(3),recv_int(4:8))
+      select case (global_element_kind)
+      case (TRIANGULAR_ELEMENT)
+         call evaluate_slave(my_pde,recv_real(first_real+1:first_real+nr/2),&
+                             recv_real(first_real+1+nr/2:first_real+nr), &
+                            invoker_procs,recv_int(2),recv_int(3),recv_int(4:8))
+      case (TETRAHEDRAL_ELEMENT)
+         ierr = PHAML_INTERNAL_ERROR
+         call fatal("haven't set call to evaluate_slave in phaml.f90 yet")
+         stop
+      end select
       if (ni > 0) deallocate(recv_int,stat=astat)
       if (nr+first_real > 0) deallocate(recv_real,stat=astat)
       call cleanup_unpack_procs(invoker_procs)
@@ -4193,6 +4373,13 @@ do
    case (18) ! get grid and solution
 
       call phaml_get_grid_soln(my_pde,xdum,ydum,udum,recv_int(2),recv_int(3))
+      if (ni > 0) deallocate(recv_int,stat=astat)
+      if (nr > 0) deallocate(recv_real,stat=astat)
+
+   case (19) ! store grid
+
+      call store_grid(my_pde%grid,my_pde%procs,my_pde%still_sequential, &
+                      recv_int(2),recv_int(3),recv_int(4),recv_int(5))
       if (ni > 0) deallocate(recv_int,stat=astat)
       if (nr > 0) deallocate(recv_real,stat=astat)
 
@@ -4532,9 +4719,7 @@ if (refine_control%error_estimator == EQUILIBRATED_RESIDUAL .or. &
      refine_control%hp_strategy == HP_NLP) .or. &
     (refine_control%reftype == HP_ADAPTIVE .and. &
      refine_control%hp_strategy == HP_NEXT3P)) then
-   if (my_proc(procs) /= MASTER) then
       call set_edge_mass(refine_control%max_deg)
-   endif
 endif
 
 ! initialize Zoltan
@@ -4550,32 +4735,35 @@ call realloc_solution(grid,degree,phaml_solution%system_size, &
 ! make sure the allocation for eigenvalues, etc., is right
 
 if (phaml_solution%eq_type == EIGENVALUE) then
-   if (.not. associated(grid%eigenvalue)) then
-      allocate(grid%eigenvalue(solver_control%num_eval), &
-               grid%eigenprob_l2_resid(solver_control%num_eval), &
-               grid%eigenprob_variance(solver_control%num_eval),stat=astat)
+   if (.not. associated(grid%eigen_results%eigenvalue)) then
+      allocate(grid%eigen_results%eigenvalue(solver_control%num_eval), &
+             grid%eigen_results%eigensolver_l2_resid(solver_control%num_eval), &
+             grid%eigen_results%eigensolver_errbound(solver_control%num_eval), &
+               stat=astat)
       if (astat /= 0) then
          ierr = ALLOC_FAILED
          call fatal("memory allocation failed in init",procs=procs)
          return
       endif
-      grid%eigenvalue = 0.0_my_real
-   elseif (size(grid%eigenvalue) /= solver_control%num_eval) then
-      deallocate(grid%eigenprob_l2_resid,grid%eigenprob_variance, &
+      grid%eigen_results%eigenvalue = 0.0_my_real
+   elseif (size(grid%eigen_results%eigenvalue) /= solver_control%num_eval) then
+      deallocate(grid%eigen_results%eigensolver_l2_resid, &
+                 grid%eigen_results%eigensolver_errbound, &
                  stat=astat)
       allocate(temp(solver_control%num_eval), &
-               grid%eigenprob_l2_resid(solver_control%num_eval), &
-               grid%eigenprob_variance(solver_control%num_eval),stat=astat)
+             grid%eigen_results%eigensolver_l2_resid(solver_control%num_eval), &
+             grid%eigen_results%eigensolver_errbound(solver_control%num_eval), &
+               stat=astat)
       if (astat /= 0) then
          ierr = ALLOC_FAILED
          call fatal("memory allocation failed in init",procs=procs)
          return
       endif
-      ni=min(size(temp),size(grid%eigenvalue))
+      ni=min(size(temp),size(grid%eigen_results%eigenvalue))
       temp = 0.0_my_real
-      temp(1:ni) = grid%eigenvalue
-      deallocate(grid%eigenvalue,stat=astat)
-      grid%eigenvalue => temp
+      temp(1:ni) = grid%eigen_results%eigenvalue
+      deallocate(grid%eigen_results%eigenvalue,stat=astat)
+      grid%eigen_results%eigenvalue => temp
    endif
    grid%num_eval = solver_control%num_eval
 else
@@ -4601,8 +4789,8 @@ end subroutine init
 
 !          --------------------
 subroutine check_end_sequential(phaml_solution,grid,procs,refine_control, &
-                                io_control,sequential_vert,prebalance, &
-                                postbalance,partition_method,loop, &
+                                solver_control,io_control,sequential_vert, &
+                                prebalance,postbalance,partition_method,loop, &
                                 loop_end_sequential,still_sequential)
 !          --------------------
 
@@ -4618,6 +4806,7 @@ type(phaml_solution_type), intent(in) :: phaml_solution
 type(grid_type), intent(inout) :: grid
 type(proc_info), intent(in) :: procs
 type(refine_options), intent(in) :: refine_control
+type(solver_options), intent(in) :: solver_control
 type (io_options), intent(in) :: io_control
 integer, intent(in) :: sequential_vert
 integer, intent(in) :: prebalance, postbalance
@@ -4654,9 +4843,9 @@ if (nvert > sequential_vert) then
                        partition_method,postbalance,num_proc(procs),export_gid,&
                         export_proc,first_call=.true.)
       endif
-      call redistribute(grid,procs,refine_control,export_gid,export_proc, &
-                        first_call=.true.)
-      call reconcile(grid,procs,refine_control,still_sequential)
+      call redistribute(grid,procs,refine_control,solver_control,export_gid, &
+                        export_proc,first_call=.true.)
+      call reconcile(grid,procs,refine_control,solver_control,still_sequential)
       if (associated(export_gid)) then
          deallocate(export_gid,export_proc)
       endif
@@ -4672,8 +4861,8 @@ end subroutine check_end_sequential
 
 !          ------
 subroutine balance(phaml_solution, grid, procs, io_control, refine_control, &
-                   partition_method, balance_what, still_sequential, loop, &
-                   loop_end_sequential, prebalancecall)
+                   solver_control, partition_method, balance_what, &
+                   still_sequential, loop, loop_end_sequential, prebalancecall)
 !          ------
 
 !----------------------------------------------------
@@ -4688,6 +4877,7 @@ type(grid_type), intent(inout) :: grid
 type(proc_info), intent(in) :: procs
 type (io_options), intent(in) :: io_control
 type(refine_options), intent(in) :: refine_control
+type(solver_options), intent(in) :: solver_control
 integer, intent(in) :: partition_method, balance_what, loop, loop_end_sequential
 logical, intent(in) :: still_sequential, prebalancecall
 !----------------------------------------------------
@@ -4756,8 +4946,9 @@ if (repart) then
                       total_nelem_leaf=nentity,no_master=.true.)
    redist = (numexp/float(nentity) > .05)
    if (redist) then
-      call redistribute(grid,procs,refine_control,export_gid,export_proc)
-      call reconcile(grid,procs,refine_control,still_sequential)
+      call redistribute(grid,procs,refine_control,solver_control,export_gid, &
+                        export_proc)
+      call reconcile(grid,procs,refine_control,solver_control,still_sequential)
    endif
    if (associated(export_gid)) then
       deallocate(export_gid,export_proc,stat=astat)
@@ -4804,12 +4995,12 @@ integer :: lev, elem, astat
 select case (phase)
 case (1)
    if (allocated(marked)) then
-      if (size(marked) /= size(grid%element)) then
+      if (size(marked) /= grid%biggest_elem) then
          deallocate(marked)
       endif
    endif
    if (.not. allocated(marked)) then
-      allocate(marked(size(grid%element)),stat=astat)
+      allocate(marked(grid%biggest_elem),stat=astat)
       if (astat /= 0) then
          ierr = ALLOC_FAILED
          call fatal("allocation failed in check_stall_special")
@@ -4846,7 +5037,7 @@ end select
 end function check_stall_special
 
 !          ------------
-subroutine phaml_create(phaml_solution,nproc,draw_grid_who, &
+subroutine phaml_create(phaml_solution,nproc,nthread,draw_grid_who, &
                         spawn_form,debug_command,display,graphics_host, &
                         output_unit,error_unit,output_now,id,system_size, &
                         eq_type,max_blen,triangle_files,update_umod)
@@ -4860,8 +5051,8 @@ subroutine phaml_create(phaml_solution,nproc,draw_grid_who, &
 ! Dummy arguments
 
 type (phaml_solution_type) :: phaml_solution
-integer, optional :: nproc,draw_grid_who,spawn_form,output_unit,error_unit, &
-                     output_now,id,system_size,eq_type
+integer, optional :: nproc,nthread,draw_grid_who,spawn_form,output_unit, &
+                     error_unit,output_now,id,system_size,eq_type
 character(len=*), optional, intent(in) :: debug_command,display
 character(len=*), optional, intent(in) :: graphics_host
 real(my_real), optional, intent(in) :: max_blen
@@ -4871,18 +5062,24 @@ logical, optional, intent(in) :: update_umod
 
 !----------------------------------------------------
 ! Local variables
-integer :: local_nproc, loc_spawn_form, loc_pde_id, astat, proc, ni, nr, &
-           nalloc
+integer :: local_nproc, local_nthread, loc_spawn_form, loc_pde_id, astat, &
+           proc, ni, nr, nalloc, nqpoints, jerr
+real(my_real) :: xvert(4), yvert(4), zvert(4)
+real(my_real), pointer :: qweights(:), xquad(:), yquad(:), zquad(:)
 integer, allocatable :: imess(:)
-real(my_real) :: rmess(4)
+real(my_real) :: rmess(6)
 integer, pointer :: recv_int(:)
 real(my_real), pointer :: recv_real(:)
-integer, parameter :: DEBUGLEN = 64
+integer, parameter :: DEBUGLEN = 256
 character(len=DEBUGLEN) :: loc_debug_command, loc_display
 logical :: loc_update_umod
 
 !----------------------------------------------------
 ! Begin executable code
+
+! set the kind of elements
+
+global_element_kind = element_kind
 
 ! set I/O units
 
@@ -4930,10 +5127,44 @@ if (present(nproc)) then
       call warning("nproc must be a positive integer.  Resetting to 1")
       local_nproc = 1
    else
-      local_nproc = nproc
+! TEMP 3D
+      select case (global_element_kind)
+      case (TRIANGULAR_ELEMENT)
+         local_nproc = nproc
+      case (TETRAHEDRAL_ELEMENT)
+         if (nproc > 1) then
+            call warning("parallel not yet supported in 3D; setting nproc to 1")
+         endif
+         local_nproc = 1
+      end select
    endif
 else
    local_nproc = 1
+endif
+
+! check the size of nthread
+
+if (present(nthread)) then
+   if (nthread <= 0) then
+      call warning("nthread must be a positive integer.  Resetting to 1")
+      local_nthread = 1
+   else
+! TEMP 3D
+      select case (global_element_kind)
+      case (TRIANGULAR_ELEMENT)
+         local_nthread = nthread
+      case (TETRAHEDRAL_ELEMENT)
+         local_nthread = 1
+         call warning("parallel not yet supported in 3D; setting nthread to 1")
+      end select
+   endif
+   call omp_set_num_threads(local_nthread)
+else
+!$omp parallel
+!$omp master
+   local_nthread = omp_get_num_threads()
+!$omp end master
+!$omp end parallel
 endif
 
 ! set the graphics options
@@ -4965,6 +5196,17 @@ if (present(draw_grid_who)) then
 else
    phaml_solution%i_draw_grid = .false.
    phaml_solution%master_draws_grid = .false.
+endif
+
+if (present(spawn_form)) then
+   if (spawn_form == VTUNE_SLAVE .or. spawn_form == VTUNE_GRAPHICS .or. &
+       spawn_form == VTUNE_BOTH) then
+      if (.not. present(debug_command)) then
+         ierr = USER_INPUT_ERROR
+         call fatal("spawn_form VTUNE requires that debug_command be present and contains VTune's command line arguments")
+         stop
+      endif
+   endif
 endif
 
 if (present(spawn_form)) then
@@ -5011,7 +5253,12 @@ if (present(triangle_files)) then
    endif
    phaml_solution%grid%triangle_files = triangle_files
 else
-   phaml_solution%grid%triangle_files = "domain"
+   select case (global_element_kind)
+   case (TRIANGULAR_ELEMENT)
+      phaml_solution%grid%triangle_files = "domain"
+   case (TETRAHEDRAL_ELEMENT)
+      phaml_solution%grid%triangle_files = "domain.msh"
+   end select
 endif
 
 if (present(update_umod)) then
@@ -5042,13 +5289,29 @@ else
    phaml_solution%eq_type = ELLIPTIC
 endif
 
+! initialize the quadrature rule tables.  Do this now so that with OpenMP
+! we know only one thread does it.
+
+xvert = (/0.0_my_real,1.0_my_real,0.0_my_real,0.0_my_real/)
+yvert = (/0.0_my_real,0.0_my_real,1.0_my_real,0.0_my_real/)
+zvert = (/0.0_my_real,0.0_my_real,0.0_my_real,1.0_my_real/)
+call quadrature_rule_line(1,xvert(1:2),yvert(1:2),nqpoints,qweights,xquad, &
+                          yquad,jerr)
+deallocate(qweights,xquad,yquad)
+call quadrature_rule_tri(1,xvert(1:3),yvert(1:3),nqpoints,qweights,xquad, &
+                         yquad,jerr)
+deallocate(qweights,xquad,yquad)
+call quadrature_rule_tet(1,xvert,yvert,zvert,nqpoints,qweights,xquad,yquad, &
+                         zquad,jerr)
+deallocate(qweights,xquad,yquad,zquad)
+
 ! initialize the message passing communications package
 
 call init_comm(phaml_solution%procs,loc_spawn_form,phaml_solution%i_draw_grid, &
                phaml_solution%master_draws_grid, &
                phaml_solution%graphics_host,phaml_solution%outunit, &
                phaml_solution%errunit,phaml_solution%system_size, &
-               phaml_solution%eq_type,loc_pde_id,local_nproc, &
+               phaml_solution%eq_type,loc_pde_id,local_nproc,local_nthread, &
                phaml_solution%grid%max_blen,phaml_solution%grid%triangle_files,&
                loc_update_umod,loc_debug_command,loc_display)
 
@@ -5119,15 +5382,24 @@ else
 endif
 
 if (my_proc(phaml_solution%procs) == MASTER) then
-   nalloc = 1
-else
    nalloc = 25000
+else
+   select case (global_element_kind)
+   case (TRIANGULAR_ELEMENT)
+      nalloc = 100000
+   case (TETRAHEDRAL_ELEMENT)
+      nalloc = 25000
+   end select
 endif
 call allocate_grid(phaml_solution%grid,nalloc,phaml_solution%grid%num_eval, &
                    phaml_solution%eq_type,1)
 
+! in the last argument, all processors except the master believe they own
+! all the elements
+
 call init_grid(phaml_solution%grid,phaml_solution%procs,1, &
-               my_proc(phaml_solution%procs),.true.)
+               my_proc(phaml_solution%procs), &
+               my_proc(phaml_solution%procs)/=MASTER)
 
 if (my_proc(phaml_solution%procs) /= MASTER) then
    if (my_proc(phaml_solution%procs) == 1) then
@@ -5135,7 +5407,15 @@ if (my_proc(phaml_solution%procs) /= MASTER) then
       rmess(2) = phaml_solution%grid%boundbox_max%x
       rmess(3) = phaml_solution%grid%boundbox_min%y
       rmess(4) = phaml_solution%grid%boundbox_max%y
-      call phaml_send(phaml_solution%procs,MASTER,(/0/),0,rmess,4,300)
+      select case (global_element_kind)
+      case (TRIANGULAR_ELEMENT)
+         nr = 4
+      case (TETRAHEDRAL_ELEMENT)
+         rmess(5) = zcoord(phaml_solution%grid%boundbox_min)
+         rmess(6) = zcoord(phaml_solution%grid%boundbox_max)
+         nr = 6
+      end select
+      call phaml_send(phaml_solution%procs,MASTER,(/0/),0,rmess,nr,300)
    endif
 else
    call phaml_recv(phaml_solution%procs,proc,recv_int,ni,recv_real,nr,300)
@@ -5143,6 +5423,10 @@ else
    phaml_solution%grid%boundbox_max%x = recv_real(2)
    phaml_solution%grid%boundbox_min%y = recv_real(3)
    phaml_solution%grid%boundbox_max%y = recv_real(4)
+   if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+      call set_zcoord(phaml_solution%grid%boundbox_min,recv_real(5))
+      call set_zcoord(phaml_solution%grid%boundbox_max,recv_real(6))
+   endif
    if (associated(recv_real)) deallocate(recv_real,stat=astat)
 endif
 
@@ -5152,25 +5436,39 @@ grid_changed = .true.
 if ((my_proc(phaml_solution%procs)==MASTER .and. phaml_solution%master_draws_grid) &
     .or. &
     (my_proc(phaml_solution%procs)/=MASTER .and. phaml_solution%i_draw_grid)) then
-   allocate(imess(4),stat=astat)
+   allocate(imess(5),stat=astat)
    if (astat /= 0) then
       ierr = ALLOC_FAILED
       call fatal("allocation failed in phaml_create")
       stop
    endif
    imess(1) = GRAPHICS_INIT
-   imess(2) = 100000
-   imess(3) = 100000
-   imess(4) = 25000
    rmess(1) = phaml_solution%grid%boundbox_min%x
    rmess(2) = phaml_solution%grid%boundbox_max%x
    rmess(3) = phaml_solution%grid%boundbox_min%y
    rmess(4) = phaml_solution%grid%boundbox_max%y
+   select case (global_element_kind)
+   case (TRIANGULAR_ELEMENT)
+      imess(2) = 100000
+      imess(3) = 100000
+      imess(4) = 25000
+      ni = 4
+      nr = 4
+   case (TETRAHEDRAL_ELEMENT)
+      imess(2) = 200000
+      imess(3) = 150000
+      imess(4) = 25000
+      imess(5) = 200000
+      rmess(5) = zcoord(phaml_solution%grid%boundbox_min)
+      rmess(6) = zcoord(phaml_solution%grid%boundbox_max)
+      ni = 5
+      nr = 6
+   end select
    if (PARALLEL == SEQUENTIAL) then
-      call sequential_send(imess,4,rmess,4)
+      call sequential_send(imess,ni,rmess,nr)
    else
       call phaml_send(phaml_solution%procs,graphics_proc(phaml_solution%procs),&
-                      imess,4,rmess,4,101)
+                      imess,ni,rmess,nr,101)
    endif
    deallocate(imess)
 endif
@@ -5236,7 +5534,8 @@ call deallocate_grid(phaml_solution%grid)
 if (my_processor /= MASTER) then
    if (allocated(pde)) deallocate(pde,stat=astat)
 endif
-call terminate_comm(phaml_solution%procs,loc_finalize)
+call terminate_comm(phaml_solution%procs,loc_finalize, &
+          .not.(phaml_solution%i_draw_grid.or.phaml_solution%master_draws_grid))
 
 end subroutine phaml_destroy
 
@@ -5440,18 +5739,9 @@ real(my_real) :: integ
 ! Local variables:
 
 integer :: children(MAX_CHILD), i, allc(MAX_CHILD), nqpoints, jerr, astat, order
-real(my_real) :: xvert(3), yvert(3)
-real(my_real), pointer :: qweights(:),xquad(:),yquad(:)
+real(my_real) :: xvert(VERTICES_PER_ELEMENT), yvert(VERTICES_PER_ELEMENT)
+real(my_real), pointer :: qweights(:),xquad(:),yquad(:),zquad(:)
 real(my_real), allocatable :: u(:,:,:), kern(:)
-
-interface
-   function phaml_integral_kernel(kernel,x,y)
-   use global
-   integer, intent(in) :: kernel
-   real(my_real), intent(in) :: x,y
-   real(my_real) :: phaml_integral_kernel
-   end function phaml_integral_kernel
-end interface
 
 !----------------------------------------------------
 ! Begin executable code
@@ -5495,6 +5785,7 @@ else
       endif
       call quadrature_rule_tri(order,xvert,yvert,nqpoints,qweights, &
                                xquad,yquad,jerr,stay_in=.true.)
+      allocate(zquad(size(xquad))); zquad=0 ! TEMP3D
       if (jerr /= 0) then
          call fatal("Failed to get quadrature rule in phaml_integrate.", &
                     "Integral not computed")
@@ -5511,25 +5802,43 @@ else
 
 ! evaluate solution(s)
 
-      call evaluate_soln_local(grid,xquad,yquad,elem,(/comp1/),(/eigen1/), &
-                               u(1:1,1:1,:))
-      if (comp2/=0 .and. eigen2==0) then
-         call evaluate_soln_local(grid,xquad,yquad,elem,(/comp2/),(/1/), &
-                                  u(2:2,2:2,:))
-      elseif (comp2==0 .and. eigen2/=0) then
-         call evaluate_soln_local(grid,xquad,yquad,elem,(/1/),(/eigen2/), &
-                                  u(2:2,2:2,:))
-      elseif (comp2/=0 .and. eigen2/=0) then
-         call evaluate_soln_local(grid,xquad,yquad,elem,(/comp2/),(/eigen2/), &
-                                  u(2:2,2:2,:))
-      else
-         u(2,2,:) = 1.0_my_real
-      endif
+      select case (global_element_kind)
+      case (TRIANGULAR_ELEMENT)
+         call evaluate_soln_local(grid,xquad,yquad,elem,(/comp1/),(/eigen1/), &
+                                  u(1:1,1:1,:))
+         if (comp2/=0 .and. eigen2==0) then
+            call evaluate_soln_local(grid,xquad,yquad,elem,(/comp2/),(/1/), &
+                                     u(2:2,2:2,:))
+         elseif (comp2==0 .and. eigen2/=0) then
+            call evaluate_soln_local(grid,xquad,yquad,elem,(/1/),(/eigen2/), &
+                                     u(2:2,2:2,:))
+         elseif (comp2/=0 .and. eigen2/=0) then
+           call evaluate_soln_local(grid,xquad,yquad,elem,(/comp2/),(/eigen2/),&
+                                     u(2:2,2:2,:))
+         else
+            u(2,2,:) = 1.0_my_real
+         endif
+      case (TETRAHEDRAL_ELEMENT)
+         call evaluate_soln_local(grid,xquad,yquad,elem,(/comp1/),(/eigen1/), &
+                                  u(1:1,1:1,:),z=zquad)
+         if (comp2/=0 .and. eigen2==0) then
+            call evaluate_soln_local(grid,xquad,yquad,elem,(/comp2/),(/1/), &
+                                     u(2:2,2:2,:),z=zquad)
+         elseif (comp2==0 .and. eigen2/=0) then
+            call evaluate_soln_local(grid,xquad,yquad,elem,(/1/),(/eigen2/), &
+                                     u(2:2,2:2,:),z=zquad)
+         elseif (comp2/=0 .and. eigen2/=0) then
+           call evaluate_soln_local(grid,xquad,yquad,elem,(/comp2/),(/eigen2/),&
+                                     u(2:2,2:2,:),z=zquad)
+         else
+            u(2,2,:) = 1.0_my_real
+         endif
+      end select
 
 ! evaluate the kernel
 
       do i=1,nqpoints
-         kern(i) = phaml_integral_kernel(kernel,xquad(i),yquad(i))
+         kern(i) = my_phaml_integral_kernel(kernel,xquad(i),yquad(i),zquad(i))
       end do
 
 ! compute the integral
@@ -5541,7 +5850,7 @@ else
 
 ! free memory
 
-      deallocate(kern,u,qweights,xquad,yquad,stat=astat)
+      deallocate(kern,u,qweights,xquad,yquad,zquad,stat=astat)
 
    endif
 
@@ -5570,7 +5879,8 @@ integer, intent(in), optional :: comp,eigen
 
 integer :: loc_comp, loc_eigen, my_processor, proc, lev, elem, edge, vert, i, &
            j
-logical :: visited(size(phaml_solution%grid%edge))
+logical :: visited_vert(phaml_solution%grid%biggest_vert), &
+           visited_edge(phaml_solution%grid%biggest_edge)
 
 !----------------------------------------------------
 ! Begin executable code
@@ -5608,7 +5918,8 @@ else ! slave
 
 ! traverse the elements, edges and vertices on each level, scaling the solution
 
-   visited = .false.
+   visited_vert = .false.
+   visited_edge = .false.
    do lev=1,phaml_solution%grid%nlev
       elem = phaml_solution%grid%head_level_elem(lev)
       do while (elem /= END_OF_LIST)
@@ -5618,24 +5929,26 @@ else ! slave
                   factor*phaml_solution%grid%element(elem)%solution(j,loc_comp,loc_eigen)
             end do
          endif
-         do i=1,3
+         do i=1,VERTICES_PER_ELEMENT
+            vert = phaml_solution%grid%element(elem)%vertex(i)
+            if (.not. visited_vert(vert)) then
+               phaml_solution%grid%vertex_solution(vert,loc_comp,loc_eigen) = &
+                  factor*phaml_solution%grid%vertex_solution(vert,loc_comp,loc_eigen)
+               visited_vert(vert) = .true.
+            endif
+         end do
+         do i=1,EDGES_PER_ELEMENT
             edge = phaml_solution%grid%element(elem)%edge(i)
-            if (.not. visited(edge) .and. &
+            if (.not. visited_edge(edge) .and. &
                 associated(phaml_solution%grid%edge(edge)%solution)) then
                do j=1,size(phaml_solution%grid%edge(edge)%solution,dim=1)
                   phaml_solution%grid%edge(edge)%solution(j,loc_comp,loc_eigen)=&
                      factor*phaml_solution%grid%edge(edge)%solution(j,loc_comp,loc_eigen)
                end do
-               visited(edge) = .true.
+               visited_edge(edge) = .true.
             endif
          end do
          elem = phaml_solution%grid%element(elem)%next
-      end do
-      vert = phaml_solution%grid%head_level_vert(lev)
-      do while (vert /= END_OF_LIST)
-         phaml_solution%grid%vertex_solution(vert,loc_comp,loc_eigen) = &
-            factor*phaml_solution%grid%vertex_solution(vert,loc_comp,loc_eigen)
-         vert = phaml_solution%grid%vertex(vert)%next
       end do
    end do
 
@@ -5987,7 +6300,8 @@ integer :: my_processor, proc
 
 my_processor = my_proc(phaml_solution%procs)
 
-! Master tells the slaves to scale solution
+! Master tells the slaves to copy solution to old.  It also calls copy_old
+! so that oldsoln_exists gets set to true.
 
 if (my_processor == MASTER) then
 
@@ -5995,6 +6309,7 @@ if (my_processor == MASTER) then
    do proc=1,num_proc(phaml_solution%procs)
       call phaml_send(phaml_solution%procs,proc,(/16/),1,(/0.0_my_real/),0,101)
    end do
+   call copy_old(phaml_solution%grid)
 
 else ! slave
 
@@ -6011,11 +6326,10 @@ subroutine phaml_query(phaml_solution,nvert,nvert_proc,nvert_own,nelem, &
                        l2_error,max_error_indicator, linf_error_estimate, &
                        energy_error_estimate,l2_error_estimate, linf_solution,&
                        l2_solution, energy_solution,linf_u,l2_u,energy_u, &
-                       linf_true,l2_true,energy_true, &
-                       eigenvalues,eigenvalue_error_estimate,max_linsys_resid, &
-                       ave_linsys_resid,eigen_l2_resid,arpack_iter, &
-                       arpack_nconv,arpack_numop,arpack_numopb, arpack_numreo, &
-                       arpack_info,comp,eigen,error_estimator,eigen_variance)
+                       linf_true,l2_true,energy_true,eigenvalues, &
+                       eigenvalue_error_estimate, eigensolver_eval_errest, &
+                       eigensolver_l2_residual,eigensolver_niter, &
+                       eigensolver_nconv,comp,eigen,error_estimator)
 !          -----------
 
 !----------------------------------------------------
@@ -6031,8 +6345,7 @@ integer, intent(out), optional :: nvert,nvert_own(:),nelem, &
                                   nelem_proc(:),nelem_own(:),neq, &
                                   neq_proc(:),neq_own(:),nlev, &
                                   min_degree,max_degree, &
-                                  arpack_iter, arpack_nconv, arpack_numop, &
-                                  arpack_numopb, arpack_numreo, arpack_info
+                                  eigensolver_niter, eigensolver_nconv
 real(my_real),intent(out), optional :: linf_error, energy_error, l2_error, &
                                   max_error_indicator, &
                                   linf_error_estimate, &
@@ -6041,9 +6354,8 @@ real(my_real),intent(out), optional :: linf_error, energy_error, l2_error, &
                                   linf_solution, l2_solution, energy_solution, &
                                   linf_u, l2_u, energy_u, eigenvalues(:), &
                                   linf_true, l2_true, energy_true, &
-                                  max_linsys_resid, ave_linsys_resid, &
-                                  eigen_l2_resid(:), &
-                                  eigen_variance(:)
+                                  eigensolver_eval_errest(:), &
+                                  eigensolver_l2_residual(:)
 integer, intent(in), optional :: comp, eigen, error_estimator
 !----------------------------------------------------
 ! Local variables:
@@ -6051,12 +6363,13 @@ integer, intent(in), optional :: comp, eigen, error_estimator
 integer :: query_list(45)
 integer :: my_processor, nproc
 integer :: ni, nr, proc, i, j, p, lev, elem, neig, vert, which, loc_comp, &
-           loc_eigen, loc_error_estimator, maxdeg, astat
+           loc_eigen, loc_error_estimator, maxdeg, astat, ivert
 integer, allocatable :: send_int(:)
 real(my_real), allocatable :: send_real(:)
 integer, pointer :: recv_int(:)
 real(my_real), pointer :: recv_real(:)
 type(grid_type), pointer :: grid
+logical :: visited_vert(phaml_solution%grid%biggest_vert)
 !----------------------------------------------------
 ! Begin executable code
 
@@ -6112,13 +6425,13 @@ if (present(neq_own)) then
    endif
 endif
 
-if ((present(eigenvalues) .or. present(max_linsys_resid) .or. &
-    present(eigenvalue_error_estimate) .or. &
-    present(ave_linsys_resid) .or. present(eigen_l2_resid) .or. &
-    present(arpack_iter) .or. present(arpack_nconv) .or. &
-    present(arpack_numop) .or. present(arpack_numopb) .or. &
-    present(arpack_numreo) .or. present(arpack_info) .or. &
-    present(eigen_variance)) .and. .not. associated(grid%eigenvalue)) then
+if ((present(eigenvalues) .or. &
+     present(eigenvalue_error_estimate) .or. &
+     present(eigensolver_eval_errest) .or. &
+     present(eigensolver_l2_residual) .or. &
+     present(eigensolver_niter) .or. &
+     present(eigensolver_nconv)) .and. &
+    .not. associated(grid%eigen_results%eigenvalue)) then
    call warning("phaml_query: a query concerning eigenvalues was made,", &
                 "but an eigenvalue problem was not solved.")
    return
@@ -6140,10 +6453,18 @@ if (present(eigenvalue_error_estimate)) then
    endif
 endif
 
-if (present(eigen_l2_resid)) then
-   if (size(eigen_l2_resid) < max(1,grid%num_eval)) then
-      call fatal("phaml_query: size of eigen_l2_resid must be at least the number of eigenvalues computed.  They are ", &
-                 intlist=(/size(eigen_l2_resid),grid%num_eval/))
+if (present(eigensolver_eval_errest)) then
+   if (size(eigensolver_eval_errest) < max(1,grid%num_eval)) then
+      call fatal("phaml_query: size of eigensolver_eval_errest must be at least the number of eigenvalues computed.  They are ", &
+                 intlist=(/size(eigensolver_eval_errest),grid%num_eval/))
+      stop
+   endif
+endif
+
+if (present(eigensolver_l2_residual)) then
+   if (size(eigensolver_l2_residual) < max(1,grid%num_eval)) then
+      call fatal("phaml_query: size of eigensolver_l2_residual must be at least the number of eigenvalues computed.  They are ", &
+                 intlist=(/size(eigensolver_l2_residual),grid%num_eval/))
       stop
    endif
 endif
@@ -6202,16 +6523,10 @@ if (my_processor == MASTER) then
    if (present(linf_solution))         query_list(14) = 1
    if (present(l2_solution))           query_list(15) = 1
    if (present(eigenvalues))           query_list(16) = 1
-   if (present(max_linsys_resid))      query_list(17) = 1
-   if (present(ave_linsys_resid))      query_list(18) = 1
-   if (present(eigen_l2_resid))        query_list(19) = 1
-   if (present(arpack_iter))           query_list(20) = 1
-   if (present(arpack_nconv))          query_list(21) = 1
-   if (present(arpack_numop))          query_list(22) = 1
-   if (present(arpack_numopb))         query_list(23) = 1
-   if (present(arpack_numreo))         query_list(24) = 1
-   if (present(arpack_info))           query_list(25) = 1
-   if (present(eigen_variance))        query_list(26) = 1
+   if (present(eigensolver_eval_errest)) query_list(18) = 1
+   if (present(eigensolver_l2_residual)) query_list(19) = 1
+   if (present(eigensolver_niter))     query_list(20) = 1
+   if (present(eigensolver_nconv))     query_list(21) = 1
    if (present(comp)) then
       query_list(27) = comp
    else
@@ -6274,16 +6589,10 @@ if (my_processor == MASTER) then
    if (present(linf_solution)) linf_solution = 0.0_my_real
    if (present(l2_solution)) l2_solution = 0.0_my_real
    if (present(eigenvalues)) eigenvalues = 0.0_my_real
-   if (present(max_linsys_resid)) max_linsys_resid = 0.0_my_real
-   if (present(ave_linsys_resid)) ave_linsys_resid = 0.0_my_real
-   if (present(eigen_l2_resid)) eigen_l2_resid = 0.0_my_real
-   if (present(arpack_iter)) arpack_iter = 0
-   if (present(arpack_nconv)) arpack_nconv = 0
-   if (present(arpack_numop)) arpack_numop = 0
-   if (present(arpack_numopb)) arpack_numopb = 0
-   if (present(arpack_numreo)) arpack_numreo = 0
-   if (present(arpack_info)) arpack_info = 0
-   if (present(eigen_variance)) eigen_variance = 0.0_my_real
+   if (present(eigensolver_eval_errest)) eigensolver_eval_errest = 0.0_my_real
+   if (present(eigensolver_l2_residual)) eigensolver_l2_residual = 0.0_my_real
+   if (present(eigensolver_niter)) eigensolver_niter = 0
+   if (present(eigensolver_nconv)) eigensolver_nconv = 0
    if (present(linf_true)) linf_true = 0.0_my_real
    if (present(l2_true)) l2_true = 0.0_my_real
    if (present(energy_true)) energy_true = 0.0_my_real
@@ -6381,11 +6690,12 @@ if (my_processor == MASTER) then
       endif
       if (present(eigenvalue_error_estimate)) then
          if (.not. phaml_solution%still_sequential .or. p==1) then
-            neig = min(size(eigenvalue_error_estimate),size(grid%eigenvalue))
+            neig = min(size(eigenvalue_error_estimate), &
+                       size(grid%eigen_results%eigenvalue))
             eigenvalue_error_estimate(1:neig) = &
                eigenvalue_error_estimate(1:neig) + recv_real(j+1:j+neig)**2
          endif
-         j = j + size(grid%eigenvalue)
+         j = j + size(grid%eigen_results%eigenvalue)
       endif
       if (present(linf_solution)) then
          j = j + 1
@@ -6398,51 +6708,27 @@ if (my_processor == MASTER) then
          endif
       endif
       if (present(eigenvalues)) then
-         neig = min(size(eigenvalues),size(grid%eigenvalue))
+         neig = min(size(eigenvalues),size(grid%eigen_results%eigenvalue))
          eigenvalues(1:neig) = recv_real(j+1:j+neig)
-         j = j + size(grid%eigenvalue)
+         j = j + size(grid%eigen_results%eigenvalue)
       endif
-      if (present(max_linsys_resid)) then
-         j = j + 1
-         max_linsys_resid = recv_real(j)
+      if (present(eigensolver_eval_errest)) then
+         neig = min(size(eigensolver_eval_errest),size(grid%eigen_results%eigenvalue))
+         eigensolver_eval_errest(1:neig) = recv_real(j+1:j+neig)
+         j = j + size(grid%eigen_results%eigenvalue)
       endif
-      if (present(ave_linsys_resid)) then
-         j = j + 1
-         ave_linsys_resid = recv_real(j)
+      if (present(eigensolver_l2_residual)) then
+         neig = min(size(eigensolver_l2_residual),size(grid%eigen_results%eigenvalue))
+         eigensolver_l2_residual(1:neig) = recv_real(j+1:j+neig)
+         j = j + size(grid%eigen_results%eigenvalue)
       endif
-      if (present(eigen_l2_resid)) then
-         neig = min(size(eigen_l2_resid),size(grid%eigenvalue))
-         eigen_l2_resid(1:neig) = recv_real(j+1:j+neig)
-         j = j + size(grid%eigenvalue)
-      endif
-      if (present(arpack_iter)) then
+      if (present(eigensolver_niter)) then
          i = i + 1
-         arpack_iter = recv_int(i)
+         eigensolver_niter = recv_int(i)
       endif
-      if (present(arpack_nconv)) then
+      if (present(eigensolver_nconv)) then
          i = i + 1
-         arpack_nconv = recv_int(i)
-      endif
-      if (present(arpack_numop)) then
-         i = i + 1
-         arpack_numop = recv_int(i)
-      endif
-      if (present(arpack_numopb)) then
-         i = i + 1
-         arpack_numopb = recv_int(i)
-      endif
-      if (present(arpack_numreo)) then
-         i = i + 1
-         arpack_numreo = recv_int(i)
-      endif
-      if (present(arpack_info)) then
-         i = i + 1
-         arpack_info = recv_int(i)
-      endif
-      if (present(eigen_variance)) then
-         neig = min(size(eigen_variance),size(grid%eigenvalue))
-         eigen_variance(1:neig) = recv_real(j+1:j+neig)
-         j = j + size(grid%eigenvalue)
+         eigensolver_nconv = recv_int(i)
       endif
       if (present(linf_true)) then
          j = j + 1
@@ -6546,16 +6832,10 @@ else
       if (present(linf_solution))         query_list(14) = 1
       if (present(l2_solution))           query_list(15) = 1
       if (present(eigenvalues))           query_list(16) = 1
-      if (present(max_linsys_resid))      query_list(17) = 1
-      if (present(ave_linsys_resid))      query_list(18) = 1
-      if (present(eigen_l2_resid))        query_list(19) = 1
-      if (present(arpack_iter))           query_list(20) = 1
-      if (present(arpack_nconv))          query_list(21) = 1
-      if (present(arpack_numop))          query_list(22) = 1
-      if (present(arpack_numopb))         query_list(23) = 1
-      if (present(arpack_numreo))         query_list(24) = 1
-      if (present(arpack_info))           query_list(25) = 1
-      if (present(eigen_variance))        query_list(26) = 1
+      if (present(eigensolver_eval_errest)) query_list(18) = 1
+      if (present(eigensolver_l2_residual)) query_list(19) = 1
+      if (present(eigensolver_niter))     query_list(20) = 1
+      if (present(eigensolver_nconv))     query_list(21) = 1
       if (present(comp)) then
          query_list(27) = comp
       else
@@ -6627,17 +6907,11 @@ else
    if (query_list(13) == 1) nr = nr + 1
    if (query_list(14) == 1) nr = nr + 1
    if (query_list(15) == 1) nr = nr + 1
-   if (query_list(16) == 1) nr = nr + size(grid%eigenvalue)
-   if (query_list(17) == 1) nr = nr + 1
-   if (query_list(18) == 1) nr = nr + 1
-   if (query_list(19) == 1) nr = nr + size(grid%eigenvalue)
+   if (query_list(16) == 1) nr = nr + size(grid%eigen_results%eigenvalue)
+   if (query_list(18) == 1) nr = nr + size(grid%eigen_results%eigenvalue)
+   if (query_list(19) == 1) nr = nr + size(grid%eigen_results%eigenvalue)
    if (query_list(20) == 1) ni = ni + 1
    if (query_list(21) == 1) ni = ni + 1
-   if (query_list(22) == 1) ni = ni + 1
-   if (query_list(23) == 1) ni = ni + 1
-   if (query_list(24) == 1) ni = ni + 1
-   if (query_list(25) == 1) ni = ni + 1
-   if (query_list(26) == 1) nr = nr + size(grid%eigenvalue)
    if (query_list(28) == 1) ni = ni + 1
    if (query_list(29) == 1) ni = ni + 1
    if (query_list(30) == 1) ni = ni + 1
@@ -6652,7 +6926,7 @@ else
    if (query_list(41) == 1) nr = nr + 1
    if (query_list(42) == 1) ni = ni + 1
    if (query_list(43) == 1) ni = ni + 1
-   if (query_list(45) == 1) nr = nr + size(grid%eigenvalue)
+   if (query_list(45) == 1) nr = nr + size(grid%eigen_results%eigenvalue)
 
    if (ni > 0) then
       allocate(send_int(ni),stat=astat)
@@ -6768,7 +7042,7 @@ else
                           errest_L2=send_real(j))
    endif
    if (query_list(45) == 1) then
-      do p=1,size(grid%eigenvalue)
+      do p=1,size(grid%eigen_results%eigenvalue)
          j = j + 1
          call error_estimate(grid,phaml_solution%procs,loc_error_estimator,p, &
                              errest_eigenvalue=send_real(j))
@@ -6777,72 +7051,65 @@ else
    if (query_list(14) == 1) then
       j = j + 1
       send_real(j) = 0.0_my_real
+      visited_vert = .false.
       do lev=1,grid%nlev
-         vert = grid%head_level_vert(lev)
-         do while (vert /= END_OF_LIST)
-            if (grid%element(grid%vertex(vert)%assoc_elem)%iown) then
-               send_real(j) = max(send_real(j),abs(grid%vertex_solution(vert,loc_comp,loc_eigen)))
-            endif
-            vert = grid%vertex(vert)%next
+         elem = grid%head_level_elem(lev)
+         do while (elem /= END_OF_LIST)
+            do ivert=1,VERTICES_PER_ELEMENT
+               vert = grid%element(elem)%vertex(ivert)
+               if (visited_vert(vert)) cycle
+               visited_vert(vert) = .true.
+               if (grid%element(grid%vertex(vert)%assoc_elem)%iown) then
+                  send_real(j) = max(send_real(j), &
+                             abs(grid%vertex_solution(vert,loc_comp,loc_eigen)))
+               endif
+            end do
+            elem = grid%element(elem)%next
          end do
       end do
    endif
    if (query_list(15) == 1) then
       j = j + 1
       send_real(j) = 0.0_my_real
+      visited_vert = .false.
       do lev=1,grid%nlev
-         vert = grid%head_level_vert(lev)
-         do while (vert /= END_OF_LIST)
-            if (grid%element(grid%vertex(vert)%assoc_elem)%iown) then
-               send_real(j) = send_real(j) + grid%vertex_solution(vert,loc_comp,loc_eigen)**2
-            endif
-            vert = grid%vertex(vert)%next
+         elem = grid%head_level_elem(lev)
+         do while (elem /= END_OF_LIST)
+            do ivert=1,VERTICES_PER_ELEMENT
+               vert = grid%element(elem)%vertex(ivert)
+               if (visited_vert(vert)) cycle
+               visited_vert(vert) = .true.
+               if (grid%element(grid%vertex(vert)%assoc_elem)%iown) then
+                  send_real(j) = send_real(j) + &
+                                grid%vertex_solution(vert,loc_comp,loc_eigen)**2
+               endif
+            end do
+            elem = grid%element(elem)%next
          end do
       end do
    endif
    if (query_list(16) == 1) then
-      send_real(j+1:j+size(grid%eigenvalue)) = grid%eigenvalue
-      j = j + size(grid%eigenvalue)
-   endif
-   if (query_list(17) == 1) then
-      j = j + 1
-      send_real(j) = grid%eigen_linsys_max_l2_resid
+      send_real(j+1:j+size(grid%eigen_results%eigenvalue)) = &
+         grid%eigen_results%eigenvalue
+      j = j + size(grid%eigen_results%eigenvalue)
    endif
    if (query_list(18) == 1) then
-      j = j + 1
-      send_real(j) = grid%eigen_linsys_ave_l2_resid
+      send_real(j+1:j+size(grid%eigen_results%eigenvalue)) = &
+         grid%eigen_results%eigensolver_errbound
+      j = j + size(grid%eigen_results%eigenvalue)
    endif
    if (query_list(19) == 1) then
-      send_real(j+1:j+size(grid%eigenvalue)) = grid%eigenprob_l2_resid
-      j = j + size(grid%eigenvalue)
+      send_real(j+1:j+size(grid%eigen_results%eigenvalue)) = &
+         grid%eigen_results%eigensolver_l2_resid
+      j = j + size(grid%eigen_results%eigenvalue)
    endif
    if (query_list(20) == 1) then
       i = i + 1
-      send_int(i) = grid%arpack_iter
+      send_int(i) = grid%eigen_results%niter
    endif
    if (query_list(21) == 1) then
       i = i + 1
-      send_int(i) = grid%arpack_nconv
-   endif
-   if (query_list(22) == 1) then
-      i = i + 1
-      send_int(i) = grid%arpack_numop
-   endif
-   if (query_list(23) == 1) then
-      i = i + 1
-      send_int(i) = grid%arpack_numopb
-   endif
-   if (query_list(24) == 1) then
-      i = i + 1
-      send_int(i) = grid%arpack_numreo
-   endif
-   if (query_list(25) == 1) then
-      i = i + 1
-      send_int(i) = grid%arpack_info
-   endif
-   if (query_list(26) == 1) then
-      send_real(j+1:j+size(grid%eigenvalue)) = grid%eigenprob_variance
-      j = j + size(grid%eigenvalue)
+      send_int(i) = grid%eigen_results%nconv
    endif
    if (query_list(34) == 1) then
       j = j + 1
@@ -6992,9 +7259,10 @@ else
          l2_error_estimate = send_real(j)
       endif
       if (present(eigenvalue_error_estimate)) then
-         neig = min(size(eigenvalue_error_estimate),size(grid%eigenvalue))
+         neig = min(size(eigenvalue_error_estimate), &
+                    size(grid%eigen_results%eigenvalue))
          eigenvalue_error_estimate(1:neig) = send_real(j+1:j+neig)**2
-         j = j + size(grid%eigenvalue)
+         j = j + size(grid%eigen_results%eigenvalue)
       endif
       if (present(linf_solution)) then
          j = j + 1
@@ -7005,51 +7273,27 @@ else
          l2_solution = sqrt(send_real(j))
       endif
       if (present(eigenvalues)) then
-         neig = min(size(eigenvalues),size(grid%eigenvalue))
+         neig = min(size(eigenvalues),size(grid%eigen_results%eigenvalue))
          eigenvalues(1:neig) = send_real(j+1:j+neig)
-         j = j + size(grid%eigenvalue)
+         j = j + size(grid%eigen_results%eigenvalue)
       endif
-      if (present(max_linsys_resid)) then
-         j = j + 1
-         max_linsys_resid = send_real(j)
+      if (present(eigensolver_eval_errest)) then
+         neig = min(size(eigensolver_eval_errest),size(grid%eigen_results%eigenvalue))
+         eigensolver_eval_errest(1:neig) = send_real(j+1:j+neig)
+         j = j + size(grid%eigen_results%eigenvalue)
       endif
-      if (present(ave_linsys_resid)) then
-         j = j + 1
-         ave_linsys_resid = send_real(j)
+      if (present(eigensolver_l2_residual)) then
+         neig = min(size(eigensolver_l2_residual),size(grid%eigen_results%eigenvalue))
+         eigensolver_l2_residual(1:neig) = send_real(j+1:j+neig)
+         j = j + size(grid%eigen_results%eigenvalue)
       endif
-      if (present(eigen_l2_resid)) then
-         neig = min(size(eigen_l2_resid),size(grid%eigenvalue))
-         eigen_l2_resid(1:neig) = send_real(j+1:j+neig)
-         j = j + size(grid%eigenvalue)
-      endif
-      if (present(arpack_iter)) then
+      if (present(eigensolver_niter)) then
          i = i + 1
-         arpack_iter = send_int(i)
+         eigensolver_niter = send_int(i)
       endif
-      if (present(arpack_nconv)) then
+      if (present(eigensolver_nconv)) then
          i = i + 1
-         arpack_nconv = send_int(i)
-      endif
-      if (present(arpack_numop)) then
-         i = i + 1
-         arpack_numop = send_int(i)
-      endif
-      if (present(arpack_numopb)) then
-         i = i + 1
-         arpack_numopb = send_int(i)
-      endif
-      if (present(arpack_numreo)) then
-         i = i + 1
-         arpack_numreo = send_int(i)
-      endif
-      if (present(arpack_info)) then
-         i = i + 1
-         arpack_info = send_int(i)
-      endif
-      if (present(eigen_variance)) then
-         neig = min(size(eigen_variance),size(grid%eigenvalue))
-         eigen_variance(1:neig) = send_real(j+1:j+neig)
-         j = j + size(grid%eigenvalue)
+         eigensolver_nconv = send_int(i)
       endif
       if (present(linf_true)) then
          j = j + 1
@@ -7241,7 +7485,7 @@ endif
 if (form == 'UNFORMATTED') then
 
    write(unit) 'PHAML data'
-   write(unit) 12 ! version number
+   write(unit) 14 ! version number
 
 ! data from phaml_solution_type
 
@@ -7257,12 +7501,6 @@ if (form == 'UNFORMATTED') then
 
    grid => phaml_solution%grid
    astat=0
-   if (me == MASTER) allocate(grid%initial_neighbor(1,1),stat=astat)
-   if (astat /= 0) then
-      ierr = ALLOC_FAILED
-      call fatal("allocation failed in phaml_store")
-      stop
-   endif
    elem_dim_save = 0
    vert_dim_save = 0
    edge_dim_save = 0
@@ -7279,15 +7517,15 @@ if (form == 'UNFORMATTED') then
          elem = grid%element(elem)%next
       end do
    end do
-   if (associated(grid%eigenvalue)) then
+   if (associated(grid%eigen_results%eigenvalue)) then
       write(unit) vert_dim_save,elem_dim_save,edge_dim_save, &
                   size(grid%initial_neighbor,dim=2), &
-                  size(grid%head_level_elem),size(grid%head_level_vert), &
-                  size(grid%eigenvalue),grid%nsoln
+                  size(grid%head_level_elem), &
+                  size(grid%eigen_results%eigenvalue),grid%nsoln
    else
       write(unit) vert_dim_save,elem_dim_save,edge_dim_save, &
                   size(grid%initial_neighbor,dim=2), &
-                  size(grid%head_level_elem),size(grid%head_level_vert), &
+                  size(grid%head_level_elem), &
                   -1,grid%nsoln
    endif
    write(unit) size(grid%vertex_solution,2),size(grid%vertex_solution,3)
@@ -7298,11 +7536,11 @@ if (form == 'UNFORMATTED') then
    endif
    write(unit) EDGES_PER_ELEMENT
    elem = grid%next_free_elem
-   if (elem > elem_dim_save) grid%next_free_elem = END_OF_LIST
+   if (elem > elem_dim_save) grid%next_free_elem = elem_dim_save+1
    vert = grid%next_free_vert
-   if (vert > vert_dim_save) grid%next_free_vert = END_OF_LIST
+   if (vert > vert_dim_save) grid%next_free_vert = vert_dim_save+1
    edge = grid%next_free_edge
-   if (edge > edge_dim_save) grid%next_free_edge = END_OF_LIST
+   if (edge > edge_dim_save) grid%next_free_edge = edge_dim_save+1
    write(unit) grid%next_free_elem,grid%next_free_vert,grid%next_free_edge, &
                grid%partition, grid%nelem,grid%nelem_leaf,grid%nelem_leaf_own, &
                grid%nedge, grid%nedge_own, grid%nvert, grid%nvert_own, &
@@ -7312,15 +7550,11 @@ if (form == 'UNFORMATTED') then
    grid%next_free_vert = vert
    grid%next_free_edge = edge
    write(unit) grid%head_level_elem
-   write(unit) grid%head_level_vert
-   if (me /= MASTER) then
-      write(unit) grid%initial_neighbor
-   endif
+   write(unit) grid%initial_neighbor
    write(unit) grid%boundbox_min,grid%boundbox_max
-   if (associated(grid%eigenvalue)) then
-      if (size(grid%eigenvalue) /= 0) then
-         write(unit) grid%eigenvalue
-         write(unit) grid%eigenprob_l2_resid
+   if (associated(grid%eigen_results%eigenvalue)) then
+      if (size(grid%eigen_results%eigenvalue) /= 0) then
+         write(unit) grid%eigen_results%eigenvalue
       endif
    endif
    call hash_table_store(grid%elem_hash,unit)
@@ -7338,7 +7572,6 @@ if (form == 'UNFORMATTED') then
       write(unit) grid%vertex(1:vert_dim_save)%bmark
       write(unit) grid%vertex(1:vert_dim_save)%assoc_elem
       write(unit) grid%vertex(1:vert_dim_save)%next
-      write(unit) grid%vertex(1:vert_dim_save)%previous
       if (grid%oldsoln_exists) then
          write(unit) (grid%vertex_oldsoln(j,:,:),j=1,vert_dim_save)
       endif
@@ -7349,7 +7582,9 @@ if (form == 'UNFORMATTED') then
       do j=1,VERTICES_PER_ELEMENT
          write(unit) grid%element(1:elem_dim_save)%vertex(j)
       end do
-      call hash_print_key(grid%element(1:elem_dim_save)%mate,unit)
+      if (global_element_kind == TRIANGULAR_ELEMENT) then
+         call hash_print_key(grid%element(1:elem_dim_save)%mate,unit)
+      endif
       write(unit) grid%element(1:elem_dim_save)%level
       write(unit) grid%element(1:elem_dim_save)%next
       write(unit) grid%element(1:elem_dim_save)%previous
@@ -7427,7 +7662,7 @@ if (form == 'UNFORMATTED') then
 elseif (form == 'FORMATTED') then
 
    write(unit,*) '"PHAML data"'
-   write(unit,*) 12 ! version number
+   write(unit,*) 14 ! version number
 
 ! data from phaml_solution_type
 
@@ -7443,12 +7678,6 @@ elseif (form == 'FORMATTED') then
 
    grid => phaml_solution%grid
    astat=0
-   if (me == MASTER) allocate(grid%initial_neighbor(1,1),stat=astat)
-   if (astat /= 0) then
-      ierr = ALLOC_FAILED
-      call fatal("allocation failed in phaml_store")
-      stop
-   endif
    elem_dim_save = 0
    vert_dim_save = 0
    edge_dim_save = 0
@@ -7468,12 +7697,10 @@ elseif (form == 'FORMATTED') then
    write(unit,*) vert_dim_save,elem_dim_save,edge_dim_save, &
                 size(grid%initial_neighbor,dim=2), &
                 size(grid%head_level_elem)
-   if (associated(grid%eigenvalue)) then
-      write(unit,*) size(grid%head_level_vert), &
-                    size(grid%eigenvalue),grid%nsoln
+   if (associated(grid%eigen_results%eigenvalue)) then
+      write(unit,*) size(grid%eigen_results%eigenvalue),grid%nsoln
    else
-      write(unit,*) size(grid%head_level_vert), &
-                    -1,grid%nsoln
+      write(unit,*) -1,grid%nsoln
    endif
    write(unit,*) size(grid%vertex_solution,2),size(grid%vertex_solution,3)
    if (grid%have_true) then
@@ -7483,11 +7710,11 @@ elseif (form == 'FORMATTED') then
    endif
    write(unit,*) EDGES_PER_ELEMENT
    elem = grid%next_free_elem
-   if (elem > elem_dim_save) grid%next_free_elem = END_OF_LIST
+   if (elem > elem_dim_save) grid%next_free_elem = elem_dim_save+1
    vert = grid%next_free_vert
-   if (vert > vert_dim_save) grid%next_free_vert = END_OF_LIST
+   if (vert > vert_dim_save) grid%next_free_vert = vert_dim_save+1
    edge = grid%next_free_edge
-   if (edge > edge_dim_save) grid%next_free_edge = END_OF_LIST
+   if (edge > edge_dim_save) grid%next_free_edge = edge_dim_save+1
    write(unit,*) grid%next_free_elem,grid%next_free_vert,grid%next_free_edge, &
                 grid%partition, grid%nelem
    write(unit,*) grid%nelem_leaf,grid%nelem_leaf_own,grid%nedge, &
@@ -7500,20 +7727,14 @@ elseif (form == 'FORMATTED') then
    do sub=lbound(grid%head_level_elem,dim=1),ubound(grid%head_level_elem,dim=1)
       write(unit,*) grid%head_level_elem(sub)
    end do
-   do sub=lbound(grid%head_level_vert,dim=1),ubound(grid%head_level_vert,dim=1)
-      write(unit,*) grid%head_level_vert(sub)
+   do sub=lbound(grid%initial_neighbor,dim=2),ubound(grid%initial_neighbor,dim=2)
+      write(unit,*) grid%initial_neighbor(:,sub)
    end do
-   if (me /= MASTER) then
-      do sub=lbound(grid%initial_neighbor,dim=2),ubound(grid%initial_neighbor,dim=2)
-         write(unit,*) grid%initial_neighbor(:,sub)
-      end do
-   endif
    write(unit,*) grid%boundbox_min
    write(unit,*) grid%boundbox_max
-   if (associated(grid%eigenvalue)) then
-      if (size(grid%eigenvalue) /= 0) then
-         write(unit,*) grid%eigenvalue
-         write(unit,*) grid%eigenprob_l2_resid
+   if (associated(grid%eigen_results%eigenvalue)) then
+      if (size(grid%eigen_results%eigenvalue) /= 0) then
+         write(unit,*) grid%eigen_results%eigenvalue
       endif
    endif
    call hash_table_store(grid%elem_hash,unit)
@@ -7547,13 +7768,14 @@ elseif (form == 'FORMATTED') then
       write(unit,*) grid%vertex(sub)%bmark
       write(unit,*) grid%vertex(sub)%assoc_elem
       write(unit,*) grid%vertex(sub)%next
-      write(unit,*) grid%vertex(sub)%previous
    end do
    write(unit,*) VERTICES_PER_ELEMENT
    do sub=lbound(grid%element,dim=1),elem_dim_save
       call hash_print_key(grid%element(sub)%gid,unit)
       write(unit,*) grid%element(sub)%vertex
-      call hash_print_key(grid%element(sub)%mate,unit)
+      if (global_element_kind == TRIANGULAR_ELEMENT) then
+         call hash_print_key(grid%element(sub)%mate,unit)
+      endif
       write(unit,*) grid%element(sub)%level
       write(unit,*) grid%element(sub)%next
       write(unit,*) grid%element(sub)%previous
@@ -7649,10 +7871,10 @@ character(len=10) :: magic
 integer :: send_int(4)
 real(my_real) :: send_real(4)
 integer :: i,j,k,proc,nproc,me,astat,dstat,version,size_vertex,sub, &
-           size_element,size_initneigh,size_head_elem,size_head_vert, &
+           size_element,size_initneigh,size_head_elem, &
            size_eval,size_soln,size_edge,itemp,d1,d2, &
            saved_EDGES_PER_ELEMENT, saved_VERTICES_PER_ELEMENT, &
-           size_soln2,size_soln3
+           size_soln2,size_soln3, nmate
 type(grid_type), pointer :: grid
 type (io_options) :: io_control
 type (refine_options) :: ref_control
@@ -7717,9 +7939,7 @@ case ("FORMATTED")
 
    select case(version)
 
-   case(10,11,12) ! version 10 PHAML data file
-                  ! version 11 adds oldsoln
-                  ! version 12 adds have_true, size_soln2, size_soln3
+   case(14) ! version 14 PHAML data file
 
 ! data from phaml_solution_type
 
@@ -7743,16 +7963,10 @@ case ("FORMATTED")
       grid%system_size = phaml_solution%system_size
       read(unit,*) size_vertex,size_element,size_edge,size_initneigh, &
                    size_head_elem
-      read(unit,*) size_head_vert,size_eval,size_soln
-      if (version >= 12) then
-         read(unit,*) size_soln2, size_soln3
-         read(unit,*) itemp
-         grid%have_true = itemp==1
-      else
-         size_soln2 = grid%system_size
-         size_soln3 = max(1,size_eval)
-         grid%have_true = .true.
-      endif
+      read(unit,*) size_eval,size_soln
+      read(unit,*) size_soln2, size_soln3
+      read(unit,*) itemp
+      grid%have_true = itemp==1
       read(unit,*) saved_EDGES_PER_ELEMENT
       if (saved_EDGES_PER_ELEMENT /= EDGES_PER_ELEMENT) then
          call fatal("phaml_restore: mismatch in number of edges per element", &
@@ -7761,36 +7975,41 @@ case ("FORMATTED")
       endif
       allocate(grid%element(size_element),grid%vertex(size_vertex), &
                grid%initial_neighbor(EDGES_PER_ELEMENT,size_initneigh), &
-               grid%head_level_elem(size_head_elem), &
-               grid%head_level_vert(size_head_vert), grid%edge(size_edge), &
+               grid%head_level_elem(size_head_elem), grid%edge(size_edge), &
                stat=astat)
       if (astat /= 0) then
          ierr = ALLOC_FAILED
          call fatal("memory allocation failed in phaml_restore",procs=phaml_solution%procs)
          deallocate(grid%element,grid%vertex,grid%initial_neighbor, &
-                    grid%head_level_elem,grid%head_level_vert, stat=dstat)
+                    grid%head_level_elem, stat=dstat)
          deallocate(grid%edge, stat=dstat)
          return
       endif
+      grid%biggest_vert = size_vertex
+      grid%biggest_edge = size_edge
+      grid%biggest_face = 0
+      grid%biggest_elem = size_element
       if (size_eval == -1) then
-         nullify(grid%eigenvalue, grid%eigenprob_l2_resid, &
-                 grid%eigenprob_variance)
+         nullify(grid%eigen_results%eigenvalue, &
+                 grid%eigen_results%eigensolver_l2_resid, &
+                 grid%eigen_results%eigensolver_errbound)
       else
-         allocate(grid%eigenvalue(size_eval), &
-                  grid%eigenprob_variance(size_eval), &
-                  grid%eigenprob_l2_resid(size_eval), stat=astat)
+         allocate(grid%eigen_results%eigenvalue(size_eval), &
+                  grid%eigen_results%eigensolver_l2_resid(size_eval), &
+                  grid%eigen_results%eigensolver_errbound(size_eval), &
+                  stat=astat)
          if (astat /= 0) then
             ierr = ALLOC_FAILED
             call fatal("memory allocation failed in phaml_restore",procs=phaml_solution%procs)
             deallocate(grid%element,grid%vertex,grid%initial_neighbor, &
-                       grid%head_level_elem,grid%head_level_vert, &
-                       grid%eigenvalue, grid%eigenprob_l2_resid, &
-                       grid%eigenprob_variance,stat=dstat)
+                       grid%head_level_elem, grid%eigen_results%eigenvalue, &
+                       grid%eigen_results%eigensolver_l2_resid, &
+                       grid%eigen_results%eigensolver_errbound,stat=dstat)
             return
          endif
-         grid%eigenvalue = 0.0_my_real
-         grid%eigenprob_l2_resid = 0.0_my_real
-         grid%eigenprob_variance = 0.0_my_real
+         grid%eigen_results%eigenvalue = 0.0_my_real
+         grid%eigen_results%eigensolver_l2_resid = 0.0_my_real
+         grid%eigen_results%eigensolver_errbound = 0.0_my_real
       endif
       allocate(grid%vertex_type(size_vertex,phaml_solution%system_size), &
                grid%vertex_solution(size_vertex,size_soln2,size_soln3), &
@@ -7799,10 +8018,11 @@ case ("FORMATTED")
          ierr = ALLOC_FAILED
          call fatal("memory allocation failed in phaml_restore",procs=phaml_solution%procs)
          deallocate(grid%element,grid%vertex,grid%initial_neighbor, &
-                    grid%head_level_elem,grid%head_level_vert, stat=dstat)
-         if (associated(grid%eigenvalue)) then
-            deallocate(grid%eigenvalue, grid%eigenprob_l2_resid, &
-                       grid%eigenprob_variance,stat=dstat)
+                    grid%head_level_elem, stat=dstat)
+         if (associated(grid%eigen_results%eigenvalue)) then
+            deallocate(grid%eigen_results%eigenvalue, &
+                       grid%eigen_results%eigensolver_l2_resid, &
+                       grid%eigen_results%eigensolver_errbound,stat=dstat)
          endif
          return
       endif
@@ -7812,11 +8032,11 @@ case ("FORMATTED")
             ierr = ALLOC_FAILED
             call fatal("memory allocation failed in phaml_restore",procs=phaml_solution%procs)
             deallocate(grid%element,grid%vertex,grid%initial_neighbor, &
-                       grid%head_level_elem,grid%head_level_vert, &
-                       grid%vertex_solution, stat=dstat)
-            if (associated(grid%eigenvalue)) then
-               deallocate(grid%eigenvalue, grid%eigenprob_l2_resid, &
-                          grid%eigenprob_variance,stat=dstat)
+                       grid%head_level_elem, grid%vertex_solution, stat=dstat)
+            if (associated(grid%eigen_results%eigenvalue)) then
+               deallocate(grid%eigen_results%eigenvalue, &
+                          grid%eigen_results%eigensolver_l2_resid, &
+                          grid%eigen_results%eigensolver_errbound,stat=dstat)
             endif
             return
          endif
@@ -7824,17 +8044,18 @@ case ("FORMATTED")
         nullify(grid%vertex_exact)
       endif
       if (grid%oldsoln_exists) then
-        allocate(grid%vertex_oldsoln(size_vertex,size_soln2,size_soln3),stat=astat)
+        allocate(grid%vertex_oldsoln(size_vertex,size_soln2,size_soln3), &
+                 stat=astat)
          if (astat /= 0) then
             ierr = ALLOC_FAILED
             call fatal("memory allocation failed in phaml_restore",procs=phaml_solution%procs)
             deallocate(grid%element,grid%vertex,grid%initial_neighbor, &
-                       grid%head_level_elem,grid%head_level_vert, &
-                       grid%vertex_solution, stat=dstat)
+                       grid%head_level_elem, grid%vertex_solution, stat=dstat)
             if (grid%have_true) deallocate(grid%vertex_exact, stat=dstat)
-            if (associated(grid%eigenvalue)) then
-               deallocate(grid%eigenvalue, grid%eigenprob_l2_resid, &
-                          grid%eigenprob_variance,stat=dstat)
+            if (associated(grid%eigen_results%eigenvalue)) then
+               deallocate(grid%eigen_results%eigenvalue, &
+                          grid%eigen_results%eigensolver_l2_resid, &
+                          grid%eigen_results%eigensolver_errbound,stat=dstat)
             endif
             return
          endif
@@ -7848,28 +8069,18 @@ case ("FORMATTED")
       read(unit,*) grid%nelem_leaf,grid%nelem_leaf_own,grid%nedge, &
                    grid%nedge_own,grid%nvert,grid%nvert_own,grid%nlev, &
                    grid%dof,grid%dof_own
-      if (version >= 11) then
-         read(unit,*) grid%oldsoln_exists
-      else
-         grid%oldsoln_exists = .false.
-      endif
+      read(unit,*) grid%oldsoln_exists
       do sub=lbound(grid%head_level_elem,dim=1),ubound(grid%head_level_elem,dim=1)
          read(unit,*) grid%head_level_elem(sub)
       end do
-      do sub=lbound(grid%head_level_vert,dim=1),ubound(grid%head_level_vert,dim=1)
-         read(unit,*) grid%head_level_vert(sub)
+      do sub=lbound(grid%initial_neighbor,dim=2),ubound(grid%initial_neighbor,dim=2)
+         read(unit,*) grid%initial_neighbor(:,sub)
       end do
-      if (me /= MASTER) then
-         do sub=lbound(grid%initial_neighbor,dim=2),ubound(grid%initial_neighbor,dim=2)
-            read(unit,*) grid%initial_neighbor(:,sub)
-         end do
-      endif
       read(unit,*) grid%boundbox_min
       read(unit,*) grid%boundbox_max
-      if (associated(grid%eigenvalue)) then
+      if (associated(grid%eigen_results%eigenvalue)) then
          if (size_eval /= 0) then
-            read(unit,*) grid%eigenvalue
-            read(unit,*) grid%eigenprob_l2_resid
+            read(unit,*) grid%eigen_results%eigenvalue
          endif
       endif
       call hash_table_restore(grid%elem_hash,unit)
@@ -7903,7 +8114,6 @@ case ("FORMATTED")
          read(unit,*) grid%vertex(sub)%bmark
          read(unit,*) grid%vertex(sub)%assoc_elem
          read(unit,*) grid%vertex(sub)%next
-         read(unit,*) grid%vertex(sub)%previous
       end do
       read(unit,*) saved_VERTICES_PER_ELEMENT
       if (saved_VERTICES_PER_ELEMENT /= VERTICES_PER_ELEMENT) then
@@ -7914,7 +8124,9 @@ case ("FORMATTED")
       do sub=lbound(grid%element,dim=1),ubound(grid%element,dim=1)
          call hash_read_key(grid%element(sub:sub)%gid,unit)
          read(unit,*) grid%element(sub)%vertex
-         call hash_read_key(grid%element(sub:sub)%mate,unit)
+         if (global_element_kind == TRIANGULAR_ELEMENT) then
+            call hash_read_key(grid%element(sub:sub)%mate,unit)
+         endif
          read(unit,*) grid%element(sub)%level
          read(unit,*) grid%element(sub)%next
          read(unit,*) grid%element(sub)%previous
@@ -7943,10 +8155,11 @@ case ("FORMATTED")
                if (grid%have_true) deallocate(grid%vertex_exact)
                if (grid%oldsoln_exists) deallocate(grid%vertex_oldsoln)
                deallocate(grid%element,grid%vertex,grid%initial_neighbor, &
-                          grid%head_level_elem,grid%head_level_vert, stat=dstat)
-               if (associated(grid%eigenvalue)) then
-                  deallocate(grid%eigenvalue, grid%eigenprob_l2_resid, &
-                             grid%eigenprob_variance,stat=dstat)
+                          grid%head_level_elem, stat=dstat)
+               if (associated(grid%eigen_results%eigenvalue)) then
+                  deallocate(grid%eigen_results%eigenvalue, &
+                             grid%eigen_results%eigensolver_l2_resid, &
+                             grid%eigen_results%eigensolver_errbound,stat=dstat)
                endif
                return
             endif
@@ -8021,10 +8234,11 @@ case ("FORMATTED")
                if (grid%have_true) deallocate(grid%vertex_exact)
                if (grid%oldsoln_exists) deallocate(grid%vertex_oldsoln)
                deallocate(grid%element,grid%vertex,grid%initial_neighbor, &
-                          grid%head_level_elem,grid%head_level_vert, stat=dstat)
-               if (associated(grid%eigenvalue)) then
-                  deallocate(grid%eigenvalue, grid%eigenprob_l2_resid, &
-                             grid%eigenprob_variance,stat=dstat)
+                          grid%head_level_elem, stat=dstat)
+               if (associated(grid%eigen_results%eigenvalue)) then
+                  deallocate(grid%eigen_results%eigenvalue, &
+                             grid%eigen_results%eigensolver_l2_resid, &
+                             grid%eigen_results%eigensolver_errbound,stat=dstat)
                endif
                return
             endif
@@ -8081,9 +8295,7 @@ case ("UNFORMATTED")
 
    select case(version)
 
-   case(10,11,12) ! version 10 PHAML data file
-                  ! version 11 adds oldsoln
-                  ! version 12 adds have_true, size_soln2, size_soln3
+   case(14) ! version 14 PHAML data file
 
 ! data from phaml_solution_type
 
@@ -8106,54 +8318,52 @@ case ("UNFORMATTED")
       grid => phaml_solution%grid
       grid%system_size = phaml_solution%system_size
       read(unit) size_vertex,size_element,size_edge,size_initneigh, &
-                 size_head_elem,size_head_vert,size_eval,size_soln
-      if (version >= 12) then
-         read(unit) size_soln2, size_soln3
-         read(unit) itemp
-         grid%have_true = itemp==1
-      else
-         size_soln2 = grid%system_size
-         size_soln3 = max(1,size_eval)
-         grid%have_true = .true.
-      endif
+                 size_head_elem,size_eval,size_soln
+      read(unit) size_soln2, size_soln3
+      read(unit) itemp
+      grid%have_true = itemp==1
       read(unit) saved_EDGES_PER_ELEMENT
       if (saved_EDGES_PER_ELEMENT /= EDGES_PER_ELEMENT) then
-         call fatal("phaml_restore: mismatch in number of faces per element", &
+         call fatal("phaml_restore: mismatch in number of edges per element", &
                     intlist=(/saved_EDGES_PER_ELEMENT,EDGES_PER_ELEMENT/),procs=phaml_solution%procs)
          stop
       endif
       allocate(grid%element(size_element),grid%vertex(size_vertex), &
                grid%initial_neighbor(EDGES_PER_ELEMENT,size_initneigh), &
-               grid%head_level_elem(size_head_elem), &
-               grid%head_level_vert(size_head_vert), grid%edge(size_edge), &
+               grid%head_level_elem(size_head_elem), grid%edge(size_edge), &
                stat=astat)
       if (astat /= 0) then
          ierr = ALLOC_FAILED
          call fatal("memory allocation failed in phaml_restore",procs=phaml_solution%procs)
          deallocate(grid%element,grid%vertex,grid%edge,grid%initial_neighbor, &
-                    grid%head_level_elem,grid%head_level_vert,stat=dstat)
+                    grid%head_level_elem,stat=dstat)
          deallocate(grid%edge, stat=dstat)
          return
       endif
+      grid%biggest_vert = size_vertex
+      grid%biggest_edge = size_edge
+      grid%biggest_face = 0
+      grid%biggest_elem = size_element
       if (size_eval == -1) then
-         nullify(grid%eigenvalue, grid%eigenprob_l2_resid, &
-                 grid%eigenprob_variance)
+         nullify(grid%eigen_results%eigenvalue, &
+                 grid%eigen_results%eigensolver_l2_resid, &
+                 grid%eigen_results%eigensolver_errbound)
       else
-         allocate(grid%eigenvalue(size_eval), &
-                  grid%eigenprob_variance(size_eval), &
-                  grid%eigenprob_l2_resid(size_eval), stat=astat)
+         allocate(grid%eigen_results%eigenvalue(size_eval), &
+                  grid%eigen_results%eigensolver_l2_resid(size_eval), &
+                  grid%eigen_results%eigensolver_errbound(size_eval), stat=astat)
          if (astat /= 0) then
             ierr = ALLOC_FAILED
             call fatal("memory allocation failed in phaml_restore",procs=phaml_solution%procs)
             deallocate(grid%element,grid%vertex,grid%initial_neighbor, &
-                       grid%head_level_elem,grid%head_level_vert, &
-                       grid%eigenvalue, grid%eigenprob_l2_resid, &
-                       grid%eigenprob_variance,stat=dstat)
+                       grid%head_level_elem, grid%eigen_results%eigenvalue, &
+                       grid%eigen_results%eigensolver_l2_resid, &
+                       grid%eigen_results%eigensolver_errbound,stat=dstat)
             return
          endif
-         grid%eigenvalue = 0.0_my_real
-         grid%eigenprob_l2_resid = 0.0_my_real
-         grid%eigenprob_variance = 0.0_my_real
+         grid%eigen_results%eigenvalue = 0.0_my_real
+         grid%eigen_results%eigensolver_l2_resid = 0.0_my_real
+         grid%eigen_results%eigensolver_errbound = 0.0_my_real
       endif
       allocate(grid%vertex_type(size_vertex,phaml_solution%system_size), &
                grid%vertex_solution(size_vertex,size_soln2,size_soln3), &
@@ -8162,10 +8372,11 @@ case ("UNFORMATTED")
          ierr = ALLOC_FAILED
          call fatal("memory allocation failed in phaml_restore",procs=phaml_solution%procs)
          deallocate(grid%element,grid%vertex,grid%initial_neighbor, &
-                    grid%head_level_elem,grid%head_level_vert, stat=dstat)
-         if (associated(grid%eigenvalue)) then
-            deallocate(grid%eigenvalue, grid%eigenprob_l2_resid, &
-                       grid%eigenprob_variance,stat=dstat)
+                    grid%head_level_elem, stat=dstat)
+         if (associated(grid%eigen_results%eigenvalue)) then
+            deallocate(grid%eigen_results%eigenvalue, &
+                       grid%eigen_results%eigensolver_l2_resid, &
+                       grid%eigen_results%eigensolver_errbound,stat=dstat)
          endif
          return
       endif
@@ -8176,11 +8387,12 @@ case ("UNFORMATTED")
             ierr = ALLOC_FAILED
             call fatal("memory allocation failed in phaml_restore",procs=phaml_solution%procs)
             deallocate(grid%element,grid%vertex,grid%initial_neighbor, &
-                       grid%head_level_elem,grid%head_level_vert, &
+                       grid%head_level_elem, &
                        grid%vertex_solution,stat=dstat)
-            if (associated(grid%eigenvalue)) then
-               deallocate(grid%eigenvalue, grid%eigenprob_l2_resid, &
-                          grid%eigenprob_variance,stat=dstat)
+            if (associated(grid%eigen_results%eigenvalue)) then
+               deallocate(grid%eigen_results%eigenvalue, &
+                          grid%eigen_results%eigensolver_l2_resid, &
+                          grid%eigen_results%eigensolver_errbound,stat=dstat)
             endif
             return
          endif
@@ -8194,12 +8406,13 @@ case ("UNFORMATTED")
             ierr = ALLOC_FAILED
             call fatal("memory allocation failed in phaml_restore",procs=phaml_solution%procs)
             deallocate(grid%element,grid%vertex,grid%initial_neighbor, &
-                       grid%head_level_elem,grid%head_level_vert, &
+                       grid%head_level_elem, &
                        grid%vertex_solution,stat=dstat)
             if (grid%have_true) deallocate(grid%vertex_exact,stat=dstat)
-            if (associated(grid%eigenvalue)) then
-               deallocate(grid%eigenvalue, grid%eigenprob_l2_resid, &
-                          grid%eigenprob_variance,stat=dstat)
+            if (associated(grid%eigen_results%eigenvalue)) then
+               deallocate(grid%eigen_results%eigenvalue, &
+                          grid%eigen_results%eigensolver_l2_resid, &
+                          grid%eigen_results%eigensolver_errbound,stat=dstat)
             endif
             return
          endif
@@ -8213,21 +8426,13 @@ case ("UNFORMATTED")
                  grid%nelem,grid%nelem_leaf,grid%nelem_leaf_own,grid%nedge, &
                  grid%nedge_own,grid%nvert,grid%nvert_own,grid%nlev, &
                  grid%dof,grid%dof_own
-      if (version >= 11) then
-         read(unit) grid%oldsoln_exists
-      else
-         grid%oldsoln_exists = .false.
-      endif
+      read(unit) grid%oldsoln_exists
       read(unit) grid%head_level_elem
-      read(unit) grid%head_level_vert
-      if (me /= MASTER) then
-         read(unit) grid%initial_neighbor
-      endif
+      read(unit) grid%initial_neighbor
       read(unit) grid%boundbox_min,grid%boundbox_max
-      if (associated(grid%eigenvalue)) then
+      if (associated(grid%eigen_results%eigenvalue)) then
          if (size_eval /= 0) then
-            read(unit) grid%eigenvalue
-            read(unit) grid%eigenprob_l2_resid
+            read(unit) grid%eigen_results%eigenvalue
          endif
       endif
       call hash_table_restore(grid%elem_hash,unit)
@@ -8244,7 +8449,6 @@ case ("UNFORMATTED")
          read(unit) grid%vertex%bmark
          read(unit) grid%vertex%assoc_elem
          read(unit) grid%vertex%next
-         read(unit) grid%vertex%previous
          if (grid%oldsoln_exists) then
             read(unit) (grid%vertex_oldsoln(j,:,:),j=1,size(grid%vertex))
          endif
@@ -8260,7 +8464,9 @@ case ("UNFORMATTED")
          do j=1,VERTICES_PER_ELEMENT
             read(unit) grid%element%vertex(j)
          end do
-         call hash_read_key(grid%element%mate,unit)
+         if (global_element_kind == TRIANGULAR_ELEMENT) then
+            call hash_read_key(grid%element%mate,unit)
+         endif
          read(unit) grid%element%level
          read(unit) grid%element%next
          read(unit) grid%element%previous
@@ -8295,10 +8501,12 @@ case ("UNFORMATTED")
                   if (grid%oldsoln_exists) deallocate(grid%vertex_oldsoln,stat=dstat)
                   deallocate(grid%element,grid%vertex,grid%edge, &
                              grid%initial_neighbor,grid%head_level_elem, &
-                             grid%head_level_vert, stat=dstat)
-                  if (associated(grid%eigenvalue)) then
-                     deallocate(grid%eigenvalue, grid%eigenprob_l2_resid, &
-                                grid%eigenprob_variance,stat=dstat)
+                             stat=dstat)
+                  if (associated(grid%eigen_results%eigenvalue)) then
+                     deallocate(grid%eigen_results%eigenvalue, &
+                                grid%eigen_results%eigensolver_l2_resid, &
+                                grid%eigen_results%eigensolver_errbound, &
+                                stat=dstat)
                   endif
                   return
                endif
@@ -8373,10 +8581,12 @@ case ("UNFORMATTED")
                   if (grid%oldsoln_exists) deallocate(grid%vertex_oldsoln,stat=dstat)
                   deallocate(grid%element,grid%vertex,grid%edge, &
                              grid%initial_neighbor,grid%head_level_elem, &
-                             grid%head_level_vert, stat=dstat)
-                  if (associated(grid%eigenvalue)) then
-                     deallocate(grid%eigenvalue, grid%eigenprob_l2_resid, &
-                                grid%eigenprob_variance,stat=dstat)
+                             stat=dstat)
+                  if (associated(grid%eigen_results%eigenvalue)) then
+                     deallocate(grid%eigen_results%eigenvalue, &
+                                grid%eigen_results%eigensolver_l2_resid, &
+                                grid%eigen_results%eigensolver_errbound, &
+                                stat=dstat)
                   endif
                   return
                endif
@@ -8433,32 +8643,35 @@ if (astat /= 0) then
    stop
 endif
 
-j = grid%next_free_elem
-do while (j /= END_OF_LIST)
-   if (grid%element(j)%next > size(grid%element)) then
-      grid%element(j)%next = END_OF_LIST
-      exit
-   endif
-   j = grid%element(j)%next
-end do
+if (grid%next_free_elem > size(grid%element)) then
+   grid%next_free_elem = size(grid%element)+1
+else
+   j = grid%next_free_elem
+   do while (grid%element(j)%next <= size(grid%element))
+      j = grid%element(j)%next
+   end do
+   grid%element(j)%next = size(grid%element)+1
+endif
 
-j = grid%next_free_edge
-do while (j /= END_OF_LIST)
-   if (grid%edge(j)%next > size(grid%edge)) then
-      grid%edge(j)%next = END_OF_LIST
-      exit
-   endif
-   j = grid%edge(j)%next
-end do
+if (grid%next_free_edge > size(grid%edge)) then
+   grid%next_free_edge = size(grid%edge)+1
+else
+   j = grid%next_free_edge
+   do while (grid%edge(j)%next <= size(grid%edge))
+      j = grid%edge(j)%next
+   end do
+   grid%edge(j)%next = size(grid%edge)+1
+endif
 
-j = grid%next_free_vert
-do while (j /= END_OF_LIST)
-   if (grid%vertex(j)%next > size(grid%vertex)) then
-      grid%vertex(j)%next = END_OF_LIST
-      exit
-   endif
-   j = grid%vertex(j)%next
-end do
+if (grid%next_free_vert > size(grid%vertex)) then
+   grid%next_free_vert = size(grid%vertex)+1
+else
+   j = grid%next_free_vert
+   do while (grid%vertex(j)%next <= size(grid%vertex))
+      j = grid%vertex(j)%next
+   end do
+   grid%vertex(j)%next = size(grid%vertex)+1
+endif
 
 grid%errind_up2date = .false.
 grid_changed = .true.
@@ -8467,7 +8680,8 @@ grid_changed = .true.
 
 if (loc_draw_grid) then
    io_control = io_options(NEVER,NO_ONE,NEVER,NO_ONE,NEVER,NO_ONE,NEVER, &
-                           NO_ONE,NEVER,NEVER,NEVER,NO_ONE,PHASES,loc_pause)
+                           NO_ONE,NEVER,NEVER,NEVER,NO_ONE,NEVER,NO_ONE, &
+                           PHASES,loc_pause)
    ref_control = refine_options(0.0_my_real,0.0_my_real,0.0_my_real, &
                                0.0_my_real,0.0_my_real,0.0_my_real,0.0_my_real,&
                                 0.0_my_real,0.0_my_real,0.0_my_real, &
@@ -8498,7 +8712,7 @@ subroutine phaml_store_matrix(phaml_solution,stiffness_unit,rhs_unit,mass_unit,&
 !----------------------------------------------------
 ! Dummy arguments
 
-type(phaml_solution_type), intent(in) :: phaml_solution
+type(phaml_solution_type), intent(inout) :: phaml_solution
 integer, optional, intent(in) :: stiffness_unit, rhs_unit, mass_unit, &
                                  inc_quad_order
 !----------------------------------------------------
@@ -8544,6 +8758,66 @@ call store_matrix(phaml_solution%grid,phaml_solution%procs, &
 
 end subroutine phaml_store_matrix
 
+!          ----------------
+subroutine phaml_store_grid(phaml_solution,unit,fmt,comp,eigen)
+!          ----------------
+
+!----------------------------------------------------
+! This routine stores the grid and, optionally, the solution to a data file.
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+
+type(phaml_solution_type), intent(in) :: phaml_solution
+integer, intent(in) :: unit, fmt
+integer, intent(in), optional :: comp, eigen
+!----------------------------------------------------
+! Local variables:
+
+integer :: send_int(5), proc
+!----------------------------------------------------
+! Begin executable code
+
+send_int(1) = 19 ! code for store grid
+send_int(2) = unit
+send_int(3) = fmt
+if (present(comp)) then
+   if (comp < 1 .or. comp > phaml_solution%system_size) then
+      call warning("phaml_store_grid: invalid component, grid not stored", &
+                   intlist=(/comp/))
+      return
+   endif
+   send_int(4) = comp
+else
+   send_int(4) = -1   ! indicates it wasn't present, do all components
+endif
+if (present(eigen)) then
+   if (eigen < 1 .or. eigen > size(phaml_solution%grid%vertex_solution,dim=3)) then
+      call warning("phaml_store_grid: invalid eigenvalue, grid not stored", &
+                   intlist=(/eigen/))
+      return
+   endif
+   send_int(5) = eigen
+else
+   send_int(5) = -1   ! indicates it wasn't present, do all eigenfunctions
+endif
+
+! tell the slaves to store grid
+
+do proc=1,num_proc(phaml_solution%procs)
+   call phaml_send(phaml_solution%procs,proc,send_int,5,(/1.0_my_real/), &
+                   0,101)
+end do
+
+! store grid
+
+call store_grid(phaml_solution%grid,phaml_solution%procs, &
+                phaml_solution%still_sequential,unit,fmt,send_int(4), &
+                send_int(5))
+
+end subroutine phaml_store_grid
+
 !          --------------
 subroutine phaml_compress(phaml_solution)
 !          --------------
@@ -8563,8 +8837,11 @@ type(phaml_solution_type), intent(inout), target :: phaml_solution
 integer :: astat, elem, num_init_elem, big_elem, lev, edge, num_init_edge, &
            big_edge, vert, num_init_vert, big_vert, count, i, send_int(1), proc
 type(grid_type), pointer :: grid
-integer, allocatable :: renum_elem(:), renum_edge(:), renum_vert(:)
-logical, allocatable :: visited(:)
+integer :: renum_elem(phaml_solution%grid%biggest_elem), &
+           renum_edge(phaml_solution%grid%biggest_edge), &
+           renum_vert(phaml_solution%grid%biggest_vert)
+logical :: visited_vert(phaml_solution%grid%biggest_vert), &
+           visited_edge(phaml_solution%grid%biggest_edge)
 !----------------------------------------------------
 ! Begin executable code
 
@@ -8579,17 +8856,6 @@ if (my_proc(phaml_solution%procs) == MASTER) then
 endif
 
 grid => phaml_solution%grid
-
-! allocate space to store the renumberings
-
-allocate(renum_elem(size(grid%element)), renum_edge(size(grid%edge)), &
-         renum_vert(size(grid%vertex)), visited(size(grid%edge)), stat=astat)
-if (astat /= 0) then
-   ierr = ALLOC_FAILED
-   call fatal("allocation failed in phaml_compress", &
-              procs=phaml_solution%procs)
-   return
-endif
 
 ! count the number of elements in the first level, i.e. initial grid
 
@@ -8656,15 +8922,15 @@ endif
 num_init_edge = 0
 big_edge = 0
 lev = 1
-visited = .false.
+visited_edge = .false.
 elem = grid%head_level_elem(lev)
 do while (elem /= END_OF_LIST)
    do i=1,EDGES_PER_ELEMENT
       edge = grid%element(elem)%edge(i)
-      if (.not. visited(edge)) then
+      if (.not. visited_edge(edge)) then
          num_init_edge = num_init_edge + 1
          big_edge = max(big_edge,edge)
-         visited(edge) = .true.
+         visited_edge(edge) = .true.
       endif
    end do
    elem = grid%element(elem)%next
@@ -8684,7 +8950,7 @@ endif
 do lev=2,grid%nlev
    elem = grid%head_level_elem(lev)
    do while (elem /= END_OF_LIST)
-      do i=1,3
+      do i=1,EDGES_PER_ELEMENT
          big_edge = max(big_edge,grid%element(elem)%edge(i))
       end do
       elem = grid%element(elem)%next
@@ -8728,11 +8994,17 @@ endif
 num_init_vert = 0
 big_vert = 0
 lev = 1
-vert = grid%head_level_vert(lev)
-do while (vert /= END_OF_LIST)
-   num_init_vert = num_init_vert + 1
-   big_vert = max(big_vert,vert)
-   vert = grid%vertex(vert)%next
+visited_vert = .false.
+elem = grid%head_level_elem(lev)
+do while (elem /= END_OF_LIST)
+   do i=1,VERTICES_PER_ELEMENT
+      vert = grid%element(elem)%vertex(i)
+      if (visited_vert(vert)) cycle
+      visited_vert(vert) = .true.
+      num_init_vert = num_init_vert + 1
+      big_vert = max(big_vert,vert)
+   end do
+   elem = grid%element(elem)%next
 end do
 
 ! make sure the vertices are dense at the beginning of grid%vertex
@@ -8745,10 +9017,15 @@ if (big_vert /= num_init_vert) then
 endif
 
 do lev=2,grid%nlev
-   vert = grid%head_level_vert(lev)
-   do while (vert /= END_OF_LIST)
-      big_vert = max(big_vert,vert)
-      vert = grid%vertex(vert)%next
+   elem = grid%head_level_elem(lev)
+   do while (elem /= END_OF_LIST)
+      do i=1,VERTICES_PER_ELEMENT
+         vert = grid%element(elem)%vertex(i)
+         if (visited_vert(vert)) cycle
+         visited_vert(vert) = .true.
+         big_vert = max(big_vert,vert)
+      end do
+      elem = grid%element(elem)%next
    end do
 end do
 
@@ -8756,10 +9033,13 @@ end do
 
 renum_vert = 0
 do lev = 1,grid%nlev
-   vert = grid%head_level_vert(lev)
-   do while (vert /= END_OF_LIST)
-      renum_vert(vert) = 1
-      vert = grid%vertex(vert)%next
+   elem = grid%head_level_elem(lev)
+   do while (elem /= END_OF_LIST)
+      do i=1,VERTICES_PER_ELEMENT
+         vert = grid%element(elem)%vertex(i)
+         renum_vert(vert) = 1
+      end do
+      elem = grid%element(elem)%next
    end do
 end do
 
@@ -8823,14 +9103,6 @@ end do
 
 ! set the next/previous for unused elements, and head element for each level
 
-do i=grid%nelem+1,size(grid%element)-1
-   grid%element(i)%next = i+1
-end do
-grid%element(size(grid%element))%next = END_OF_LIST
-do i=grid%nelem+2,size(grid%element)
-   grid%element(i)%previous = i-1
-end do
-grid%element(grid%nelem+1)%previous = END_OF_LIST
 grid%next_free_elem = grid%nelem+1
 do lev=2,grid%nlev
    if (grid%head_level_elem(lev) /= END_OF_LIST) then
@@ -8865,7 +9137,7 @@ do i=1,big_edge
       grid%edge(edge)%vertex(vert) = renum_vert(grid%edge(edge)%vertex(vert))
    end do
    grid%edge(edge)%assoc_elem = renum_elem(grid%edge(edge)%assoc_elem)
-   if (any(grid%edge_type(edge,:) == PERIODIC_SLAVE)) then
+   if (is_periodic_edge(edge,grid)) then
       grid%edge(edge)%next = renum_edge(grid%edge(edge)%next)
    endif
 end do
@@ -8889,32 +9161,21 @@ do i=1,big_vert
       call hash_insert(grid%vertex(vert)%gid,vert,grid%vert_hash)
    endif
    grid%vertex(vert)%assoc_elem = renum_elem(grid%vertex(vert)%assoc_elem)
-   if (grid%vertex(vert)%next /= END_OF_LIST) then
+   if (is_periodic_vert(vert,grid)) then
       grid%vertex(vert)%next = renum_vert(grid%vertex(vert)%next)
    endif
-   if (grid%vertex(vert)%previous /= END_OF_LIST) then
-      grid%vertex(vert)%previous = renum_vert(grid%vertex(vert)%previous)
-   endif
 end do
 
-! set the next/previous for unused vertices, and head vertex for each level
+! set the next for unused vertices
 
-do i=grid%nvert+1,size(grid%vertex)-1
-   grid%vertex(i)%next = i+1
-end do
-grid%vertex(size(grid%vertex))%next = END_OF_LIST
-do i=grid%nvert+2,size(grid%vertex)
-   grid%vertex(i)%previous = i-1
-end do
-grid%vertex(grid%nvert+1)%previous = END_OF_LIST
 grid%next_free_vert = grid%nvert+1
-do lev=2,grid%nlev
-   if (grid%head_level_vert(lev) /= END_OF_LIST) then
-      grid%head_level_vert(lev) = renum_vert(grid%head_level_vert(lev))
-   endif
-end do
 
-deallocate(renum_elem,renum_edge,renum_vert,visited,stat=astat)
+! reset biggest
+
+grid%biggest_vert = grid%nvert
+grid%biggest_edge = grid%nedge
+grid%biggest_face = grid%nface
+grid%biggest_elem = grid%nelem
 
 end subroutine phaml_compress
 

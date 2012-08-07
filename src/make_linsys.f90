@@ -34,6 +34,7 @@ use message_passing
 use stopwatch
 use hash_mod
 use hash_eq_mod
+use sort_mod
 use linsystype_mod
 use gridtype_mod
 use grid_util
@@ -41,6 +42,7 @@ use linsys_util
 use quadrature_rules
 use basis_functions
 use evaluate
+use laplace_elem_mat
 
 !----------------------------------------------------
 
@@ -52,25 +54,6 @@ public create_linear_system, &
 
 !----------------------------------------------------
 ! Non-module procedures used are:
-
-interface
-
-   subroutine bconds(x,y,bmark,itype,c,rs)
-   use global
-   real(my_real), intent(in) :: x,y
-   integer, intent(in) :: bmark
-   integer, intent(out) :: itype(:)
-   real(my_real), intent(out) :: c(:,:),rs(:)
-   end subroutine bconds
-
-   subroutine pdecoefs(x,y,cxx,cxy,cyy,cx,cy,c,rs)
-   use global
-   real(my_real), intent(in) :: x,y
-   real(my_real), intent(out) :: cxx(:,:),cxy(:,:),cyy(:,:),cx(:,:),cy(:,:), &
-                                 c(:,:),rs(:)
-   end subroutine pdecoefs
-
-end interface
 
 !----------------------------------------------------
 
@@ -84,8 +67,8 @@ subroutine create_linear_system(linear_system,grid,procs,solver_cntl, &
 !----------------------------------------------------
 ! This routine creates the linear system.
 !
-! RESTRICTION 1) if a vertex in the initial grid is a peak, it is a peak of all
-!             its triangles in the initial grid
+! RESTRICTION in 2D: 1) if a vertex in the initial grid is a peak, it is a peak
+!             of all its triangles in the initial grid
 !             2) in the linked list passage through the vertices of the initial
 !             grid, non-peaks come before peaks
 !             These are required for h-hierarchical basis changes, but
@@ -97,7 +80,7 @@ subroutine create_linear_system(linear_system,grid,procs,solver_cntl, &
 ! Dummy arguments
 
 type(linsys_type), intent(out) :: linear_system
-type(grid_type), intent(in) :: grid
+type(grid_type), intent(inout) :: grid
 type(proc_info), intent(in) :: procs
 type(solver_options), intent(in) :: solver_cntl
 type(io_options), intent(in) :: io_cntl
@@ -124,6 +107,9 @@ if (my_proc(procs) == MASTER) then
    linear_system%neq_vert = 0
    linear_system%neq_edge = 0
    linear_system%neq_face = 0
+   linear_system%neq_bubble = 0
+   linear_system%neq_cond = 0
+   linear_system%neq_full = 0
    nullify(linear_system%begin_row)
    nullify(linear_system%nn_comm_end_of_send)
    linear_system%solver_niter = 0
@@ -144,10 +130,6 @@ if (timeit) then
    call start_watch((/passemble,tassemble/))
 endif
 
-! Initialize minimum value of r(x,y).
-
-linear_system%rmin = huge(0.0_my_real)
-
 ! Create a list of all the leaf elements.
 
 allocate(leaf_element(grid%nelem_leaf),stat=allocstat)
@@ -164,22 +146,28 @@ linear_system%coarse_band_exists = .false.
 linear_system%lapack_symm_band_exists = .false.
 linear_system%lapack_gen_band_exists = .false.
 linear_system%petsc_matrix_exists = .false.
-linear_system%mumps_matrix_exists = .false.
-linear_system%superlu_matrix_exists = .false.
 linear_system%hypre_matrix_exists = .false.
 
+linear_system%nlev_vert = phaml_global_max(procs,grid%nlev,1101)
+linear_system%edge_level = linear_system%nlev_vert + 1
+linear_system%face_level = linear_system%nlev_vert + 2
+linear_system%bubble_level = linear_system%nlev_vert + 3
+linear_system%beyond_last_level = linear_system%nlev_vert + 4
+select case (global_element_kind)
+case (TRIANGULAR_ELEMENT)
+   linear_system%cond_level = linear_system%edge_level
+case (TETRAHEDRAL_ELEMENT)
+   linear_system%cond_level = linear_system%face_level
+end select
 linear_system%system_size = solver_cntl%system_size
-!linear_system%nlev = grid%nlev
-linear_system%nlev = phaml_global_max(procs,grid%nlev,1101)
 linear_system%maxdeg = 1
 linear_system%solver_niter = 0
 linear_system%relresid = -huge(0.0_my_real)
 
-! Determine number of vertex, edge and face equations and maximum number of
-! equations related to any element.
+! Determine number of vertex, edge, face and bubble equations and maximum
+! number of equations related to any element.
 
-call determine_neq(grid,linear_system,leaf_element,nelem_leaf, &
-                   maxeq_per_elem)
+call determine_neq(grid,linear_system,leaf_element,nelem_leaf,maxeq_per_elem)
 linear_system%maxdeg = phaml_global_max(procs,linear_system%maxdeg,1100)
 
 ! Create the hash table.
@@ -199,13 +187,14 @@ call create_basis_change(linear_system)
 ! equation_type, iown, and equation gids, copy solution from the grid, and
 ! insert equations into the hash table.
 
-call equation_order(linear_system,grid,leaf_element,nelem_leaf)
+call equation_order(linear_system,solver_cntl,grid,leaf_element,nelem_leaf)
 
 ! Create the column_index array.  This allocates column_index, and sets
-! column_index, begin_row, end_row, end_row_linear, and end_row_edge
+! column_index, begin_row, end_row, end_row_linear, end_row_edge,
+! end_row_face end_row_bubble
 
-call create_column_index(linear_system,grid,procs,maxeq_per_elem,leaf_element, &
-                         nelem_leaf)
+   call create_column_index(linear_system,grid,procs,maxeq_per_elem, &
+                            leaf_element,nelem_leaf)
 
 ! Allocate the matrix value arrays, and initialize them and the right hand
 ! side arrays to 0.0
@@ -249,68 +238,6 @@ if (crank_nicholson) then
    deallocate(tempvec)
 endif
 
-! For BLOPEX, set Dirichlet columns and rows to the identity in both stiffness
-! and mass.  Note that this restricts Dirichlet boundary conditions to be
-! homogeneous, but I believe that is required for well-posedness of the
-! problem anyway.
-
-if (solver_cntl%eq_type == EIGENVALUE .and. &
-    solver_cntl%eigensolver == BLOPEX_SOLVER) then
-   do i=1,linear_system%neq
-      do j=linear_system%begin_row(i),linear_system%end_row(i)
-         if (linear_system%column_index(j) == NO_ENTRY) cycle
-         if (linear_system%equation_type(i) == DIRICHLET .or. &
-             linear_system%equation_type(linear_system%column_index(j)) == DIRICHLET) then
-            if (linear_system%column_index(j) == i) then
-               linear_system%stiffness(j) = 1.0_my_real
-               linear_system%mass(j) = 1.0_my_real
-            else
-               linear_system%stiffness(j) = 0.0_my_real
-               linear_system%mass(j) = 0.0_my_real
-            endif
-         endif
-      end do
-   end do
-endif
-
-! If we are using BLOPEX and computing eigenvalues to the right of lambda0,
-! then we solve -Ax = (-lambda)Mx transformed to
-! M (-A-lambda0M)^(-1) M x = 1/(-lambda-lambda0) M x
-! so negate the stiffness matrix and lambda0.
-
-if (solver_cntl%eq_type == EIGENVALUE .and. &
-    solver_cntl%eigensolver == BLOPEX_SOLVER .and. &
-    solver_cntl%lambda0_side == EIGEN_RIGHT .and. &
-    solver_cntl%lambda0 /= -huge(0.0_my_real)) then
-   linear_system%stiffness = - linear_system%stiffness
-endif
-
-! For eigenvalue problems, set the shifted matrix A-lambda0*M.
-! For BLOPEX, if lambda0 = -inf, don't shift.
-
-if (solver_cntl%eq_type == EIGENVALUE) then
-   lambda0 = solver_cntl%lambda0
-   if (lambda0 == -huge(0.0_my_real)) then
-      if (solver_cntl%eigensolver == BLOPEX_SOLVER) then
-         linear_system%rmin = 0.0_my_real
-         lambda0 = 0.0_my_real
-      else
-         linear_system%rmin = phaml_global_min(procs,linear_system%rmin,1120)
-         lambda0 = linear_system%rmin
-      endif
-   else
-      linear_system%rmin = 0.0_my_real
-   endif
-   if (solver_cntl%eigensolver == BLOPEX_SOLVER .and. &
-       solver_cntl%lambda0_side == EIGEN_RIGHT) then
-      linear_system%shifted = linear_system%stiffness + lambda0*linear_system%mass
-   else
-      linear_system%shifted = linear_system%stiffness - lambda0*linear_system%mass
-   endif
-else
-   linear_system%rmin = 0.0_my_real
-endif
-
 ! If the residual is to be computed while solving a boundary value problem
 ! (print_error_when is FREQUENTLY or TOO_MUCH) keep the stiffness by copying
 ! it to condensed.
@@ -322,9 +249,15 @@ if ((io_cntl%print_error_when == FREQUENTLY .or. &
    linear_system%rhs_cond = linear_system%rhs_nocond
 endif
 
-! Perform static condensation to eliminate the face bases
+! Perform static condensation to eliminate the bubble bases for boundary
+! value problems
 
-call static_condensation(linear_system,grid,procs)
+if (solver_cntl%eq_type /= EIGENVALUE) then
+   call static_condensation(linear_system,grid,procs,solver_cntl)
+else
+   linear_system%matrix_val => linear_system%stiffness
+   nullify(linear_system%elem_block)
+endif
 
 ! stop timing the assembly process
 
@@ -424,7 +357,7 @@ subroutine determine_neq(grid,linear_system,leaf_element,nelem_leaf, &
 !          -------------
 
 !----------------------------------------------------
-! This routine determines the number of vertex, edge and face equations
+! This routine determines the number of vertex, edge, face and bubble equations
 ! and maximum number of equations related to any element
 !----------------------------------------------------
 
@@ -438,17 +371,20 @@ integer, intent(out) :: maxeq_per_elem
 !----------------------------------------------------
 ! Local variables:
 
-logical :: visited(size(grid%edge))
-integer :: i, j, k, elem, edge, vert, degree, eq_this_elem, lev, syssize, &
-           neqvert, neqedge, neqface
+logical :: visited_vert(grid%biggest_vert), visited_edge(grid%biggest_edge), &
+           visited_face(grid%biggest_face)
+integer :: i, j, k, elem, face, edge, vert, degree, eq_this_elem, lev, &
+           syssize, neqvert, neqedge, neqface, neqbubble, ivert
 !----------------------------------------------------
 ! Begin executable code
 
 syssize = linear_system%system_size
-visited = .false.
+visited_edge = .false.
+visited_face = .false.
 neqvert = grid%nvert
 neqedge = 0
 neqface = 0
+neqbubble = 0
 maxeq_per_elem = 0
 do j=1,nelem_leaf
    elem = leaf_element(j)
@@ -458,57 +394,88 @@ do j=1,nelem_leaf
       degree = grid%edge(edge)%degree
       if (degree > 1) then
          eq_this_elem = eq_this_elem + degree-1
-         if (visited(edge)) cycle
+         if (visited_edge(edge)) cycle
          neqedge = neqedge + degree - 1
-         visited(edge) = .true.
+         visited_edge(edge) = .true.
+      endif
+   end do
+   do i=1,FACES_PER_ELEMENT
+      face = grid%element(elem)%face(i)
+      degree = grid%face(face)%degree
+      if (degree > 2) then
+         eq_this_elem = eq_this_elem + face_dof(degree)
+         if (visited_face(face)) cycle
+         neqface = neqface + face_dof(degree)
+         visited_face(face) = .true.
       endif
    end do
    degree = grid%element(elem)%degree
    linear_system%maxdeg = max(degree,linear_system%maxdeg)
    if (degree > 2) then
-      eq_this_elem = eq_this_elem + ((degree-1)*(degree-2))/2
-      neqface = neqface + ((degree-1)*(degree-2))/2
+      eq_this_elem = eq_this_elem + element_dof(degree)
+      neqbubble = neqbubble + element_dof(degree)
    endif
    maxeq_per_elem = max(maxeq_per_elem,eq_this_elem)
 end do
 neqvert = neqvert*syssize
 neqedge = neqedge*syssize
 neqface = neqface*syssize
+neqbubble = neqbubble*syssize
 
 ! remove slave periodic entities from equation count
 
 do lev=1,grid%nlev
-   vert = grid%head_level_vert(lev)
-   do while (vert /= END_OF_LIST)
-      do j=1,syssize
-         if (grid%vertex_type(vert,j) == PERIODIC_SLAVE .or. &
-             grid%vertex_type(vert,j) == PERIODIC_SLAVE_DIR .or. &
-             grid%vertex_type(vert,j) == PERIODIC_SLAVE_NAT .or. &
-             grid%vertex_type(vert,j) == PERIODIC_SLAVE_MIX) neqvert=neqvert-1
-      end do
-      vert = grid%vertex(vert)%next
+   elem = grid%head_level_elem(lev)
+   do while (elem /= END_OF_LIST)
+      elem = grid%element(elem)%next
    end do
 end do
+visited_vert = .false.
+visited_edge = .false.
+visited_face = .false.
 do k=1,nelem_leaf
    elem = leaf_element(k)
+   do i=1,VERTICES_PER_ELEMENT
+      vert = grid%element(elem)%vertex(i)
+      if (visited_vert(vert)) cycle
+      visited_vert(vert) = .true.
+      do j=1,syssize
+         if (is_periodic_vert_slave(vert,grid,j)) then
+            neqvert = neqvert - 1
+         endif
+      end do
+   end do
    do i=1,EDGES_PER_ELEMENT
       edge = grid%element(elem)%edge(i)
-      if (grid%edge(edge)%degree <= 1) cycle
+      if (visited_edge(edge)) cycle
+      visited_edge(edge) = .true.
+      if (grid%edge(edge)%degree < 2) cycle
       do j=1,syssize
-         if (grid%edge_type(edge,j) == PERIODIC_SLAVE .or. &
-             grid%edge_type(edge,j) == PERIODIC_SLAVE_DIR .or. &
-             grid%edge_type(edge,j) == PERIODIC_SLAVE_NAT .or. &
-             grid%edge_type(edge,j) == PERIODIC_SLAVE_MIX) then
+         if (is_periodic_edge_slave(edge,grid,j)) then
             neqedge = neqedge - (grid%edge(edge)%degree-1)
+         endif
+      end do
+   end do
+   do i=1,FACES_PER_ELEMENT
+      face = grid%element(elem)%face(i)
+      if (visited_face(face)) cycle
+      visited_face(face) = .true.
+      if (grid%face(face)%degree < 3) cycle
+      do j=1,syssize
+         if (is_periodic_face_slave(face,grid,j)) then
+            neqface = neqface - face_dof(grid%face(face)%degree)
          endif
       end do
    end do
 end do
 
-linear_system%neq = neqvert + neqedge + neqface
+linear_system%neq_cond = neqvert + neqedge + neqface
+linear_system%neq_full = neqvert + neqedge + neqface + neqbubble
+linear_system%neq = neqvert + neqedge + neqface + neqbubble
 linear_system%neq_vert = neqvert
 linear_system%neq_edge = neqedge
 linear_system%neq_face = neqface
+linear_system%neq_bubble = neqbubble
 
 end subroutine determine_neq
 
@@ -540,17 +507,17 @@ syssize = linear_system%system_size
 ! Any changes to this list should be matched in the deallocate statement
 ! in destroy_linear_system
 
-! TEMP it might be possible to save space by not storing the face equations
+! TEMP it might be possible to save space by not storing the bubble equations
 !      (just the factorized blocks) if not solving an eigenvalue problem
 
-! TEMP some of these can probably omit face equations, and maybe even edge
+! TEMP some of these can probably omit bubble equations, and maybe even edge
 !      equations, to reduce memory requirements
 
 allocate(linear_system%begin_row(neq+1), &
          linear_system%end_row_linear(neq+1), &
          linear_system%end_row_edge(neq+1), &
-         linear_system%end_row_face(neq+1), &
-         linear_system%begin_level(linear_system%nlev+3), &
+         linear_system%end_row_bubble(neq+1), &
+         linear_system%begin_level(linear_system%beyond_last_level), &
          linear_system%rhs_nocond(neq), &
          linear_system%r_mine(neq), &
          linear_system%r_others(neq), &
@@ -567,24 +534,34 @@ allocate(linear_system%begin_row(neq+1), &
          stat=allocstat)
 if (allocstat /= 0) then
    ierr = ALLOC_FAILED
-   call fatal("memory allocation failed in create_linear_system",procs=procs)
+   call fatal("memory allocation failed in allocate_linsys",procs=procs)
    return
 endif
-linear_system%end_row => linear_system%end_row_face
+select case (global_element_kind)
+case (TRIANGULAR_ELEMENT)
+   nullify(linear_system%end_row_face)
+case (TETRAHEDRAL_ELEMENT)
+   allocate(linear_system%end_row_face(neq+1),stat=allocstat)
+   if (allocstat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("memory allocation failed in allocate_linsys",procs=procs)
+      return
+   endif
+end select
+linear_system%end_row => linear_system%end_row_bubble
 linear_system%rhs => linear_system%rhs_nocond
 if (solver_cntl%num_eval > 1) then
    allocate(linear_system%evecs(neq,solver_cntl%num_eval-1),stat=allocstat)
    if (allocstat /= 0) then
       ierr = ALLOC_FAILED
-      call fatal("memory allocation failed in create_linear_system",procs=procs)
+      call fatal("memory allocation failed in allocate_linsys",procs=procs)
       return
    endif
 else
    nullify(linear_system%evecs)
 endif
 nullify(linear_system%matrix_val,linear_system%column_index, &
-        linear_system%stiffness,linear_system%mass, &
-        linear_system%shifted)
+        linear_system%stiffness,linear_system%mass)
 
 end subroutine allocate_linsys
 
@@ -638,117 +615,304 @@ end do
 end subroutine create_basis_change
 
 !          --------------
-subroutine equation_order(linear_system,grid,leaf_element,nelem_leaf)
+subroutine equation_order(linear_system,solver_control,grid,leaf_element, &
+                          nelem_leaf)
 !          --------------
 
 !----------------------------------------------------
 ! This routine orders the equations with vertex bases (linear bases) first,
-! ordered by level, and then edge bases, and then face bases.
+! ordered by level, and then edge bases ordered by degree, and then face bases
+! ordered by degree, and then bubble bases ordered by element.
 !----------------------------------------------------
 
 !----------------------------------------------------
 ! Dummy arguments
 
 type(linsys_type), intent(inout) :: linear_system
+type(solver_options), intent(in) :: solver_control
 type(grid_type), intent(in) :: grid
 integer, intent(in) :: leaf_element(:), nelem_leaf
 !----------------------------------------------------
 ! Local variables:
 
-logical :: visited(size(grid%edge))
-integer :: i, j, k, l, eq, lev, vert, edge, elem, degree, syssize
+logical :: visited_vert(grid%biggest_vert), visited_edge(grid%biggest_edge), &
+           visited_face(grid%biggest_face)
+integer :: i, j, k, l, m, eq, lev, vert, edge, face, elem, degree, syssize, &
+           nev, brank, ivert, astat
+integer, allocatable :: eqa(:)
 !----------------------------------------------------
 ! Begin executable code
 
+syssize = linear_system%system_size
+nev = solver_control%num_eval
+linear_system%solution(0) = 0.0_my_real
+
 ! First pass through the vertices to determine the linear-basis equation order,
 ! global IDs, initial solution, equation type and ownership, and the start of
-! equations for each level
+! equations for each level.  For triangles, put the nonpeak vertices before
+! the peaks so that ancestors of level 2 equations come before parents.  Do
+! this by starting with a fake lev=0 that picks up the nonpeaks.
 
-syssize = linear_system%system_size
-linear_system%solution(0) = 0.0_my_real
 eq = 1
-do lev=1,grid%nlev
-   linear_system%begin_level(lev) = eq
-   vert = grid%head_level_vert(lev)
-   do while (vert /= END_OF_LIST)
-      do j=1,syssize
-         if (grid%vertex_type(vert,j) == PERIODIC_SLAVE .or. &
-             grid%vertex_type(vert,j) == PERIODIC_SLAVE_DIR .or. &
-             grid%vertex_type(vert,j) == PERIODIC_SLAVE_NAT .or. &
-             grid%vertex_type(vert,j) == PERIODIC_SLAVE_MIX) cycle
-         call grid_to_eq(grid,linear_system,VERTEX_ID,1,j, &
-                        grid%vertex(vert)%gid,eqn_gid=linear_system%gid(eq))
-         call hash_insert(linear_system%gid(eq),eq,linear_system%eq_hash)
-         linear_system%solution(eq) = grid%vertex_solution(vert,j,1)
-         select case (grid%vertex_type(vert,j))
-         case (PERIODIC_MASTER_DIR)
-            linear_system%equation_type(eq) = DIRICHLET
-         case (PERIODIC_MASTER_NAT)
-            linear_system%equation_type(eq) = NATURAL
-         case (PERIODIC_MASTER_MIX)
-            linear_system%equation_type(eq) = MIXED
-         case default
-            linear_system%equation_type(eq) = grid%vertex_type(vert,j)
-         end select
-         linear_system%iown(eq) =  grid%element(grid%vertex(vert)%assoc_elem)%iown
-         eq = eq + 1
+visited_vert = .false.
+do lev=0,grid%nlev
+   if (lev==0 .and. global_element_kind == TETRAHEDRAL_ELEMENT) cycle
+   if (lev==0) then
+      linear_system%begin_level(1) = eq
+      elem = grid%head_level_elem(1)
+   else
+      if (lev /= 1 .or. global_element_kind == TETRAHEDRAL_ELEMENT) then
+         linear_system%begin_level(lev) = eq
+      endif
+      elem = grid%head_level_elem(lev)
+   endif
+   do while (elem /= END_OF_LIST)
+      do ivert=1,VERTICES_PER_ELEMENT
+         if (lev==0 .and. ivert==3) cycle
+         vert = grid%element(elem)%vertex(ivert)
+         if (visited_vert(vert)) cycle
+         visited_vert(vert) = .true.
+         do j=1,syssize
+            if (is_periodic_vert_slave(vert,grid,j)) cycle
+            call grid_to_eq(grid,linear_system,VERTEX_ID,1,j, &
+                           grid%vertex(vert)%gid,eqn_gid=linear_system%gid(eq))
+            call hash_insert(linear_system%gid(eq),eq,linear_system%eq_hash)
+            linear_system%solution(eq) = grid%vertex_solution(vert,j,1)
+            if (nev > 1) then
+               linear_system%evecs(eq,1:nev-1) = grid%vertex_solution(vert,j,2:nev)
+            endif
+            select case (grid%vertex_type(vert,j))
+            case (PERIODIC_MASTER_DIR)
+               linear_system%equation_type(eq) = DIRICHLET
+            case (PERIODIC_MASTER_NAT)
+               linear_system%equation_type(eq) = NATURAL
+            case (PERIODIC_MASTER_MIX)
+               linear_system%equation_type(eq) = MIXED
+            case default
+               linear_system%equation_type(eq) = grid%vertex_type(vert,j)
+            end select
+            linear_system%iown(eq) = &
+               grid%element(grid%vertex(vert)%assoc_elem)%iown
+            eq = eq + 1
+         end do
       end do
-      vert = grid%vertex(vert)%next
+      elem = grid%element(elem)%next
    end do
 end do
 
-do lev=grid%nlev+1,linear_system%nlev
+do lev=grid%nlev+1,linear_system%nlev_vert
    linear_system%begin_level(lev) = eq
 end do
 
 if (eq-1 /= linear_system%neq_vert) then
    call warning("number of vertex equations created is not equal to neqvert")
 endif
-linear_system%begin_level(linear_system%nlev+1) = eq
 
-! Next pass through the elements setting the same components of the
-! edge basis equations.  Note the edge bases all fall between
-! begin_level(nlev+1) and begin_level(nlev+2)-1.
+! Next pass through the edges to set the same components of the edge basis
+! equations.  First go through the edges to determine how many equations there
+! are for each degree.  Count the equations with degree in
+! edge_begin_degree(degree+1) and then do a running sum to determine the
+! first equation of each degree
 
-visited = .false.
+linear_system%begin_level(linear_system%edge_level) = eq
+
+allocate(linear_system%edge_begin_degree(linear_system%maxdeg+1), &
+         eqa(linear_system%maxdeg), stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("allocation failed in equation_order")
+   return
+endif
+
+linear_system%edge_begin_degree = 0
+visited_edge = .false.
 do l=1,nelem_leaf
    elem = leaf_element(l)
    do i=1,EDGES_PER_ELEMENT
       edge = grid%element(elem)%edge(i)
-      if (visited(edge)) cycle
-      visited(edge) = .true.
+      if (visited_edge(edge)) cycle
+      visited_edge(edge) = .true.
       degree = grid%edge(edge)%degree
       if (degree < 2) cycle
-      do k=1,degree-1
+      do k=2,degree
          do j=1,syssize
-            if (grid%edge_type(edge,j) == PERIODIC_SLAVE) cycle
-            call grid_to_eq(grid,linear_system,EDGE_ID,k,j, &
-                          grid%edge(edge)%gid,eqn_gid=linear_system%gid(eq))
-            call hash_insert(linear_system%gid(eq),eq,linear_system%eq_hash)
-            linear_system%solution(eq) = grid%edge(edge)%solution(k,j,1)
-            linear_system%equation_type(eq) = grid%edge_type(edge,j)
-            linear_system%iown(eq) = &
-               grid%element(grid%edge(edge)%assoc_elem)%iown
-            eq = eq + 1
+            if (is_periodic_edge_slave(edge,grid,j)) cycle
+            linear_system%edge_begin_degree(k+1) = &
+                    linear_system%edge_begin_degree(k+1) + 1
          end do
       end do
    end do
 end do
 
+linear_system%edge_begin_degree(1) = eq
+linear_system%edge_begin_degree(2) = eq
+do i=3,linear_system%maxdeg+1
+   linear_system%edge_begin_degree(i) = linear_system%edge_begin_degree(i) + &
+                                        linear_system%edge_begin_degree(i-1)
+end do
+eqa = linear_system%edge_begin_degree(1:linear_system%maxdeg)
+
+visited_edge = .false.
+do l=1,nelem_leaf
+   elem = leaf_element(l)
+   do i=1,EDGES_PER_ELEMENT
+      edge = grid%element(elem)%edge(i)
+      if (visited_edge(edge)) cycle
+      visited_edge(edge) = .true.
+      degree = grid%edge(edge)%degree
+      if (degree < 2) cycle
+      do k=1,degree-1
+         do j=1,syssize
+            if (is_periodic_edge_slave(edge,grid,j)) cycle
+            call grid_to_eq(grid,linear_system,EDGE_ID,k,j, &
+                          grid%edge(edge)%gid, &
+                          eqn_gid=linear_system%gid(eqa(k+1)))
+            call hash_insert(linear_system%gid(eqa(k+1)),eqa(k+1), &
+                             linear_system%eq_hash)
+            linear_system%solution(eqa(k+1)) = grid%edge(edge)%solution(k,j,1)
+            if (nev > 1) then
+               linear_system%evecs(eqa(k+1),1:nev-1) = &
+                                grid%edge(edge)%solution(k,j,2:nev)
+            endif
+            select case (grid%edge_type(edge,j))
+            case (PERIODIC_MASTER_DIR)
+               linear_system%equation_type(eqa(k+1)) = DIRICHLET
+            case (PERIODIC_MASTER_NAT)
+               linear_system%equation_type(eqa(k+1)) = NATURAL
+            case (PERIODIC_MASTER_MIX)
+               linear_system%equation_type(eqa(k+1)) = MIXED
+            case default
+               linear_system%equation_type(eqa(k+1)) = grid%edge_type(edge,j)
+            end select
+            linear_system%iown(eqa(k+1)) = &
+               grid%element(grid%edge(edge)%assoc_elem)%iown
+            eqa(k+1) = eqa(k+1) + 1
+         end do
+      end do
+   end do
+end do
+
+do i=2,linear_system%maxdeg
+   if (eqa(i) /= linear_system%edge_begin_degree(i+1)) then
+      ierr = PHAML_INTERNAL_ERROR
+      call fatal("equation_order: mismatch in number of edge equations")
+      stop
+   endif
+end do
+
+eq = linear_system%edge_begin_degree(linear_system%maxdeg+1)
+
 if (eq-1 /= linear_system%neq_vert + linear_system%neq_edge) then
    call warning("number of edge equations is not equal to neqedge")
 endif
-linear_system%begin_level(linear_system%nlev+2) = eq
+
+! Same for face basis equations.
+
+linear_system%begin_level(linear_system%face_level) = eq
+
+allocate(linear_system%face_begin_degree(linear_system%maxdeg+1), stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("allocation failed in equation_order")
+   return
+endif
+
+if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+
+   linear_system%face_begin_degree = 0
+   visited_face = .false.
+   do l=1,nelem_leaf
+      elem = leaf_element(l)
+      do i=1,FACES_PER_ELEMENT
+         face = grid%element(elem)%face(i)
+         if (visited_face(face)) cycle
+         visited_face(face) = .true.
+         degree = grid%face(face)%degree
+         if (degree < 3) cycle
+         do k=3,degree
+            do j=1,syssize
+               if (is_periodic_face_slave(face,grid,j)) cycle
+               linear_system%face_begin_degree(k+1) = &
+                       linear_system%face_begin_degree(k+1) + k-2
+            end do
+         end do
+      end do
+   end do
+
+   linear_system%face_begin_degree(1) = eq
+   linear_system%face_begin_degree(2) = eq
+   if (linear_system%maxdeg > 1) linear_system%face_begin_degree(3) = eq
+   do i=4,linear_system%maxdeg+1
+      linear_system%face_begin_degree(i) = linear_system%face_begin_degree(i)+ &
+                                           linear_system%face_begin_degree(i-1)
+   end do
+   eqa = linear_system%face_begin_degree(1:linear_system%maxdeg)
+
+   visited_face = .false.
+   do l=1,nelem_leaf
+      elem = leaf_element(l)
+      do i=1,FACES_PER_ELEMENT
+         face = grid%element(elem)%face(i)
+         if (visited_face(face)) cycle
+         visited_face(face) = .true.
+         degree = grid%face(face)%degree
+         if (degree < 3) cycle
+         brank = 0
+         do k=3,degree
+            do j=1,syssize
+               if (is_periodic_face_slave(face,grid,j)) cycle
+               do m=1,k-2
+                  brank = brank+1
+                  call grid_to_eq(grid,linear_system,FACE_ID,brank,j, &
+                                  grid%face(face)%gid, &
+                                  eqn_gid=linear_system%gid(eqa(k)))
+                  call hash_insert(linear_system%gid(eqa(k)),eqa(k), &
+                                   linear_system%eq_hash)
+                  linear_system%solution(eqa(k)) = &
+                                        grid%face(face)%solution(brank,j,1)
+                  if (nev > 1) then
+                     linear_system%evecs(eqa(k),1:nev-1) = &
+                                    grid%face(face)%solution(brank,j,2:nev)
+                  endif
+                  linear_system%equation_type(eqa(k)) = grid%face_type(edge,j)
+                  linear_system%iown(eqa(k)) = &
+                        grid%element(grid%face(face)%assoc_elem)%iown
+                  eqa(k) = eqa(k) + 1
+               end do
+            end do
+         end do
+      end do
+   end do
+
+   do i=3,linear_system%maxdeg
+      if (eqa(i) /= linear_system%face_begin_degree(i+1)) then
+         ierr = PHAML_INTERNAL_ERROR
+         call fatal("equation_order: mismatch in number of face equations")
+         stop
+      endif
+   end do
+
+   eq = linear_system%face_begin_degree(linear_system%maxdeg+1)
+
+   if (eq-1 /= linear_system%neq_vert + linear_system%neq_edge + &
+               linear_system%neq_face) then
+      call warning("number of face equations is not equal to neqface")
+   endif
+
+else
+   linear_system%face_begin_degree = eq
+endif
 
 ! Then pass through the elements setting the same components of the
-! face basis equations.  Note the face bases all fall between
-! begin_level(nlev+2) and begin_level(nlev+3)-1.
+! bubble basis equations.
+
+linear_system%begin_level(linear_system%bubble_level) = eq
 
 do l=1,nelem_leaf
    elem = leaf_element(l)
    degree = grid%element(elem)%degree
    if (degree > 2) then
-      do k=1,((degree-1)*(degree-2))/2
+      do k=1,element_dof(degree)
          do j=1,syssize
             call grid_to_eq(grid,linear_system,ELEMENT_ID,k,j, &
                  grid%element(elem)%gid,eqn_gid=linear_system%gid(eq+j-1))
@@ -757,6 +921,10 @@ do l=1,nelem_leaf
          end do
          linear_system%solution(eq:eq+syssize-1) = &
                                      grid%element(elem)%solution(k,1:syssize,1)
+         if (nev > 1) then
+            linear_system%evecs(eq:eq+syssize-1,1:nev-1) = &
+                                 grid%element(elem)%solution(k,1:syssize,2:nev)
+         endif
          linear_system%equation_type(eq:eq+syssize-1) = INTERIOR
          linear_system%iown(eq:eq+syssize-1) = grid%element(elem)%iown
          eq = eq + syssize
@@ -765,10 +933,13 @@ do l=1,nelem_leaf
 end do
 
 if (eq-1 /= linear_system%neq_vert + linear_system%neq_edge + &
-            linear_system%neq_face) then
-   call warning("number of face equations is not equal to neqface")
+            linear_system%neq_face + linear_system%neq_bubble) then
+   call warning("number of bubble equations is not equal to neqbubble")
 endif
-linear_system%begin_level(linear_system%nlev+3) = eq
+
+linear_system%begin_level(linear_system%beyond_last_level) = eq
+
+deallocate(eqa)
 
 end subroutine equation_order
 
@@ -785,52 +956,53 @@ subroutine create_column_index(linear_system,grid,procs,maxeq_per_elem, &
 ! Dummy arguments
 
 type(linsys_type), intent(inout) :: linear_system
-type(grid_type), intent(in) :: grid
+type(grid_type), intent(inout) :: grid
 type(proc_info), intent(in) :: procs
 integer, intent(in) :: maxeq_per_elem, leaf_element(:), nelem_leaf
 !----------------------------------------------------
 ! Local variables:
 
-logical :: visited(size(grid%edge))
-integer :: i, j, k, l, m, lev, vert, edge, elem, eq, eq1, neq, nentry, degree, &
-           indx, syssize, objtype, brank, srank, allocstat, max_entries_in_row
-integer, allocatable :: eqlist(:), adjacencies(:,:)
+logical :: visited_vert(grid%biggest_vert), visited_edge(grid%biggest_edge), &
+           visited_face(grid%biggest_face)
+integer :: i, j, k, l, m, lev, vert, edge, face, elem, eq, eq1, neq, nentry, &
+           degree, indx, syssize, objtype2, brank, srank, allocstat, &
+           max_entries_in_row, numobj, numdof, iobj, ivert
+integer :: eqlist(maxeq_per_elem)
+integer, allocatable :: adjacencies(:,:), objtype(:), objid(:), first_indx(:), &
+                        numadj(:)
 !----------------------------------------------------
 ! Begin executable code
 
 neq = linear_system%neq
 syssize = linear_system%system_size
-allocate(eqlist(maxeq_per_elem),stat=allocstat)
-if (allocstat /= 0) then
-   ierr = ALLOC_FAILED
-   call fatal("allocation failed in create_column_index",procs=procs)
-   return
-endif
 
 ! Determine the maximum number of entries in any row of the matrix
 
-max_entries_in_row = find_max_entries_in_row(grid)
+max_entries_in_row = find_max_entries_in_row(grid,leaf_element,nelem_leaf)
 
 ! Pass through the elements to determine which bases have
 ! overlapping support.  For each equation build a temporary list
 ! of equations from this pass, and then create the column_index array
 
-! create and initialize the lists
+! create the lists
 
-allocate(adjacencies(max_entries_in_row,neq),stat=allocstat)
+allocate(adjacencies(max_entries_in_row,neq),numadj(neq),stat=allocstat)
 if (allocstat /= 0) then
    ierr = ALLOC_FAILED
    call fatal("memory allocation for adjacencies failed",procs=procs)
    return
 endif
-! starts with itself, for the diagonal
-adjacencies = 0
-adjacencies(1,:) = (/ (eq,eq=1,neq) /)
+
+numadj = 0
+nentry = 0
 
 ! Pass through the elements building lists and counting entries.
 ! The list only contains the first equation of each block if system_size > 1.
 
-nentry = neq/syssize
+!$omp parallel do schedule(dynamic) &
+!$omp  default(shared) &
+!$omp  private(i,eq,j,eqlist,brank,degree)
+
 do i=1,nelem_leaf
    eq = 1
    do j=1,VERTICES_PER_ELEMENT
@@ -845,14 +1017,25 @@ do i=1,nelem_leaf
          eq = eq + 1
       end do
    end do
+   do j=1,FACES_PER_ELEMENT
+      degree = grid%face(grid%element(leaf_element(i))%face(j))%degree
+      do brank = 1,face_dof(degree)
+         call grid_to_eq(grid,linear_system,FACE_ID,brank,1, &
+               grid%face(grid%element(leaf_element(i))%face(j))%gid,eqlist(eq))
+         eq = eq + 1
+      end do
+   end do
    degree = grid%element(leaf_element(i))%degree
-   do j=1,((degree-1)*(degree-2))/2
+   do j=1,element_dof(degree)
       call grid_to_eq(grid,linear_system,ELEMENT_ID,j,1, &
                       grid%element(leaf_element(i))%gid,eqlist(eq))
       eq = eq + 1
    end do
-   call add_adjacencies(eqlist,eq-1,adjacencies,nentry)
+!$omp critical
+   call add_adjacencies(eqlist,eq-1,adjacencies,numadj,nentry)
+!$omp end critical
 end do
+!$omp end parallel do
 
 ! Allocate column_index.
 ! Any changes to this list should be matched in the deallocate statement
@@ -865,26 +1048,174 @@ if (allocstat /= 0) then
    return
 endif
 
-! Build column_index, begin_row, end_row_linear, end_row_edge and end_row.
+! Make a list of the objects the equations come from and the first
+! index in column_index associated with each object
+
+! numobj is larger than the actual number of objects because some
+! edges and faces get counted more than once
+
+numobj = grid%nvert + nelem_leaf*EDGES_PER_ELEMENT + nelem_leaf
+if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+   numobj = numobj + nelem_leaf*FACES_PER_ELEMENT
+endif
+allocate(objtype(numobj),objid(numobj),first_indx(numobj),stat=allocstat)
+if (allocstat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("memory allocation for matrix failed",procs=procs)
+   return
+endif
 
 ! first the equations from vertices, level by level
 
+iobj = 1
 indx = 1
+visited_vert = .false.
 do lev=1,grid%nlev
-   vert = grid%head_level_vert(lev)
-   do while (vert /= END_OF_LIST)
-      call grid_to_eq(grid,linear_system,VERTEX_ID,1,1, &
-                      grid%vertex(vert)%gid,eq1)
+   elem = grid%head_level_elem(lev)
+   do while (elem /= END_OF_LIST)
+      do ivert=1,VERTICES_PER_ELEMENT
+         vert = grid%element(elem)%vertex(ivert)
+         if (visited_vert(vert)) cycle
+         visited_vert(vert) = .true.
+         objtype(iobj) = VERTEX_ID
+         objid(iobj) = vert
+         first_indx(iobj) = indx
+         call grid_to_eq(grid,linear_system,VERTEX_ID,1,1, &
+                         grid%vertex(vert)%gid,eq1)
+         do i=1,syssize
+            if (is_periodic_vert_slave(vert,grid,i)) cycle
+            indx = indx + syssize*numadj(eq1)
+         end do
+         iobj = iobj + 1
+      end do
+      elem = grid%element(elem)%next
+   end do
+end do
+
+! then the edge bases
+
+visited_edge = .false.
+do l=1,nelem_leaf
+   elem = leaf_element(l)
+   do j=1,EDGES_PER_ELEMENT
+      edge = grid%element(elem)%edge(j)
+      if (visited_edge(edge)) cycle
+      visited_edge(edge) = .true.
+      if (grid%edge(edge)%degree < 2) cycle
+      objtype(iobj) = EDGE_ID
+      objid(iobj) = edge
+      first_indx(iobj) = indx
+      call grid_to_eq(grid,linear_system,EDGE_ID,1,1, &
+                      grid%edge(edge)%gid,eq1)
+      do k=1,grid%edge(edge)%degree - 1
+         do i=1,syssize
+            if (is_periodic_edge_slave(edge,grid,i)) cycle
+            indx = indx + syssize*numadj(eq1)
+         end do
+      end do
+      iobj = iobj + 1
+   end do
+end do
+
+! then the face bases
+
+if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+   visited_face = .false.
+   do l=1,nelem_leaf
+      elem = leaf_element(l)
+      do j=1,FACES_PER_ELEMENT
+         face = grid%element(elem)%face(j)
+         if (visited_face(face)) cycle
+         visited_face(face) = .true.
+         if (grid%face(face)%degree < 3) cycle
+         objtype(iobj) = FACE_ID
+         objid(iobj) = face
+         first_indx(iobj) = indx
+         call grid_to_eq(grid,linear_system,FACE_ID,1,1, &
+                         grid%face(face)%gid,eq1)
+         do k=1,face_dof(grid%face(face)%degree)
+            do i=1,syssize
+               if (is_periodic_face_slave(face,grid,i)) cycle
+               indx = indx + syssize*numadj(eq1)
+            end do
+         end do
+         iobj = iobj + 1
+      end do
+   end do
+endif
+
+! finally the bubble bases
+
+do l=1,nelem_leaf
+   elem = leaf_element(l)
+   if (grid%element(elem)%degree < 3) cycle
+   objtype(iobj) = ELEMENT_ID
+   objid(iobj) = elem
+   first_indx(iobj) = indx
+   call grid_to_eq(grid,linear_system,ELEMENT_ID,1,1, &
+                   grid%element(elem)%gid,eq1)
+   do k=1,element_dof(grid%element(elem)%degree)
+      do i=1,syssize
+         indx = indx + syssize*numadj(eq1)
+      end do
+   end do
+   iobj = iobj + 1
+end do
+
+numobj = iobj - 1
+
+! Build column_index, begin_row, end_row_linear, end_row_edge, end_row_face
+! and end_row.
+
+!$omp parallel do schedule(dynamic) &
+!$omp  default(shared) &
+!$omp  private(iobj,indx,numdof,k,eq1,eq,i,m,objtype2,brank,srank)
+
+do iobj = 1,numobj
+
+   indx = first_indx(iobj)
+   select case(objtype(iobj))
+   case (VERTEX_ID)
+      numdof = 1
+   case (EDGE_ID)
+      numdof = grid%edge(objid(iobj))%degree - 1
+   case (FACE_ID)
+      numdof = face_dof(grid%face(objid(iobj))%degree)
+   case (ELEMENT_ID)
+      numdof = element_dof(grid%element(objid(iobj))%degree)
+   end select
+
+   do k=1,numdof
+
+      select case(objtype(iobj))
+      case (VERTEX_ID)
+         call grid_to_eq(grid,linear_system,VERTEX_ID,1,1, &
+                         grid%vertex(objid(iobj))%gid,eq1)
+      case (EDGE_ID)
+         call grid_to_eq(grid,linear_system,EDGE_ID,k,1, &
+                         grid%edge(objid(iobj))%gid,eq1)
+      case (FACE_ID)
+         call grid_to_eq(grid,linear_system,FACE_ID,k,1, &
+                         grid%face(objid(iobj))%gid,eq1)
+      case (ELEMENT_ID)
+         call grid_to_eq(grid,linear_system,ELEMENT_ID,k,1, &
+                         grid%element(objid(iobj))%gid,eq1)
+      end select
+
       eq = eq1 - 1
       do i=1,syssize
-         if (grid%vertex_type(vert,i) == PERIODIC_SLAVE .or. &
-             grid%vertex_type(vert,i) == PERIODIC_SLAVE_DIR .or. &
-             grid%vertex_type(vert,i) == PERIODIC_SLAVE_NAT .or. &
-             grid%vertex_type(vert,i) == PERIODIC_SLAVE_MIX) cycle
+         if (objtype(iobj) == VERTEX_ID) then
+            if (is_periodic_vert_slave(objid(iobj),grid,i)) cycle
+         endif
+         if (objtype(iobj) == EDGE_ID) then
+            if (is_periodic_edge_slave(objid(iobj),grid,i)) cycle
+         endif
+         if (objtype(iobj) == FACE_ID) then
+            if (is_periodic_face_slave(objid(iobj),grid,i)) cycle
+         endif
          eq = eq + 1
          linear_system%begin_row(eq) = indx
-         do m=1,max_entries_in_row
-            if (adjacencies(m,eq1) == 0) exit
+         do m=1,numadj(eq1)
             linear_system%column_index(indx:indx+syssize-1) = &
                                        (/(adjacencies(m,eq1)+j,j=0,syssize-1)/)
 ! for the diagonal block (which comes first in the row storage), swap so that
@@ -896,201 +1227,144 @@ do lev=1,grid%nlev
 ! if this block is from a linear basis, set end_row_linear so it is the last
 ! linear basis column in the end
             call eq_to_grid(linear_system,linear_system%gid(adjacencies(m,eq1)), &
-                            objtype,brank,srank)
-            if (objtype == VERTEX_ID) then
+                            objtype2,brank,srank)
+            if (objtype2 == VERTEX_ID) then
                linear_system%end_row_linear(eq) = indx + syssize - 1
             endif
-            if (objtype == VERTEX_ID .or. objtype == EDGE_ID) then
+            if (objtype2 == VERTEX_ID .or. objtype2 == EDGE_ID) then
                linear_system%end_row_edge(eq) = indx + syssize - 1
+            endif
+            if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+               if (objtype2 == VERTEX_ID .or. objtype2 == EDGE_ID .or. &
+                   objtype2 == FACE_ID) then
+                  linear_system%end_row_face(eq) = indx + syssize - 1
+               endif
             endif
             indx = indx + syssize
          end do
          linear_system%end_row(eq) = indx - 1
       end do
-      vert = grid%vertex(vert)%next
    end do
 end do
+!$omp end parallel do
 
-! then the same for the edge bases
-
-visited = .false.
-do l=1,nelem_leaf
-   elem = leaf_element(l)
-   do j=1,EDGES_PER_ELEMENT
-      edge = grid%element(elem)%edge(j)
-      if (visited(edge)) cycle
-      visited(edge) = .true.
-      degree = grid%edge(edge)%degree
-      if (degree < 2) cycle
-      do k=1,degree-1
-         call grid_to_eq(grid,linear_system,EDGE_ID,k,1,grid%edge(edge)%gid,eq1)
-         eq = eq1 - 1
-         do i=1,syssize
-            if (grid%edge_type(edge,i) == PERIODIC_SLAVE) cycle
-            eq = eq + 1
-            linear_system%begin_row(eq) = indx
-            do m=1,max_entries_in_row
-               if (adjacencies(m,eq1) == 0) exit
-               linear_system%column_index(indx:indx+syssize-1) = &
-                  (/(adjacencies(m,eq1)+j,j=0,syssize-1)/)
-               if (indx < linear_system%begin_row(eq) + syssize) then
-                  linear_system%column_index(indx) = adjacencies(m,eq1)+i-1
-                  linear_system%column_index(indx+i-1) = adjacencies(m,eq1)
-               endif
-               call eq_to_grid(linear_system, &
-                              linear_system%gid(adjacencies(m,eq1)), &
-                              objtype,brank,srank)
-               if (objtype == VERTEX_ID) then
-                  linear_system%end_row_linear(eq) = indx + syssize - 1
-               endif
-               if (objtype == VERTEX_ID .or. objtype == EDGE_ID) then
-                  linear_system%end_row_edge(eq) = indx + syssize - 1
-               endif
-               indx = indx + syssize
-            end do ! next column (block)
-            linear_system%end_row(eq) = indx - 1
-         end do ! next PDE
-      end do ! next basis
-   end do ! next edge
-end do ! next element
-
-! finally the same for the face bases
-
-do l=1,nelem_leaf
-   elem = leaf_element(l)
-   degree = grid%element(elem)%degree
-   if (degree < 3) cycle
-   do k=1,((degree-1)*(degree-2))/2
-      call grid_to_eq(grid,linear_system,ELEMENT_ID,k,1,grid%element(elem)%gid,&
-                      eq1)
-      eq = eq1 - 1
-      do i=1,syssize
-         eq = eq + 1
-         linear_system%begin_row(eq) = indx
-         do m=1,max_entries_in_row
-            if (adjacencies(m,eq1) == 0) exit
-            linear_system%column_index(indx:indx+syssize-1) = &
-                  (/(adjacencies(m,eq1)+j,j=0,syssize-1)/)
-            if (indx < linear_system%begin_row(eq) + syssize) then
-               linear_system%column_index(indx) = adjacencies(m,eq1)+i-1
-               linear_system%column_index(indx+i-1) = adjacencies(m,eq1)
-            endif
-            call eq_to_grid(linear_system, &
-                           linear_system%gid(adjacencies(m,eq1)), &
-                           objtype,brank,srank)
-            if (objtype == VERTEX_ID) then
-               linear_system%end_row_linear(eq) = indx + syssize - 1
-            endif
-            if (objtype == VERTEX_ID .or. objtype == EDGE_ID) then
-               linear_system%end_row_edge(eq) = indx + syssize - 1
-            endif
-            indx = indx + syssize
-         end do ! next column (block)
-         linear_system%end_row(eq) = indx - 1
-      end do ! next PDE
-   end do ! next basis
-end do ! next element
-
-linear_system%begin_row(neq+1) = indx
-linear_system%end_row(neq+1) = indx
-
-if (indx /= nentry*syssize*syssize+1) then
-   ierr = PHAML_INTERNAL_ERROR
-   call fatal("miscounted number of entries in the matrix.", &
-              intlist=(/indx,nentry*syssize*syssize+1/),procs=procs)
-   return
-endif
+linear_system%begin_row(neq+1) = nentry*syssize*syssize+1
+linear_system%end_row(neq+1) = nentry*syssize*syssize+1
 
 ! free up the memory used by adjacencies
 
-deallocate(eqlist,adjacencies)
+deallocate(adjacencies)
+deallocate(objtype,objid,first_indx)
 
 end subroutine create_column_index
 
 !        -----------------------
-function find_max_entries_in_row(grid)
+function find_max_entries_in_row(grid,leaf_element,nelem_leaf)
 !        -----------------------
 
 !----------------------------------------------------
 ! This routine determines the maximum number of entries in any row when
-! system_size is 1 (otherwise multiply by system_size).
+! system_size is 1 (otherwise multiply by system_size).  In 2D it is exactly
+! the maximum, in 3D it is an upper bound.
 !----------------------------------------------------
 
 !----------------------------------------------------
 ! Dummy arguments
 
-type(grid_type), intent(in) :: grid
+type(grid_type), intent(inout) :: grid
+integer, intent(in) :: leaf_element(:), nelem_leaf
 integer :: find_max_entries_in_row
 !----------------------------------------------------
 ! Local variables:
 
-integer :: num_adjacent(size(grid%vertex))
-integer :: lev, elem, i, j, deg
-integer :: v(VERTICES_PER_ELEMENT), neigh(EDGES_PER_ELEMENT)
+integer :: num_adjacent(grid%biggest_vert)
+integer :: elem, i, j, deg, multiplier, ielem
+integer :: v(VERTICES_PER_ELEMENT), neigh(NEIGHBORS_PER_ELEMENT)
 !----------------------------------------------------
 ! Begin executable code
 
 ! The maximum will occur at a row corresponding to a vertex, so add up the
-! number of overlapping bases for each vertex basis.  Pass through the elements
-! and for each vertex of the element add 1) twice the number of face bases,
-! 2) the number of edge bases on adjacent edges, or twice the number if the
-! edge is on the boundary, 3) twice the number of edge bases on the opposite
+! number of overlapping bases for each vertex basis.  In 2D pass through the
+! elements and for each vertex of the element add 1) twice the number of bubble
+! bases, 2) the number of edge bases on adjacent edges, or twice the number if
+! the edge is on the boundary, 3) twice the number of edge bases on the opposite
 ! edge, and 4) 1 for each adjacent vertex, or 2 if the vertex is on the
 ! boundary.  Then divide by 2.  And add 1 for the diagonal.
 ! The business with 2 takes care of duplications over adjacent elements.
+! In 3D the trick with 2 doesn't work because an edge can be shared by more
+! than two elements, so compute an upper bound by passing through the elements
+! and for each vertex of the element add the number of bases in the element.
+
+select case (global_element_kind)
+case (TRIANGULAR_ELEMENT)
+   multiplier = 2
+case (TETRAHEDRAL_ELEMENT)
+   multiplier = 1
+end select
 
 num_adjacent = 0
 
-! for each element
-do lev=1,grid%nlev
-   elem = grid%head_level_elem(lev)
-   do while (elem /= END_OF_LIST)
-      if (grid%element(elem)%isleaf) then
-         v = grid%element(elem)%vertex
-         neigh = get_neighbors(elem,grid)
+! for each leaf element
+
+!$omp parallel do &
+!$omp  default(shared) &
+!$omp  private(ielem,elem,v,neigh,i,deg,j) &
+!$omp  reduction(+ : num_adjacent)
+
+do ielem=1,nelem_leaf
+   elem = leaf_element(ielem)
+   v = grid%element(elem)%vertex
+   if (global_element_kind == TRIANGULAR_ELEMENT) then
+      neigh = get_neighbors(elem,grid)
+   endif
 ! for each vertex of this element
-         do i=1,VERTICES_PER_ELEMENT
-            do while (any(grid%vertex_type(v(i),:) == PERIODIC_SLAVE) .or. &
-                      any(grid%vertex_type(v(i),:) == PERIODIC_SLAVE_DIR) .or. &
-                      any(grid%vertex_type(v(i),:) == PERIODIC_SLAVE_NAT) .or. &
-                      any(grid%vertex_type(v(i),:) == PERIODIC_SLAVE_MIX))
-               v(i) = grid%vertex(v(i))%next
-            end do
-            deg = grid%element(elem)%degree
+   do i=1,VERTICES_PER_ELEMENT
+      do while(is_periodic_vert_slave(v(i),grid))
+         v(i) = grid%vertex(v(i))%next
+      end do
+      deg = grid%element(elem)%degree
+! bubble bases
+      num_adjacent(v(i)) = num_adjacent(v(i)) + multiplier*element_dof(deg)
 ! face bases
-            num_adjacent(v(i)) = num_adjacent(v(i)) + (deg-1)*(deg-2)
-            do j=1,EDGES_PER_ELEMENT
-               deg = grid%edge(grid%element(elem)%edge(j))%degree
-               if (j==i) then
-! opposite edge
-                  num_adjacent(v(i)) = num_adjacent(v(i)) + 2*(deg-1)
-               else
-! adjacent edges
-                  if (neigh(j)==BOUNDARY) then
-                     num_adjacent(v(i)) = num_adjacent(v(i)) + 2*(deg-1)
-                  else
-                     num_adjacent(v(i)) = num_adjacent(v(i)) + deg-1
-                  endif
-! adjacent vertices
-                  if (neigh(6-(i+j))==BOUNDARY) then
-                     num_adjacent(v(i)) = num_adjacent(v(i)) + 2
-                  else
-                     num_adjacent(v(i)) = num_adjacent(v(i)) + 1
-                  endif
-               endif
-            end do
-         end do
+      do j=1,FACES_PER_ELEMENT
+         deg = grid%face(grid%element(elem)%face(j))%degree
+         num_adjacent(v(i)) = num_adjacent(v(i)) + multiplier*face_dof(deg)
+      end do
+! edge bases
+      do j=1,EDGES_PER_ELEMENT
+         deg = grid%edge(grid%element(elem)%edge(j))%degree
+         if (j==i .or. global_element_kind == TETRAHEDRAL_ELEMENT) then
+! opposite edge in 2D, all edges in 3D
+            num_adjacent(v(i)) = num_adjacent(v(i)) + multiplier*(deg-1)
+         else
+! adjacent edges in 2D
+            if (neigh(j)==BOUNDARY) then
+               num_adjacent(v(i)) = num_adjacent(v(i)) + multiplier*(deg-1)
+            else
+               num_adjacent(v(i)) = num_adjacent(v(i)) + deg-1
+            endif
+! adjacent vertices in 2D
+            if (neigh(6-(i+j))==BOUNDARY) then
+               num_adjacent(v(i)) = num_adjacent(v(i)) + 2
+            else
+               num_adjacent(v(i)) = num_adjacent(v(i)) + 1
+            endif
+         endif
+      end do
+! vertices in 3D
+      if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+         num_adjacent(v(i)) = num_adjacent(v(i)) + 3
       endif
-      elem = grid%element(elem)%next
    end do
 end do
+!$omp end parallel do
 
-find_max_entries_in_row = maxval(num_adjacent)/2 + 1
+find_max_entries_in_row = maxval(num_adjacent)/multiplier + 1
 
 end function find_max_entries_in_row
 
 !          ---------------
-subroutine add_adjacencies(list,n,adjacencies,nentry)
+subroutine add_adjacencies(list,n,adjacencies,numadj,nentry)
 !          ---------------
 
 !----------------------------------------------------
@@ -1102,13 +1376,13 @@ subroutine add_adjacencies(list,n,adjacencies,nentry)
 ! Dummy arguments
 
 integer, intent(in) :: list(:), n
-integer, intent(inout) :: adjacencies(:,:)
+integer, intent(inout) :: adjacencies(:,:), numadj(:)
 integer, intent(inout) :: nentry
 
 !----------------------------------------------------
 ! Local variables:
 
-integer :: i, j, list_eq, adj_eq, entry, temp
+integer :: i, j, k, list_eq, adj_eq, entry, lo, hi
 !----------------------------------------------------
 ! Begin executable code
 
@@ -1116,48 +1390,107 @@ integer :: i, j, list_eq, adj_eq, entry, temp
 
 do i=1,n
    list_eq = list(i)
+
+! The first time a row is seen, place the diagonal as the first entry
+
+   if (numadj(list_eq) == 0) then
+      adjacencies(1,list_eq) = list_eq
+      numadj(list_eq) = 1
+      nentry = nentry + 1
+   endif
+
    do j=1,n
       adj_eq = list(j)
-      if (list_eq == adj_eq) cycle ! skip diagonal
 
-! look for adjacency with larger node number in list
+      if (list_eq == adj_eq) cycle
 
-      entry = 2
+! use a binary search to insert adj_eq into the adjacencies of list_eq in
+! increasing order (except list_eq is first)
+
+! if it is larger than the last entry, put it at the end
+
+      if (numadj(list_eq) == 1 .or. &
+          adj_eq > adjacencies(numadj(list_eq),list_eq)) then
+         numadj(list_eq) = numadj(list_eq) + 1
+         adjacencies(numadj(list_eq),list_eq) = adj_eq
+         nentry = nentry + 1
+         cycle
+      endif
+
+! set the range to search and start in the middle
+
+      lo = 2
+      hi = numadj(list_eq)
+      entry = (lo+hi)/2
+
       do
-! if 0, reached end; add it to the end
-         if (adjacencies(entry,list_eq) == 0) then
-            adjacencies(entry,list_eq) = adj_eq
-            nentry = nentry + 1
-            exit
-         endif
-! if equal, already on list
-         if (adjacencies(entry,list_eq) == adj_eq) exit
-! if greater, insert here and move remaining entries up one
-         if (adjacencies(entry,list_eq) > adj_eq) then
-            do
-               temp = adjacencies(entry,list_eq)
-               if (temp == 0) exit
-               adjacencies(entry,list_eq) = adj_eq
-               adj_eq = temp
-               entry = entry + 1
-            end do
-            adjacencies(entry,list_eq) = adj_eq
-            nentry = nentry + 1
-            exit
-         endif
-! if less, move on to next
-         entry = entry + 1
-      end do
 
+! if equal, already on list
+
+         if (adj_eq == adjacencies(entry,list_eq)) exit
+
+! if it is less than the current entry and this entry or the previous entry is
+! the low end of the range, then insert it before the current entry or before
+! the low end of the range
+
+         if (adj_eq < adjacencies(entry,list_eq)) then
+
+            if (entry == lo .or. entry-1 == lo) then
+               if (adj_eq == adjacencies(lo,list_eq)) exit
+               if (adj_eq < adjacencies(lo,list_eq)) entry = lo
+               do k=numadj(list_eq),entry,-1
+                  adjacencies(k+1,list_eq) = adjacencies(k,list_eq)
+               end do
+               adjacencies(entry,list_eq) = adj_eq
+               numadj(list_eq) = numadj(list_eq) + 1
+               nentry = nentry + 1
+               exit
+
+! if it is less than the current entry and we're not at the low end, reset
+! the high end and go to the middle of the new range
+
+            else
+               hi = entry
+               entry = (lo+hi)/2
+            endif
+
+! if it is greater than the current entry and this entry or the next entry is
+! the high end of the range, then insert it after the current entry or after
+! the high end of the range
+
+         else
+
+            if (entry == hi .or. entry+1 == hi) then
+               if (adj_eq == adjacencies(hi,list_eq)) exit
+               if (adj_eq > adjacencies(hi,list_eq)) entry = hi
+               entry = entry + 1
+               do k=numadj(list_eq),entry,-1
+                  adjacencies(k+1,list_eq) = adjacencies(k,list_eq)
+               end do
+               adjacencies(entry,list_eq) = adj_eq
+               numadj(list_eq) = numadj(list_eq) + 1
+               nentry = nentry + 1
+               exit
+
+! if it is greater than the current entry and we're not at the high end, reset
+! the low end and go to the middle of the new range
+
+            else
+               lo = entry
+               entry = (lo+hi)/2
+            endif
+
+         endif
+      end do
    end do
 end do
 
 end subroutine add_adjacencies
 
-!          ------
+!          ----------------------
 subroutine make_communication_map(linear_system,grid,procs,still_sequential, &
                                   timeit)
-!          ------
+!          ----------------------
 
 !----------------------------------------------------
 ! This routine creates the communication map for linear_system, i.e, list
@@ -1287,7 +1620,7 @@ deallocate(send_int)
 ! the processor, and a list of local IDs to use when data is exchanged.  The
 ! lists of IDs for vertices and edges are ordered by degree so we can send
 ! messages containing data for bases up to a given degree, and then followed
-! by IDs for faces so they can be included when sending for the full
+! by IDs for bubble bases so they can be included when sending for the full
 ! uncondensed matrix.
 
 ! count the number I have of each degree for each processor
@@ -1312,6 +1645,8 @@ do proc=1,nproc
                deg = 1
             elseif (object_type == EDGE_ID) then
                deg = basis_rank+1
+            elseif (object_type == FACE_ID) then
+               deg = floor(1+(3.0001_my_real+sqrt(1+8.0_my_real*(basis_rank-1))))
             else ! ELEMENT_ID
                deg = linear_system%maxdeg+1
             endif
@@ -1382,6 +1717,8 @@ do proc=1,nproc
                deg = 1
             elseif (object_type == EDGE_ID) then
                deg = basis_rank+1
+            elseif (object_type == FACE_ID) then
+               deg = floor(1+(3.0001_my_real+sqrt(1+8.0_my_real*(basis_rank-1))))
             else ! ELEMENT_ID
                deg = linear_system%maxdeg+1
             endif
@@ -2064,30 +2401,29 @@ if (allocstat /= 0) then
 endif
 linear_system%stiffness  = 0.0_my_real
 
-! Allocate mass matrix and shifted matrix if this is an eigenvalue problem.
+! Allocate mass matrix and if this is an eigenvalue problem.
 
 if (solver_cntl%eq_type == EIGENVALUE) then
-   allocate(linear_system%mass(siz),linear_system%shifted(siz), stat=allocstat)
+   allocate(linear_system%mass(siz), stat=allocstat)
    if (allocstat /= 0) then
       ierr = ALLOC_FAILED
       call fatal("memory allocation for matrix failed",procs=procs)
       return
    endif
    linear_system%mass = 0.0_my_real
-   linear_system%shifted = 0.0_my_real
 else
-   nullify(linear_system%mass,linear_system%shifted)
+   nullify(linear_system%mass)
 endif
 
-! If this is an eigenvalue problem, the matrix to be statically condensed
-! is the shifted matrix; otherwise it is the stiffness matrix.  But if
-! the residual is to be computed while solving a boundary value problem
+! If this is a boundary value problem, the matrix to be statically condensed
+! is the stiffness matrix  But if the residual is to be computed
 ! (print_error_when is FREQUENTLY or TOO_MUCH) we need to keep the stiffness
 ! matrix and use different space for condensed.
+! If this is an eigenvalue problem, static condensation is not performed.
 
 if (solver_cntl%eq_type == EIGENVALUE) then
-   linear_system%condensed => linear_system%shifted
-   linear_system%rhs_cond => linear_system%rhs_nocond
+   nullify(linear_system%condensed)
+   nullify(linear_system%rhs_cond)
 else
    if (io_cntl%print_error_when == FREQUENTLY .or. &
        io_cntl%print_error_when == TOO_MUCH) then
@@ -2178,9 +2514,12 @@ do i=1,nelem_leaf
 
    if (.not. solver_cntl%ignore_quad_err .and. &
       (.not. grid%element(elem)%iown)) then
-      local_stiffness(1:3*linear_system%system_size,1:3*linear_system%system_size) = 0.0_my_real
-      local_mass(1:3*linear_system%system_size,1:3*linear_system%system_size) = 0.0_my_real
-      local_rhs(1:3*linear_system%system_size) = 0.0_my_real
+      local_stiffness(1:VERTICES_PER_ELEMENT*linear_system%system_size, &
+                      1:VERTICES_PER_ELEMENT*linear_system%system_size) =  &
+                      0.0_my_real
+      local_mass(1:VERTICES_PER_ELEMENT*linear_system%system_size, &
+                 1:VERTICES_PER_ELEMENT*linear_system%system_size) = 0.0_my_real
+      local_rhs(1:VERTICES_PER_ELEMENT*linear_system%system_size) = 0.0_my_real
    endif
 
 ! assemble local values into global matrix etc.
@@ -2228,10 +2567,13 @@ integer, intent(out) :: eqlist(:), nleq
 !----------------------------------------------------
 ! Local variables:
 
-real(my_real) :: xvert(VERTICES_PER_ELEMENT), yvert(VERTICES_PER_ELEMENT)
+real(my_real) :: xvert(VERTICES_PER_ELEMENT), yvert(VERTICES_PER_ELEMENT), &
+                 zvert(VERTICES_PER_ELEMENT)
 integer :: i,j,k,deg
-integer :: degree(EDGES_PER_ELEMENT+1), bmark(EDGES_PER_ELEMENT), &
-           edge_type(EDGES_PER_ELEMENT,linear_system%system_size)
+integer :: degree(EDGES_PER_ELEMENT+FACES_PER_ELEMENT+1), &
+           bmark(max(EDGES_PER_ELEMENT,FACES_PER_ELEMENT)), &
+           edge_type(EDGES_PER_ELEMENT,linear_system%system_size), &
+           face_type(FACES_PER_ELEMENT,linear_system%system_size)
 
 !----------------------------------------------------
 ! Begin executable code
@@ -2251,8 +2593,15 @@ do j=1,EDGES_PER_ELEMENT
       nleq = nleq + 1
    end do
 end do
+do j=1,FACES_PER_ELEMENT
+   do k = 1,face_dof(grid%face(grid%element(elem)%face(j))%degree)
+      call grid_to_eq(grid,linear_system,FACE_ID,k,1, &
+                      grid%edge(grid%element(elem)%face(j))%gid,eqlist(nleq))
+      nleq = nleq + 1
+   end do
+end do
 deg = grid%element(elem)%degree
-do j=1,((deg-1)*(deg-2))/2
+do j=1,element_dof(deg)
    call grid_to_eq(grid,linear_system,ELEMENT_ID,j,1, &
                    grid%element(elem)%gid,eqlist(nleq))
    nleq = nleq + 1
@@ -2264,6 +2613,7 @@ nleq = nleq - 1
 do i=1,VERTICES_PER_ELEMENT
    xvert(i) = grid%vertex(grid%element(elem)%vertex(i))%coord%x
    yvert(i) = grid%vertex(grid%element(elem)%vertex(i))%coord%y
+   zvert(i) = zcoord(grid%vertex(grid%element(elem)%vertex(i))%coord)
 end do
 
 ! set degree, edge_type and bmark from the element
@@ -2271,30 +2621,47 @@ end do
 do i=1,EDGES_PER_ELEMENT
    degree(i) = grid%edge(grid%element(elem)%edge(i))%degree
    edge_type(i,:) = grid%edge_type(grid%element(elem)%edge(i),:)
-   bmark(i) = grid%edge(grid%element(elem)%edge(i))%bmark
 end do
-degree(EDGES_PER_ELEMENT+1) = grid%element(elem)%degree
+do i=1,FACES_PER_ELEMENT
+   degree(EDGES_PER_ELEMENT+i) = grid%face(grid%element(elem)%face(i))%degree
+   face_type(i,:) = grid%face_type(grid%element(elem)%face(i),:)
+end do
+degree(EDGES_PER_ELEMENT+FACES_PER_ELEMENT+1) = grid%element(elem)%degree
+select case (global_element_kind)
+case (TRIANGULAR_ELEMENT)
+   do i=1,EDGES_PER_ELEMENT
+      bmark(i) = grid%edge(grid%element(elem)%edge(i))%bmark
+   end do
+case (TETRAHEDRAL_ELEMENT)
+   do i=1,FACES_PER_ELEMENT
+      bmark(i) = grid%face(grid%element(elem)%face(i))%bmark
+   end do
+end select
 
 if (associated(linear_system%mass)) then
-   call elemental_matrix(grid, xvert, yvert, degree, edge_type, bmark, &
-                         linear_system%system_size, solver_cntl%inc_quad_order,&
-                         .false., elem, linear_system%rmin, &
-                         "p","a",lmat, lrhs, loc_bconds_s=bconds, &
-                         lmassmat=lmassmat)
+   call elemental_matrix(grid, xvert, yvert, degree, edge_type, face_type, &
+                         bmark, linear_system%system_size, &
+                         solver_cntl%inc_quad_order,.false., elem, &
+                         "p","a",lmat, lrhs, &
+                         loc_bconds_s=my_bconds,lmassmat=lmassmat,zvert=zvert, &
+                         solver_control=solver_cntl)
 else
-   call elemental_matrix(grid, xvert, yvert, degree, edge_type, bmark, &
-                         linear_system%system_size, solver_cntl%inc_quad_order,&
-                         .false., elem, linear_system%rmin, &
-                         "p","a",lmat, lrhs, loc_bconds_s=bconds)
+   call elemental_matrix(grid, xvert, yvert, degree, edge_type, face_type, &
+                         bmark,linear_system%system_size, &
+                         solver_cntl%inc_quad_order,.false., elem, &
+                         "p","a",lmat, lrhs, &
+                         loc_bconds_s=my_bconds,zvert=zvert, &
+                         solver_control=solver_cntl)
 endif
 
 end subroutine compute_local_matrix
 
 !          --------------------
-subroutine elemental_matrix(grid, xvert, yvert, degree, edge_type, bmark, ss, &
-                            inc_quad_order, resid_prob, elem, &
-                            rmin, which_basis, which_set, lmat, lrhs, &
-                            loc_bconds_a, loc_bconds_s, lmassmat, extra_rhs)
+subroutine elemental_matrix(grid, xvert, yvert, degree, edge_type, face_type, &
+                            bmark, ss, inc_quad_order, resid_prob, elem, &
+                            which_basis, which_set, lmat, lrhs, &
+                            loc_bconds_a, loc_bconds_s, lmassmat, extra_rhs, &
+                            zvert,solver_control)
 !          --------------------
 
 !----------------------------------------------------
@@ -2314,25 +2681,24 @@ subroutine elemental_matrix(grid, xvert, yvert, degree, edge_type, bmark, ss, &
 
 type(grid_type), intent(in) :: grid
 real(my_real), intent(in) :: xvert(:), yvert(:)
-integer, intent(in) :: degree(4), edge_type(:,:), bmark(:)
+integer, intent(in) :: degree(:), edge_type(:,:), face_type(:,:), bmark(:)
 integer, intent(in) :: ss ! system_size
 integer, intent(in) :: inc_quad_order, elem
 logical, intent(in) :: resid_prob
-real(my_real), intent(inout) :: rmin
 character(len=1), intent(in) :: which_basis, which_set
 real(my_real), intent(out) :: lmat(:,:),lrhs(:)
 interface
-   subroutine loc_bconds_a(x,y,bmark,itype,c,rs,extra_rs)
+   subroutine loc_bconds_a(x,y,z,bmark,itype,c,rs,extra_rs)
    use global
-   real(my_real), intent(in) :: x(:),y(:)
+   real(my_real), intent(in) :: x(:),y(:),z(:)
    integer, intent(in) :: bmark
    integer, intent(out) :: itype(:)
    real(my_real), intent(out) :: c(:,:,:),rs(:,:)
    real(my_real), intent(out), optional :: extra_rs(:,:,:)
    end subroutine loc_bconds_a
-   subroutine loc_bconds_s(x,y,bmark,itype,c,rs)
+   subroutine loc_bconds_s(x,y,z,bmark,itype,c,rs)
    use global
-   real(my_real), intent(in) :: x,y
+   real(my_real), intent(in) :: x,y,z
    integer, intent(in) :: bmark
    integer, intent(out) :: itype(:)
    real(my_real), intent(out) :: c(:,:),rs(:)
@@ -2340,59 +2706,102 @@ interface
 end interface
 optional :: loc_bconds_a, loc_bconds_s
 real(my_real), intent(out), optional :: lmassmat(:,:), extra_rhs(:,:)
+real(my_real), intent(in), optional :: zvert(:)
+type(solver_options), intent(in), optional :: solver_control
 
 
 !----------------------------------------------------
 ! Local variables:
 
 integer :: bctype(ss)
-real(my_real) :: cxx(ss,ss), cxy(ss,ss), cyy(ss,ss), cx(ss,ss), cy(ss,ss), &
-                 c(ss,ss), rs(ss)
-real(my_real), allocatable :: basis(:,:),basisx(:,:),basisy(:,:), &
-                              u(:,:,:),ux(:,:,:),uy(:,:,:), &
+real(my_real) :: cxx(ss,ss), cyy(ss,ss), czz(ss,ss), cxy(ss,ss), cxz(ss,ss), &
+                 cyz(ss,ss), cx(ss,ss), cy(ss,ss), cz(ss,ss), c(ss,ss), rs(ss)
+real(my_real), allocatable :: basis(:,:),basisx(:,:),basisy(:,:),basisz(:,:), &
+                              u(:,:,:),ux(:,:,:),uy(:,:,:),uz(:,:,:), &
                               bcrs(:,:),bcc(:,:,:),extra_bcrs(:,:,:)
-real(my_real) :: xend(2),yend(2)
-integer :: i,j,k,l,qp,side,nquad_pts,jerr,astat,nbasis,qdegree,edim
-logical :: doit
+real(my_real) :: xelem(3),yelem(3),zelem(3),term
+integer :: i,j,k,l,qp,side,nquad_pts,jerr,astat,nbasis,qdegree,edim, &
+           max_quad_order_elem,ilimit
+logical :: doit, include_cross, include_first, use_laplacian_table
 logical, save :: warned=.false.
-real(my_real), pointer :: xquad(:), yquad(:), quad_weight(:)
+real(my_real), pointer :: xquad(:), yquad(:), zquad(:), quad_weight(:)
 !----------------------------------------------------
 ! Begin executable code
+
+! whether or not to include cross and first order derivative terms, and
+! whether or not to use the table of integrals for the Laplacian operator.
+
+if (present(solver_control)) then
+   include_cross = solver_control%pde_has_cross_derivative
+   include_first = solver_control%pde_has_first_order_terms
+   use_laplacian_table = solver_control%laplacian_operator .and. &
+                         solver_control%isosceles_right_triangles .and. &
+                         ss == 1
+else
+   include_cross = .true.
+   include_first = .true.
+   use_laplacian_table = .false.
+endif
+
+! zvert must be present for 3D
+
+if (global_element_kind == TETRAHEDRAL_ELEMENT .and. .not. present(zvert)) then
+   ierr = PHAML_INTERNAL_ERROR
+   call fatal("zvert must be present in elemental matrix for 3D")
+   stop
+endif
 
 ! nodal and h-hierarchical bases require the same degree throughout
 
 if (which_basis == "n" .or. which_basis == "h") then
-   if (degree(1) /= degree(4) .or. degree(2) /= degree(4) .or. &
-       degree(3) /= degree(4)) then
+   if (any(degree /= degree(1))) then
       ierr = PHAML_INTERNAL_ERROR
-      call fatal("degree must be the same for edges and face for nodal or h-hierarchical basis", &
+      call fatal("degree must be the same for edges and elements for nodal or h-hierarchical basis", &
                  intlist = degree)
       stop
    endif
 endif
 
 ! determine the degree of the quadrature rule that is exact for
-! polynomials of the same degree as the approximating space.  degree has
-! polynomial degree for the edge opposite vertices 1, 2, and 3, and
-! the interior of the triangle, in that order.
+! polynomials of the same degree as the approximating space.
 
+select case (global_element_kind)
+case (TRIANGULAR_ELEMENT)
+   max_quad_order_elem = MAX_QUAD_ORDER_TRI
+case (TETRAHEDRAL_ELEMENT)
+   max_quad_order_elem = MAX_QUAD_ORDER_TET
+   warned = .true. ! TEMP3D until I have higher order quadrature rules
+end select
 qdegree = 2*maxval(degree)
-if (qdegree > MAX_QUAD_ORDER_TRI) then
+if (qdegree > max_quad_order_elem) then
    if (.not. warned) then
       call warning("Element degree requires quadrature rule larger than available.", &
                    "Answers may not be as accurate as expected.")
       warned = .true.
    endif
-   qdegree = MAX_QUAD_ORDER_TRI
+   qdegree = max_quad_order_elem
 endif
 qdegree = qdegree + inc_quad_order
-if (qdegree > MAX_QUAD_ORDER_TRI) qdegree = MAX_QUAD_ORDER_TRI
+if (qdegree > max_quad_order_elem) qdegree = max_quad_order_elem
 if (qdegree < 1) qdegree = 1
 
 ! compute element quadrature points and weights
 
-call quadrature_rule_tri(qdegree,xvert,yvert,nquad_pts,quad_weight,xquad, &
-                         yquad,jerr,stay_in=.true.)
+select case (global_element_kind)
+case (TRIANGULAR_ELEMENT)
+   call quadrature_rule_tri(qdegree,xvert,yvert,nquad_pts,quad_weight,xquad, &
+                            yquad,jerr,stay_in=.true.)
+   allocate(zquad(nquad_pts),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("allocation failed in elemental_matrix")
+      stop
+   endif
+   zquad = 0.0_my_real
+case (TETRAHEDRAL_ELEMENT)
+   call quadrature_rule_tet(qdegree,xvert,yvert,zvert,nquad_pts,quad_weight, &
+                            xquad,yquad,zquad,jerr,stay_in=.true.)
+end select
 if (jerr /= 0) then
    select case(jerr)
    case (1)
@@ -2415,20 +2824,29 @@ endif
 select case (which_set)
 
 case("a")
-   nbasis = 3
+   nbasis = VERTICES_PER_ELEMENT
    do i=1,EDGES_PER_ELEMENT 
       nbasis = nbasis + max(0,degree(i)-1)
    end do
-   nbasis = nbasis + max(0,((degree(4)-1)*(degree(4)-2))/2)
+   do i=1,FACES_PER_ELEMENT
+      nbasis = nbasis + face_dof(degree(EDGES_PER_ELEMENT+i))
+   end do
+   nbasis = nbasis + element_dof(degree(EDGES_PER_ELEMENT+FACES_PER_ELEMENT+1))
 
 case("b")
+   if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+      ierr = PHAML_INTERNAL_ERROR
+      call fatal("elemental_matrix: doesn't yet support only black bases in 3D")
+      stop
+   endif
    if (which_basis == "p") then
-      nbasis = 3
+      nbasis = VERTICES_PER_ELEMENT
       do i=1,EDGES_PER_ELEMENT
          nbasis = nbasis + max(0,degree(i)-2)
       end do
-      if (degree(4) > 3) then
-         nbasis = nbasis + ((degree(4)-3)*(degree(4)-2))/2
+      if (degree(EDGES_PER_ELEMENT+FACES_PER_ELEMENT+1) > 3) then
+         nbasis = nbasis + ((degree(EDGES_PER_ELEMENT+FACES_PER_ELEMENT+1)-3) * &
+                            (degree(EDGES_PER_ELEMENT+FACES_PER_ELEMENT+1)-2))/2
       endif
    else
       if (2*(degree(1)/2) == degree(1)) then
@@ -2439,12 +2857,19 @@ case("b")
    endif
 
 case("r")
+   if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+      ierr = PHAML_INTERNAL_ERROR
+      call fatal("elemental_matrix: doesn't yet support only red bases in 3D")
+      stop
+   endif
    if (which_basis == "p") then
       nbasis = 0
       do i=1,EDGES_PER_ELEMENT
          if (degree(i) >= 2) nbasis = nbasis + 1
       end do
-      if (degree(4) >= 3) nbasis = nbasis + degree(4)-2
+      if (degree(EDGES_PER_ELEMENT+FACES_PER_ELEMENT+1) >= 3) then
+         nbasis = nbasis + degree(EDGES_PER_ELEMENT+FACES_PER_ELEMENT+1)-2
+      endif
    else
       if (2*(degree(1)/2) == degree(1)) then
          nbasis = (degree(1)*(degree(1)+2))/4
@@ -2458,23 +2883,38 @@ end select
 ! compute the values of the basis functions at the quadrature points
 
 allocate(basis(nbasis,nquad_pts),basisx(nbasis,nquad_pts), &
-         basisy(nbasis,nquad_pts), stat=astat)
+         basisy(nbasis,nquad_pts),basisz(nbasis,nquad_pts),stat=astat)
 if (astat /= 0) then
    ierr = ALLOC_FAILED
    call fatal("allocation failed in elemental_matrix")
    return
 endif
 
-select case (which_basis)
-case("n")
-   call nodal_basis_func(xquad,yquad,xvert,yvert,degree(1),which_set, &
-                         basis,basisx,basisy)
-case("h")
-   call h_hier_basis_func(xquad,yquad,xvert,yvert,degree(1),which_set, &
-                          basis,basisx,basisy)
-case("p")
-   call p_hier_basis_func(xquad,yquad,xvert,yvert,degree,which_set, &
-                          basis,basisx,basisy)
+select case (global_element_kind)
+case (TRIANGULAR_ELEMENT)
+   select case (which_basis)
+   case("n")
+      call nodal_basis_func(xquad,yquad,xvert,yvert,degree(1),which_set, &
+                            basis,basisx,basisy)
+   case("h")
+      call h_hier_basis_func(xquad,yquad,xvert,yvert,degree(1),which_set, &
+                             basis,basisx,basisy)
+   case("p")
+      call p_hier_basis_func(xquad,yquad,xvert,yvert,degree,which_set, &
+                             basis,basisx,basisy)
+   end select
+case (TETRAHEDRAL_ELEMENT)
+   select case (which_basis)
+   case("n")
+      call nodal_basis_func(xquad,yquad,zquad,xvert,yvert,zvert,degree(1), &
+                            which_set,basis,basisx,basisy,basisz)
+   case("h")
+      call h_hier_basis_func(xquad,yquad,zquad,xvert,yvert,zvert,degree(1), &
+                             which_set,basis,basisx,basisy,basisz)
+   case("p")
+      call p_hier_basis_func(xquad,yquad,zquad,xvert,yvert,zvert,degree, &
+                             which_set,basis,basisx,basisy,basisz)
+   end select
 end select
 
 ! initialize sums to 0.0
@@ -2495,14 +2935,20 @@ endif
 
 if (resid_prob) then
    allocate(u(ss,edim,nquad_pts),ux(ss,edim,nquad_pts),uy(ss,edim,nquad_pts), &
-            stat=astat)
+            uz(ss,edim,nquad_pts),stat=astat)
    if (astat /= 0) then
       ierr = ALLOC_FAILED
       call fatal("allocation failed in elemental_matrix")
       return
    endif
-   call evaluate_soln_local(grid,xquad,yquad,elem,(/(i,i=1,ss)/), &
-                            (/(j,j=1,edim)/),u,ux,uy)
+   select case (global_element_kind)
+   case (TRIANGULAR_ELEMENT)
+      call evaluate_soln_local(grid,xquad,yquad,elem,(/(i,i=1,ss)/), &
+                               (/(j,j=1,edim)/),u,ux,uy)
+   case (TETRAHEDRAL_ELEMENT)
+      call evaluate_soln_local(grid,xquad,yquad,elem,(/(i,i=1,ss)/), &
+                               (/(j,j=1,edim)/),u,ux,uy,z=zquad,uz=uz)
+   end select
 
 elseif (grid%num_eval > 0) then
    allocate(u(ss,edim,nquad_pts),stat=astat)
@@ -2511,8 +2957,18 @@ elseif (grid%num_eval > 0) then
       call fatal("allocation failed in elemental_matrix")
       return
    endif
-   call evaluate_soln_local(grid,xquad,yquad,elem,(/(i,i=1,ss)/), &
-                            (/(j,j=1,edim)/),u)
+   select case (global_element_kind)
+   case (TRIANGULAR_ELEMENT)
+      call evaluate_soln_local(grid,xquad,yquad,elem,(/(i,i=1,ss)/), &
+                               (/(j,j=1,edim)/),u)
+   case (TETRAHEDRAL_ELEMENT)
+      call evaluate_soln_local(grid,xquad,yquad,elem,(/(i,i=1,ss)/), &
+                               (/(j,j=1,edim)/),u,z=zquad)
+   end select
+endif
+
+if (use_laplacian_table) then
+   call laplace_elemental_matrix(degree,lmat)
 endif
 
 ! for each quadrature point
@@ -2521,83 +2977,154 @@ do qp = 1,nquad_pts
 
 ! evaluate pde coefficients
 
-   call pdecoefs(xquad(qp),yquad(qp),cxx,cxy,cyy,cx,cy,c,rs)
+   call my_pdecoefs(elem,xquad(qp),yquad(qp),zquad(qp),cxx,cyy,czz,cxy,cxz, &
+                    cyz,cx,cy,cz,c,rs)
 
    if (ss == 1) then
+      if (.not. use_laplacian_table) then
 
 ! special BLAS based code for scalar PDEs
 
-      if (my_real == kind(1.0)) then
-         call sgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*cxx(1,1), &
-                    basisx(1,qp),nbasis,basisx(1,qp),1,1.0,lmat,size(lmat,1))
-         call sgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*cyy(1,1), &
-                    basisy(1,qp),nbasis,basisy(1,qp),1,1.0,lmat,size(lmat,1))
-         call sgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*cxy(1,1), &
-                    basisx(1,qp),nbasis,basisy(1,qp),1,1.0,lmat,size(lmat,1))
-         call sgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*cx(1,1), &
-                    basis(1,qp),nbasis,basisx(1,qp),1,1.0,lmat,size(lmat,1))
-         call sgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*cy(1,1), &
-                    basis(1,qp),nbasis,basisy(1,qp),1,1.0,lmat,size(lmat,1))
-         call sgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*c(1,1), &
-                    basis(1,qp),nbasis,basis(1,qp),1,1.0,lmat,size(lmat,1))
-         if (present(lmassmat)) then
-            call sgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*rs(1), &
-                       basis(1,qp),nbasis,basis(1,qp),1,1.0,lmassmat, &
-                       size(lmassmat,1))
-         endif
-      elseif (my_real == kind(1.0d0)) then
-         call dgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*cxx(1,1), &
+         if (my_real == kind(1.0)) then
+            call sgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*cxx(1,1), &
+                       basisx(1,qp),nbasis,basisx(1,qp),1,1.0,lmat,size(lmat,1))
+            call sgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*cyy(1,1), &
+                       basisy(1,qp),nbasis,basisy(1,qp),1,1.0,lmat,size(lmat,1))
+            if (include_cross) then
+               call sgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*cxy(1,1), &
+                       basisx(1,qp),nbasis,basisy(1,qp),1,1.0,lmat,size(lmat,1))
+            endif
+            if (include_first) then
+               call sgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*cx(1,1), &
+                       basis(1,qp),nbasis,basisx(1,qp),1,1.0,lmat,size(lmat,1))
+               call sgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*cy(1,1), &
+                       basis(1,qp),nbasis,basisy(1,qp),1,1.0,lmat,size(lmat,1))
+            endif
+            if (c(1,1) /= 0.0_my_real) then
+               call sgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*c(1,1), &
+                       basis(1,qp),nbasis,basis(1,qp),1,1.0,lmat,size(lmat,1))
+            endif
+            if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+               call sgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*czz(1,1), &
+                       basisz(1,qp),nbasis,basisz(1,qp),1,1.0,lmat,size(lmat,1))
+               if (include_cross) then
+                  call sgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*cxz(1,1), &
+                       basisx(1,qp),nbasis,basisz(1,qp),1,1.0,lmat,size(lmat,1))
+                  call sgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*cyz(1,1), &
+                       basisy(1,qp),nbasis,basisz(1,qp),1,1.0,lmat,size(lmat,1))
+               endif
+               if (include_first) then
+                  call sgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*cz(1,1), &
+                       basis(1,qp),nbasis,basisz(1,qp),1,1.0,lmat,size(lmat,1))
+               endif
+            endif
+            if (present(lmassmat)) then
+               call sgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*rs(1), &
+                          basis(1,qp),nbasis,basis(1,qp),1,1.0,lmassmat, &
+                          size(lmassmat,1))
+            endif
+         elseif (my_real == kind(1.0d0)) then
+            call dgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*cxx(1,1), &
                     basisx(1,qp),nbasis,basisx(1,qp),1,1.0d0,lmat,size(lmat,1))
-         call dgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*cyy(1,1), &
+            call dgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*cyy(1,1), &
                     basisy(1,qp),nbasis,basisy(1,qp),1,1.0d0,lmat,size(lmat,1))
-         call dgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*cxy(1,1), &
+            if (include_cross) then
+               call dgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*cxy(1,1), &
                     basisx(1,qp),nbasis,basisy(1,qp),1,1.0d0,lmat,size(lmat,1))
-         call dgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*cx(1,1), &
+            endif
+            if (include_first) then
+               call dgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*cx(1,1), &
                     basis(1,qp),nbasis,basisx(1,qp),1,1.0d0,lmat,size(lmat,1))
-         call dgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*cy(1,1), &
+               call dgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*cy(1,1), &
                     basis(1,qp),nbasis,basisy(1,qp),1,1.0d0,lmat,size(lmat,1))
-         call dgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*c(1,1), &
-                    basis(1,qp),nbasis,basis(1,qp),1,1.0d0,lmat,size(lmat,1))
-         if (present(lmassmat)) then
-            call dgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*rs(1), &
-                       basis(1,qp),nbasis,basis(1,qp),1,1.0d0,lmassmat, &
-                       size(lmassmat,1))
+            endif
+            if (c(1,1) /= 0.0_my_real) then
+               call dgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*c(1,1), &
+                       basis(1,qp),nbasis,basis(1,qp),1,1.0d0,lmat,size(lmat,1))
+            endif
+            if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+               call dgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*czz(1,1), &
+                     basisz(1,qp),nbasis,basisz(1,qp),1,1.0d0,lmat,size(lmat,1))
+               if (include_cross) then
+                  call dgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*cxz(1,1), &
+                     basisx(1,qp),nbasis,basisz(1,qp),1,1.0d0,lmat,size(lmat,1))
+                  call dgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*cyz(1,1), &
+                     basisy(1,qp),nbasis,basisz(1,qp),1,1.0d0,lmat,size(lmat,1))
+               endif
+               if (include_first) then
+                  call dgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*cz(1,1), &
+                      basis(1,qp),nbasis,basisz(1,qp),1,1.0d0,lmat,size(lmat,1))
+               endif
+            endif
+            if (present(lmassmat)) then
+               call dgemm("N","N",nbasis,nbasis,1,quad_weight(qp)*rs(1), &
+                          basis(1,qp),nbasis,basis(1,qp),1,1.0d0,lmassmat, &
+                          size(lmassmat,1))
+            endif
+         else
+            ierr = PHAML_INTERNAL_ERROR
+            call fatal("my_real is neither single nor double precision. Can't call GEMM")
+            stop 
          endif
-      else
-         ierr = PHAML_INTERNAL_ERROR
-         call fatal("my_real is neither single nor double precision. Can't call GEMM")
-         stop 
       endif
       do j=1,nbasis
          if (grid%num_eval <= 0) then
             lrhs(j) = lrhs(j) + quad_weight(qp) * rs(1)*basis(j,qp)
          else
             lrhs(j) = lrhs(j) + quad_weight(qp) * &
-                                  rs(1)*grid%eigenvalue(1)*u(1,1,qp)*basis(j,qp)
+               rs(1)*grid%eigen_results%eigenvalue(1)*u(1,1,qp)*basis(j,qp)
          endif
          if (present(extra_rhs)) then
             do i=1,size(extra_rhs,2)
-               extra_rhs(j,i) = extra_rhs(j,i) + quad_weight(qp) * &
-                               rs(1)*grid%eigenvalue(i+1)*u(1,i+1,qp)*basis(j,qp)
+               extra_rhs(j,i) = extra_rhs(j,i) + quad_weight(qp) * rs(1) * &
+                  grid%eigen_results%eigenvalue(i+1)*u(1,i+1,qp)*basis(j,qp)
             end do
          endif
          if (resid_prob) then
-            lrhs(j) = lrhs(j) + quad_weight(qp) * &
-                           (-cxx(1,1)*ux(1,1,qp)*basisx(j,qp) &
-                            -cyy(1,1)*uy(1,1,qp)*basisy(j,qp) &
-                            -cxy(1,1)*uy(1,1,qp)*basisx(j,qp) &
-                            - cx(1,1)*ux(1,1,qp)*basis(j,qp) &
-                            - cy(1,1)*uy(1,1,qp)*basis(j,qp) &
-                              -c(1,1)*u(1,1,qp)*basis(j,qp))
+            term = -cxx(1,1)*ux(1,1,qp)*basisx(j,qp) &
+                   -cyy(1,1)*uy(1,1,qp)*basisy(j,qp) &
+                     -c(1,1)*u(1,1,qp)*basis(j,qp)
+            if (include_cross) then
+               term = term -cxy(1,1)*uy(1,1,qp)*basisx(j,qp)
+            endif
+            if (include_first) then
+               term = term - cx(1,1)*ux(1,1,qp)*basis(j,qp) &
+                           - cy(1,1)*uy(1,1,qp)*basis(j,qp)
+            endif
+            if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+               term = term -czz(1,1)*uz(1,1,qp)*basisz(j,qp)
+               if (include_cross) then
+                  term = term -cxz(1,1)*uz(1,1,qp)*basisx(j,qp) &
+                              -cyz(1,1)*uz(1,1,qp)*basisy(j,qp)
+               endif
+               if (include_first) then
+                  term = term - cz(1,1)*uz(1,1,qp)*basis(j,qp)
+               endif
+            endif
+            lrhs(j) = lrhs(j) + quad_weight(qp)*term
             if (present(extra_rhs)) then
                do i=1,size(extra_rhs,2)
-                  extra_rhs(j,i) = extra_rhs(j,i) + quad_weight(qp) * &
-                                       (-cxx(1,1)*ux(1,i+1,qp)*basisx(j,qp) &
-                                        -cyy(1,1)*uy(1,i+1,qp)*basisy(j,qp) &
-                                        -cxy(1,1)*uy(1,i+1,qp)*basisx(j,qp) &
-                                        - cx(1,1)*ux(1,i+1,qp)*basis(j,qp) &
-                                        - cy(1,1)*uy(1,i+1,qp)*basis(j,qp) &
-                                          -c(1,1)*u(1,i+1,qp)*basis(j,qp))
+                  term = -cxx(1,1)*ux(1,i+1,qp)*basisx(j,qp) &
+                         -cyy(1,1)*uy(1,i+1,qp)*basisy(j,qp) &
+                           -c(1,1)*u(1,i+1,qp)*basis(j,qp)
+                  if (include_cross) then
+                     term = term -cxy(1,1)*uy(1,i+1,qp)*basisx(j,qp)
+                  endif
+                  if (include_first) then
+                     term = term - cx(1,1)*ux(1,i+1,qp)*basis(j,qp) &
+                                 - cy(1,1)*uy(1,i+1,qp)*basis(j,qp)
+                  endif
+                  if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+                     term = term -czz(1,1)*uz(1,i+1,qp)*basisz(j,qp)
+                     if (include_cross) then
+                        term = term -cxz(1,1)*uz(1,i+1,qp)*basisx(j,qp) &
+                                    -cyz(1,1)*uz(1,i+1,qp)*basisy(j,qp)
+                     endif
+                     if (include_first) then
+                        term = term - cz(1,1)*uz(1,i+1,qp)*basis(j,qp)
+                     endif
+                  endif
+                  extra_rhs(j,i) = extra_rhs(j,i) + quad_weight(qp)*term
                end do
             endif
          endif
@@ -2614,14 +3141,28 @@ do qp = 1,nquad_pts
 
          do l=1,ss
             do k=1,ss
-               lmat(ss*(i-1)+k,ss*(j-1)+l) = &
-                             lmat(ss*(i-1)+k,ss*(j-1)+l) + quad_weight(qp) * &
-                                     (cxx(k,l)*basisx(i,qp)*basisx(j,qp) + &
-                                      cyy(k,l)*basisy(i,qp)*basisy(j,qp) + &
-                                      cxy(k,l)*basisx(i,qp)*basisy(j,qp)+ &
-                                       cx(k,l)*basis (i,qp)*basisx(j,qp) + &
-                                       cy(k,l)*basis (i,qp)*basisy(j,qp) + &
-                                        c(k,l)*basis (i,qp)*basis (j,qp))
+               term = cxx(k,l)*basisx(i,qp)*basisx(j,qp) + &
+                      cyy(k,l)*basisy(i,qp)*basisy(j,qp) + &
+                        c(k,l)*basis (i,qp)*basis (j,qp)
+               if (include_cross) then
+                  term = term + cxy(k,l)*basisx(i,qp)*basisy(j,qp)
+               endif
+               if (include_first) then
+                  term = term + cx(k,l)*basis (i,qp)*basisx(j,qp) + &
+                                cy(k,l)*basis (i,qp)*basisy(j,qp)
+               endif
+               if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+                  term = term + czz(k,l)*basisz(i,qp)*basisz(j,qp)
+                  if (include_cross) then
+                     term = term + cxz(k,l)*basisx(i,qp)*basisz(j,qp) + &
+                                   cyz(k,l)*basisy(i,qp)*basisz(j,qp)
+                  endif
+                  if (include_first) then
+                     term = term + cz(k,l)*basis (i,qp)*basisz(j,qp)
+                  endif 
+               endif
+               lmat(ss*(i-1)+k,ss*(j-1)+l) = lmat(ss*(i-1)+k,ss*(j-1)+l) + &
+                                             quad_weight(qp)*term
                if (present(lmassmat) .and. k==l) then
                   lmassmat(ss*(i-1)+k,ss*(j-1)+l) = &
                                   lmassmat(ss*(i-1)+k,ss*(j-1)+l) + &
@@ -2638,14 +3179,14 @@ do qp = 1,nquad_pts
              lrhs(ss*(j-1)+k) = lrhs(ss*(j-1)+k) + &
                                    quad_weight(qp) * rs(k)*basis(j,qp)
          else
-             lrhs(ss*(j-1)+k) = lrhs(ss*(j-1)+k) + &
-               rs(k)* quad_weight(qp) * grid%eigenvalue(1)*u(k,1,qp)*basis(j,qp)
+             lrhs(ss*(j-1)+k) = lrhs(ss*(j-1)+k) + rs(k)* quad_weight(qp) * &
+                grid%eigen_results%eigenvalue(1)*u(k,1,qp)*basis(j,qp)
          endif
          if (present(extra_rhs)) then
             do i=1,size(extra_rhs,2)
                extra_rhs(ss*(j-1)+k,i) = extra_rhs(ss*(j-1)+k,i) + &
-                               quad_weight(qp) * &
-                         rs(k)*grid%eigenvalue(i+1)*u(k,i+1,qp)*basis(j,qp)
+                  quad_weight(qp) * rs(k) * &
+                  grid%eigen_results%eigenvalue(i+1)*u(k,i+1,qp)*basis(j,qp)
             end do
          endif
 
@@ -2653,25 +3194,53 @@ do qp = 1,nquad_pts
 
           if (resid_prob) then
              do l=1,ss
-                lrhs(ss*(j-1)+k) = lrhs(ss*(j-1)+k) + quad_weight(qp) * &
-                                  (-cxx(k,l)*ux(l,1,qp)*basisx(j,qp) &
-                                   -cyy(k,l)*uy(l,1,qp)*basisy(j,qp) &
-                                   -cxy(k,l)*uy(l,1,qp)*basisx(j,qp) &
-                                   - cx(k,l)*ux(l,1,qp)*basis(j,qp) &
-                                   - cy(k,l)*uy(l,1,qp)*basis(j,qp) &
-                                     -c(k,l)*u(l,1,qp)*basis(j,qp))
+                term = -cxx(k,l)*ux(l,1,qp)*basisx(j,qp) &
+                       -cyy(k,l)*uy(l,1,qp)*basisy(j,qp) &
+                         -c(k,l)*u(l,1,qp)*basis(j,qp)
+                if (include_cross) then
+                   term = term -cxy(k,l)*uy(l,1,qp)*basisx(j,qp)
+                endif
+                if (include_first) then
+                   term = term - cx(k,l)*ux(l,1,qp)*basis(j,qp) &
+                               - cy(k,l)*uy(l,1,qp)*basis(j,qp)
+                endif
+                if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+                   term = term - czz(k,l)*uz(l,1,qp)*basisz(j,qp)
+                   if (include_cross) then
+                      term = term - cxz(k,l)*uz(l,1,qp)*basisx(j,qp) &
+                                  - cyz(k,l)*uz(l,1,qp)*basisy(j,qp)
+                   endif
+                   if (include_first) then
+                      term = term - cz(k,l)*uz(l,1,qp)*basis(j,qp)
+                   endif
+                endif
+                lrhs(ss*(j-1)+k) = lrhs(ss*(j-1)+k) + quad_weight(qp)*term
              end do
              if (present(extra_rhs)) then
                 do i=1,size(extra_rhs,2)
                    do l=1,ss
+                      term = -cxx(k,l)*ux(l,i+1,qp)*basisx(j,qp) &
+                             -cyy(k,l)*uy(l,i+1,qp)*basisy(j,qp) &
+                               -c(k,l)*u(l,i+1,qp)*basis(j,qp)
+                      if (include_cross) then
+                         term = term - cxy(k,l)*uy(l,i+1,qp)*basisx(j,qp)
+                      endif
+                      if (include_first) then
+                         term = term - cx(k,l)*ux(l,i+1,qp)*basis(j,qp) &
+                                     - cy(k,l)*uy(l,i+1,qp)*basis(j,qp)
+                      endif
+                      if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+                         term = term - czz(k,l)*uz(l,i+1,qp)*basisz(j,qp)
+                         if (include_cross) then
+                            term = term - cxz(k,l)*uz(l,i+1,qp)*basisx(j,qp) &
+                                        - cyz(k,l)*uz(l,i+1,qp)*basisy(j,qp)
+                         endif
+                         if (include_first) then
+                            term = term - cz(k,l)*uz(l,i+1,qp)*basis(j,qp)
+                         endif
+                      endif
                       extra_rhs(ss*(j-1)+k,i) = extra_rhs(ss*(j-1)+k,i) + &
-                              quad_weight(qp) * &
-                              (-cxx(k,l)*ux(l,i+1,qp)*basisx(j,qp) &
-                               -cyy(k,l)*uy(l,i+1,qp)*basisy(j,qp) &
-                               -cxy(k,l)*uy(l,i+1,qp)*basisx(j,qp) &
-                               - cx(k,l)*ux(l,i+1,qp)*basis(j,qp) &
-                               - cy(k,l)*uy(l,i+1,qp)*basis(j,qp) &
-                                 -c(k,l)*u(l,i+1,qp)*basis(j,qp))
+                              quad_weight(qp)*term
                    end do
                 end do
              endif
@@ -2681,30 +3250,14 @@ do qp = 1,nquad_pts
 
    endif ! ss == 1
 
-! Determine the minimum value of coefu, to be used as lambda0 when
-! solving an eigenvalue problem for the smallest eigenvalues.
-! If the equation has been multiplied through by some value (e.g. when
-! using cylindrical coordinates it is multiplied by x) that value is
-! supposed to be in coefrhs.  Divide coefu by that to get the correct
-! lower bound on eigenvalues.
-
-   do i=1,ss
-      do j=1,ss
-         if (rs(j) /= 0.0_my_real) then
-!$omp atomic
-            rmin = min(rmin,c(i,j)/rs(j))
-         endif
-      end do
-   end do
-
 end do
 
 if (resid_prob) then
-   deallocate(u,ux,uy)
+   deallocate(u,ux,uy,uz)
 elseif (grid%num_eval > 0) then
    deallocate(u)
 endif
-deallocate(quad_weight,xquad,yquad,basis,basisx,basisy)
+deallocate(quad_weight,xquad,yquad,zquad,basis,basisx,basisy,basisz)
 
 ! compute boundary integrals
 
@@ -2712,16 +3265,31 @@ deallocate(quad_weight,xquad,yquad,basis,basisx,basisy)
 
 qdegree = min(MAX_QUAD_ORDER_LINE,qdegree+1)
 
-do side=1,EDGES_PER_ELEMENT
+select case (global_element_kind)
+case (TRIANGULAR_ELEMENT)
+   ilimit = EDGES_PER_ELEMENT
+case (TETRAHEDRAL_ELEMENT)
+   ilimit = FACES_PER_ELEMENT
+end select
+
+do side=1,ilimit
 
 ! do sides that have at least one component that is NATURAL or MIXED
 
    doit = .false.
    do j=1,ss
-     if (edge_type(side,j) == NATURAL .or. edge_type(side,j) == MIXED) then
-        doit = .true.
-        exit
-     endif
+      select case (global_element_kind)
+      case (TRIANGULAR_ELEMENT)
+         if (edge_type(side,j) == NATURAL .or. edge_type(side,j) == MIXED) then
+            doit = .true.
+            exit
+         endif
+      case (TETRAHEDRAL_ELEMENT)
+         if (face_type(side,j) == NATURAL .or. face_type(side,j) == MIXED) then
+            doit = .true.
+            exit
+         endif
+      end select
    end do
 
    if (.not. doit) cycle
@@ -2730,23 +3298,67 @@ do side=1,EDGES_PER_ELEMENT
 
    select case (side)
    case (1)
-      xend(1) = xvert(2)
-      xend(2) = xvert(3)
-      yend(1) = yvert(2)
-      yend(2) = yvert(3)
+      xelem(1) = xvert(2)
+      xelem(2) = xvert(3)
+      yelem(1) = yvert(2)
+      yelem(2) = yvert(3)
+      if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+         xelem(3) = xvert(4)
+         yelem(3) = yvert(4)
+         zelem(1) = zvert(2)
+         zelem(2) = zvert(3)
+         zelem(3) = zvert(4)
+      endif
    case (2)
-      xend(1) = xvert(3)
-      xend(2) = xvert(1)
-      yend(1) = yvert(3)
-      yend(2) = yvert(1)
+      xelem(1) = xvert(3)
+      xelem(2) = xvert(1)
+      yelem(1) = yvert(3)
+      yelem(2) = yvert(1)
+      if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+         xelem(3) = xvert(4)
+         yelem(3) = yvert(4)
+         zelem(1) = zvert(3)
+         zelem(2) = zvert(1)
+         zelem(3) = zvert(4)
+      endif
    case (3)
-      xend(1) = xvert(1)
-      xend(2) = xvert(2)
-      yend(1) = yvert(1)
-      yend(2) = yvert(2)
+      xelem(1) = xvert(1)
+      xelem(2) = xvert(2)
+      yelem(1) = yvert(1)
+      yelem(2) = yvert(2)
+      if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+         xelem(3) = xvert(4)
+         yelem(3) = yvert(4)
+         zelem(1) = zvert(1)
+         zelem(2) = zvert(2)
+         zelem(3) = zvert(4)
+      endif
+   case (4)
+      xelem(1) = xvert(1)
+      xelem(2) = xvert(2)
+      xelem(3) = xvert(3)
+      yelem(1) = yvert(1)
+      yelem(2) = yvert(2)
+      yelem(3) = yvert(3)
+      zelem(1) = zvert(1)
+      zelem(2) = zvert(2)
+      zelem(3) = zvert(3)
    end select
-   call quadrature_rule_line(qdegree,xend,yend,nquad_pts,quad_weight,xquad, &
-                             yquad,jerr)
+   select case (global_element_kind)
+   case (TRIANGULAR_ELEMENT)
+      call quadrature_rule_line(qdegree,xelem,yelem,nquad_pts,quad_weight, &
+                                xquad,yquad,jerr)
+      allocate(zquad(nquad_pts),stat=astat)
+      if (astat /= 0) then
+         ierr = ALLOC_FAILED
+         call fatal("allocation failed in elemental_matrix")
+         stop
+      endif
+      zquad = 0.0_my_real
+   case (TETRAHEDRAL_ELEMENT)
+      call quadrature_rule_tri(qdegree,xelem,yelem,nquad_pts,quad_weight,xquad,&
+                               yquad,jerr,zvert=zelem,zquad=zquad)
+   end select
    if (jerr /= 0) then
       select case(jerr)
       case (1)
@@ -2780,27 +3392,45 @@ do side=1,EDGES_PER_ELEMENT
       return
    endif
 
-   select case(which_basis)
-   case("n")
-      call nodal_basis_func(xquad,yquad,xvert,yvert,degree(1),which_set,basis)
-   case("h")
-      call h_hier_basis_func(xquad,yquad,xvert,yvert,degree(1),which_set,basis)
-   case("p")
-      call p_hier_basis_func(xquad,yquad,xvert,yvert,degree,which_set,basis)
+   select case (global_element_kind)
+   case (TRIANGULAR_ELEMENT)
+      select case(which_basis)
+      case("n")
+         call nodal_basis_func(xquad,yquad,xvert,yvert,degree(1),which_set, &
+                               basis)
+      case("h")
+         call h_hier_basis_func(xquad,yquad,xvert,yvert,degree(1),which_set, &
+                                basis)
+      case("p")
+         call p_hier_basis_func(xquad,yquad,xvert,yvert,degree,which_set,basis)
+      end select
+   case (TETRAHEDRAL_ELEMENT)
+      select case(which_basis)
+      case("n")
+         call nodal_basis_func(xquad,yquad,zquad,xvert,yvert,zvert,degree(1), &
+                               which_set,basis)
+      case("h")
+         call h_hier_basis_func(xquad,yquad,zquad,xvert,yvert,zvert,degree(1), &
+                               which_set,basis)
+      case("p")
+         call p_hier_basis_func(xquad,yquad,zquad,xvert,yvert,zvert,degree, &
+                               which_set,basis)
+      end select
    end select
 
 ! evaluate boundary conditions at all quadrature points
 
    if (present(loc_bconds_a)) then
       if (present(extra_rhs)) then
-         call loc_bconds_a(xquad,yquad,bmark(side),bctype,bcc,bcrs,extra_bcrs)
+         call loc_bconds_a(xquad,yquad,zquad,bmark(side),bctype,bcc,bcrs, &
+                           extra_bcrs)
       else
-         call loc_bconds_a(xquad,yquad,bmark(side),bctype,bcc,bcrs)
+         call loc_bconds_a(xquad,yquad,zquad,bmark(side),bctype,bcc,bcrs)
       endif
    elseif (present(loc_bconds_s)) then
       do qp=1,nquad_pts
-         call loc_bconds_s(xquad(qp),yquad(qp),bmark(side),bctype,bcc(:,:,qp), &
-                           bcrs(:,qp))
+         call loc_bconds_s(xquad(qp),yquad(qp),zquad(qp),bmark(side),bctype, &
+                           bcc(:,:,qp),bcrs(:,qp))
          if (present(extra_rhs)) then
             do i=1,size(extra_bcrs,dim=2)
                extra_bcrs(:,i,qp) = bcrs(:,qp)
@@ -2844,7 +3474,7 @@ do side=1,EDGES_PER_ELEMENT
       end do
    end do
 
-   deallocate(quad_weight,xquad,yquad,basis,bcrs,bcc)
+   deallocate(quad_weight,xquad,yquad,zquad,basis,bcrs,bcc)
    if (present(extra_rhs)) then
       deallocate(extra_bcrs)
    endif
@@ -2901,10 +3531,8 @@ do eq1=1,nleq
 
 ! find the column in the global matrix
 
-            do i=linear_system%begin_row(eq),linear_system%end_row(eq)
-               if (linear_system%column_index(i)==col) exit
-            end do
-            if (linear_system%column_index(i) /= col) then
+            i = find_col_in_row(linear_system,eq,col)
+            if (i == 0) then
                ierr = PHAML_INTERNAL_ERROR
                call fatal("failed to find column in assemble")
                return
@@ -2971,6 +3599,12 @@ my_processor = my_proc(procs)
 if (my_processor == MASTER .or.  still_sequential .or. &
     nproc == 1) return
 
+if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+   ierr = PHAML_INTERNAL_ERROR
+   call fatal("cannot use fix_quad_error in 3D until basis_change in 3D is done")
+   stop
+endif
+
 ! some memory for messages
 
 allocate(nirecv(nproc),nrrecv(nproc),nisendv(nproc),nrsendv(nproc), &
@@ -2993,7 +3627,7 @@ end do
 ! convert to the hierarchical basis
 
 linear_system%matrix_val => linear_system%stiffness
-do lev=linear_system%nlev+2,2,-1
+do lev=linear_system%bubble_level,2,-1
    call basis_change(lev,TO_HIER,linear_system,do_mass=.true.)
 end do
 
@@ -3238,7 +3872,7 @@ end do
 
 ! convert back to nodal basis
 
-do lev=2,linear_system%nlev+2
+do lev=2,linear_system%bubble_level
    call basis_change(lev,TO_NODAL,linear_system,do_mass=.true.)
 end do
 
@@ -3299,11 +3933,11 @@ end do
 end subroutine mark_need_fix
 
 !          -------------------
-subroutine static_condensation(linear_system,grid,procs)
+subroutine static_condensation(linear_system,grid,procs,solver_control)
 !          -------------------
 
 !----------------------------------------------------
-! This routine performs static condensation to eliminate the face bases.
+! This routine performs static condensation to eliminate the bubble bases.
 !----------------------------------------------------
 
 !----------------------------------------------------
@@ -3312,12 +3946,13 @@ subroutine static_condensation(linear_system,grid,procs)
 type(linsys_type), intent(inout) :: linear_system
 type(grid_type), intent(in) :: grid
 type(proc_info), intent(in) :: procs
+type(solver_options), intent(in) :: solver_control
 !----------------------------------------------------
 ! Local variables:
 
 integer :: i, j, k, row, col, eq, objtype, brank, srank, lid, degree, loc_neq, &
            syssize, rowlen, info, eq_list(linear_system%neq), iblock, nblock, &
-           astat
+           astat, min_bubble, max_bubble
 real(my_real) :: temp
 real(my_real), allocatable :: row_block(:,:), row_block_t(:,:)
 real(my_real), pointer :: block(:,:)
@@ -3325,13 +3960,18 @@ integer, pointer :: ipiv(:)
 !----------------------------------------------------
 ! Begin executable code
 
-! if there are no face equations, just set the pointers and return
+! if there are no bubble equations, just set the pointers and return
 
-if (linear_system%begin_level(linear_system%nlev+2) == &
-    linear_system%begin_level(linear_system%nlev+3)) then
+if (linear_system%begin_level(linear_system%bubble_level) == &
+    linear_system%begin_level(linear_system%beyond_last_level)) then
    nullify(linear_system%elem_block)
-   linear_system%end_row => linear_system%end_row_edge
-   linear_system%neq = linear_system%neq_vert + linear_system%neq_edge
+   select case (global_element_kind)
+   case (TRIANGULAR_ELEMENT)
+      linear_system%end_row => linear_system%end_row_edge
+   case (TETRAHEDRAL_ELEMENT)
+      linear_system%end_row => linear_system%end_row_face
+   end select
+   linear_system%neq = linear_system%neq_cond
    linear_system%matrix_val => linear_system%condensed
    linear_system%rhs => linear_system%rhs_cond
    return
@@ -3339,31 +3979,22 @@ endif
 
 syssize = linear_system%system_size
 
-! factor the blocks of face bases from one element
+! factor the blocks of bubble bases from one element
 
 ! allocate the structure that contains the factored blocks
 
-allocate(linear_system%elem_block(size(grid%element)),stat=astat)
-if (astat /= 0) then
-   ierr = ALLOC_FAILED
-   call fatal("allocation failed in static_condensation",procs=procs)
-   return
-endif
-do i=1,size(linear_system%elem_block)
-   nullify(linear_system%elem_block(i)%matrix, &
-           linear_system%elem_block(i)%ipiv)
-   linear_system%elem_block(i)%neq = 0
-end do
-      
-! go through the high order equations, making a list of the first equation
+! go through the bubble equations, making a list of the first equation
 ! of each block corresponding to an element
+! keep track of the minimum and maximum lids found to allocate elem_block
 
 nblock = 0
-eq = linear_system%begin_level(linear_system%nlev+1)
+min_bubble = huge(0)
+max_bubble = -1
+eq = linear_system%begin_level(linear_system%bubble_level)
 do
-   if (eq >= linear_system%begin_level(linear_system%nlev+3)) exit
+   if (eq >= linear_system%begin_level(linear_system%beyond_last_level)) exit
 
-! find the edge or element corresponding to the block this row starts
+! find the element corresponding to the block this row starts
 
    call eq_to_grid(linear_system,linear_system%gid(eq),objtype,brank,srank, &
                    lid,grid)
@@ -3377,41 +4008,37 @@ do
       stop
    endif
 
-   select case(objtype)
+! only bubble equations should occur
 
-! vertex equations and unknown values should not occur
-
-   case (VERTEX_ID)
-      ierr = PHAML_INTERNAL_ERROR
-      call fatal("got a vertex ID when examining high order equation", &
-                  procs=procs)
-      stop
-
-   case default
+   if (objtype /= ELEMENT_ID) then
       ierr = PHAML_INTERNAL_ERROR
       call fatal("object type invalid  when examining high order equation", &
                  intlist=(/objtype/),procs=procs)
       stop
+   endif
 
-! skip edge equations
-
-   case (EDGE_ID)
-      eq = eq + syssize*(grid%edge(lid)%degree-1)
-      cycle
-
-! beginning of an element block; add to list
-
-   case (ELEMENT_ID)
-      nblock = nblock + 1
-      eq_list(nblock) = eq
-      degree = grid%element(lid)%degree
-      loc_neq = syssize*((degree-1)*(degree-2))/2
-      eq = eq + loc_neq
-
-   end select
+   nblock = nblock + 1
+   eq_list(nblock) = eq
+   degree = grid%element(lid)%degree
+   loc_neq = syssize*element_dof(degree)
+   eq = eq + loc_neq
+   min_bubble = min(min_bubble,lid)
+   max_bubble = max(max_bubble,lid)
 
 end do
 
+allocate(linear_system%elem_block(min_bubble:max_bubble),stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("allocation failed in static_condensation",procs=procs)
+   return
+endif
+do i=min_bubble,max_bubble
+   nullify(linear_system%elem_block(i)%matrix, &
+           linear_system%elem_block(i)%ipiv)
+   linear_system%elem_block(i)%neq = 0
+end do
+      
 ! check the kind of real for LAPACK
 
 if (my_real /= kind(0.0) .and. my_real /= kind(0.0d0)) then
@@ -3445,7 +4072,7 @@ do iblock = 1,nblock
 ! get the element degree, determine number of equations, and allocate memory
 
    degree = grid%element(lid)%degree
-   loc_neq = syssize*((degree-1)*(degree-2))/2
+   loc_neq = syssize*element_dof(degree)
          
    allocate(linear_system%elem_block(lid)%matrix(loc_neq,loc_neq), &
             linear_system%elem_block(lid)%ipiv(loc_neq))
@@ -3453,8 +4080,9 @@ do iblock = 1,nblock
    block => linear_system%elem_block(lid)%matrix
    ipiv => linear_system%elem_block(lid)%ipiv
 
-! copy the entries for this face into block, and the rows and rhs
+! copy the entries for this element interior into block, and the rows and rhs
 ! into row_block and row_block_t (transpose)
+! Dirichlet rows
 
    rowlen = linear_system%end_row(eq)-linear_system%begin_row(eq)+1
    allocate(row_block(loc_neq,rowlen+1),row_block_t(rowlen+1,loc_neq))
@@ -3469,9 +4097,14 @@ do iblock = 1,nblock
             block(i,col-eq+1) = linear_system%condensed(j)
          endif
          row_block(i,j-linear_system%begin_row(eq+i-1)+1) = &
-            linear_system%condensed(j)
-         row_block_t(j-linear_system%begin_row(eq+i-1)+1,i) = &
-            get_matval(linear_system,linear_system%condensed,col,eq+i-1)
+         linear_system%condensed(j)
+         k = find_col_in_row(linear_system,eq+i-1,col)
+         if (k == 0) then
+            row_block_t(j-linear_system%begin_row(eq+i-1)+1,i) = 0.0_my_real
+         else
+            row_block_t(j-linear_system%begin_row(eq+i-1)+1,i) = &
+               linear_system%condensed(k)
+         endif
       end do
       row_block(i,rowlen+1) = linear_system%rhs(eq+i-1)
       row_block_t(rowlen+1,i) = linear_system%rhs(eq+i-1)
@@ -3492,7 +4125,7 @@ do iblock = 1,nblock
    endif
 
 ! form the Schur complement A1 - A21 A2^-1 A12 for the condensed equations
-! (and also the rhs) where A1 is vertex and edge bases and A2 is face bases.
+! (and also the rhs) where A1 is vertex and edge bases and A2 is bubble bases.
 
 ! multiply the rows and rhs by A2^-1
 
@@ -3524,10 +4157,8 @@ do iblock = 1,nblock
          do k=1,loc_neq
             temp = temp + row_block_t(i,k)*row_block(k,j)
          end do
-         do k=linear_system%begin_row(row),linear_system%end_row(row)
-            if (linear_system%column_index(k) == col) exit
-         end do
-         if (k > linear_system%end_row(row)) then
+         k = find_col_in_row(linear_system,row,col)
+         if (k == 0) then
             ierr = PHAML_INTERNAL_ERROR
             call fatal("couldn't find col in row during static condensation", &
                        intlist=(/col,row/),procs=procs)
@@ -3535,68 +4166,37 @@ do iblock = 1,nblock
          endif
          linear_system%condensed(k) = linear_system%condensed(k) - temp
       end do
-      temp = 0.0_my_real
-      do k=1,loc_neq
-         temp = temp + row_block_t(i,k)*row_block(k,rowlen+1)
-      end do
-      linear_system%rhs_cond(row) = linear_system%rhs_cond(row) - temp
+! don't change the rhs of Dirichlet rows
+      if (linear_system%equation_type(row) /= DIRICHLET) then ! TEMP111116
+         temp = 0.0_my_real
+         do k=1,loc_neq
+            temp = temp + row_block_t(i,k)*row_block(k,rowlen+1)
+         end do
+         linear_system%rhs_cond(row) = linear_system%rhs_cond(row) - temp
+      endif
    end do
 !$omp end ordered
 
    deallocate(row_block,row_block_t)
-end do ! blocks of face equations
+end do ! blocks of bubble equations
 
 !$omp end parallel do
 
-! after static condensation, the matrix rows should not contain the face bases,
-! the number of equations should not include face bases, and the matrix values
-! and rhs should be the Schur complement
+! after static condensation, the matrix rows should not contain the bubble
+! bases, the number of equations should not include bubble bases, and the
+! matrix values and rhs should be the Schur complement
 
-linear_system%end_row => linear_system%end_row_edge
-linear_system%neq = linear_system%neq_vert + linear_system%neq_edge
+select case (global_element_kind)
+case (TRIANGULAR_ELEMENT)
+   linear_system%end_row => linear_system%end_row_edge
+case (TETRAHEDRAL_ELEMENT)
+   linear_system%end_row => linear_system%end_row_face
+end select
+linear_system%neq = linear_system%neq_cond
 linear_system%matrix_val => linear_system%condensed
 linear_system%rhs => linear_system%rhs_cond
 
 end subroutine static_condensation
-
-!        ----------
-function get_matval(linear_system,matval,row,col)
-!        ----------
-
-!----------------------------------------------------
-! This routine get the (row,col) matrix value in matval
-!----------------------------------------------------
-
-!----------------------------------------------------
-! Dummy arguments
-
-type(linsys_type), intent(in) :: linear_system
-real(my_real), intent(in) :: matval(:)
-integer, intent(in) :: row,col
-real(my_real) :: get_matval
-!----------------------------------------------------
-! Local variables:
-
-integer :: i
-
-!----------------------------------------------------
-! Begin executable code
-
-! TEMP this is used to build the transpose block in static condensation.
-!      If that's all it is used for, this can be made more efficient when
-!      the matrix is symmetric, and maybe other times, too
-
-! seach row for column col to get the value; return 0 if col is not found
-
-get_matval = 0.0_my_real
-do i=linear_system%begin_row(row), linear_system%end_row(row)
-   if (linear_system%column_index(i) == col) then
-      get_matval = matval(i)
-      exit
-   endif
-end do
-
-end function get_matval
 
 !          ---------------------
 subroutine destroy_linear_system(linear_system)
@@ -3623,19 +4223,34 @@ if (associated(linear_system%begin_row)) then
    if (associated(linear_system%condensed,linear_system%stiffness)) then
       nullify(linear_system%condensed)
    endif
-   if (associated(linear_system%condensed,linear_system%shifted)) then
-      nullify(linear_system%condensed)
-   endif
    if (associated(linear_system%rhs_cond,linear_system%rhs_nocond)) then
       nullify(linear_system%rhs_cond)
+   endif
+   if (associated(linear_system%elem_block)) then
+      do i=lbound(linear_system%elem_block,dim=1), &
+           ubound(linear_system%elem_block,dim=1)
+         if (associated(linear_system%elem_block(i)%matrix)) then
+            deallocate(linear_system%elem_block(i)%matrix, &
+                       linear_system%elem_block(i)%ipiv,stat=allocstat)
+            if (allocstat /= 0) then
+               call warning("deallocation failed in destroy_linear_system (elem_block component)")
+            endif
+         endif
+      end do
+      deallocate(linear_system%elem_block,stat=allocstat)
+      if (allocstat /= 0) then
+         call warning("deallocation failed in destroy_linear_system (elem_block)")
+      endif
    endif
    deallocate(linear_system%stiffness, &
               linear_system%column_index, &
               linear_system%begin_row, &
-              linear_system%end_row_face, &
+              linear_system%end_row_bubble, &
               linear_system%end_row_linear, &
               linear_system%end_row_edge, &
               linear_system%begin_level, &
+              linear_system%edge_begin_degree, &
+              linear_system%face_begin_degree, &
               linear_system%rhs_nocond, &
               linear_system%r_mine, &
               linear_system%r_others, &
@@ -3653,6 +4268,9 @@ if (associated(linear_system%begin_row)) then
    if (allocstat /= 0) then
       call warning("deallocation failed in destroy_linear_system")
    endif
+   if (associated(linear_system%end_row_face)) then
+      deallocate(linear_system%end_row_face)
+   endif
    nullify(linear_system%end_row)
    if (associated(linear_system%evecs)) then
       deallocate(linear_system%evecs,stat=allocstat)
@@ -3662,7 +4280,7 @@ if (associated(linear_system%begin_row)) then
    endif
    nullify(linear_system%matrix_val)
    if (associated(linear_system%mass)) then
-      deallocate(linear_system%mass, linear_system%shifted, stat=allocstat)
+      deallocate(linear_system%mass, stat=allocstat)
       if (allocstat /= 0) then
          call warning("deallocation failed in destroy_linear_system (mass)")
       endif
@@ -3674,21 +4292,6 @@ if (associated(linear_system%begin_row)) then
       endif
    endif
    call hash_table_destroy(linear_system%eq_hash)
-   if (associated(linear_system%elem_block)) then
-      do i=1,size(linear_system%elem_block)
-         if (associated(linear_system%elem_block(i)%matrix)) then
-            deallocate(linear_system%elem_block(i)%matrix, &
-                       linear_system%elem_block(i)%ipiv,stat=allocstat)
-            if (allocstat /= 0) then
-               call warning("deallocation failed in destroy_linear_system (elem_block component)")
-            endif
-         endif
-      end do
-      deallocate(linear_system%elem_block,stat=allocstat)
-      if (allocstat /= 0) then
-         call warning("deallocation failed in destroy_linear_system (elem_block)")
-      endif
-   endif
    if (associated(linear_system%nn_comm_remote_neigh)) then
       deallocate(linear_system%nn_comm_remote_neigh)
    endif
@@ -3751,7 +4354,8 @@ type(grid_type), intent(in) :: grid
 ! Local variables:
 
 ! TEMP assume the equation is scalar, i.e. system_size == 1
-real(my_real) :: cxx(1,1),cxy(1,1),cyy(1,1),cx(1,1),cy(1,1),c(1,1),rs(1),x,y
+real(my_real) :: cxx(1,1),cyy(1,1),czz(1,1),cxy(1,1),cxz(1,1),cyz(1,1), &
+                 cx(1,1),cy(1,1),cz(1,1),c(1,1),rs(1),x,y,z
 integer :: eq, object_type, basis_rank, system_rank, grid_lid
 !----------------------------------------------------
 ! Begin executable code
@@ -3781,11 +4385,14 @@ do eq=linsys%begin_level(1),linsys%begin_level(2)-1
                    grid_lid,grid)
    x = grid%vertex(grid_lid)%coord%x
    y = grid%vertex(grid_lid)%coord%y
+   z = zcoord(grid%vertex(grid_lid)%coord)
 
 ! evaluate the PDE right hand side at this point and assign it to the
 ! linear system right hand side
+! NOTE: element tags cannot be used in pdecoefs because we don't know what
+!       element to associate with the equation
 
-   call pdecoefs(x,y,cxx,cxy,cyy,cx,cy,c,rs)
+   call my_pdecoefs(1,x,y,z,cxx,cyy,czz,cxy,cxz,cyz,cx,cy,cz,c,rs)
    linsys%rhs(eq) = rs(1)
 
 end do

@@ -53,6 +53,7 @@ nproc=1
 !read *,nproc
 
 call phaml_create(soln, nproc=nproc, triangle_files="period.1", &
+!                  spawn_form=DEBUG_SLAVE, debug_command="idbc", &
                   draw_grid_who=MASTER  )
 
 call phaml_solve_pde(soln,                   &

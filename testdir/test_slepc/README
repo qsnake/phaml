@@ -1,0 +1,19 @@
+test01 1 smallest eigenvalue
+test02 5 smallest eigenvalues
+test03 1 interior eigenvalue
+test04 5 interior eigenvalues
+test05 harmonic extraction
+test06 shift invert
+test07 cayley
+test08 power
+test09 arnoldi     TEMP skip, gets SIGSEGV
+test10 lanczos
+test11 generalized Davidson
+test12 Jacobi Davidson, gmres Jacobi
+test13 Jacobi Davidson, gmres SOR
+test14 Jacobi Davidson, gmres ASM
+test15 Lapack
+test16 ARPACK smallest eigenvalue
+test17 ARPACK with shift invert and MUMPS 5 interior eigenvalues
+test18 ARPACK with shift invert and SuperLU 5 interior eigenvalues
+test19 BLOPEX

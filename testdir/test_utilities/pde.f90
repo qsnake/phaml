@@ -324,10 +324,37 @@ real(my_real), intent(out) :: x,y
 !----------------------------------------------------
 ! Begin executable code
 
-! Dummy version
-
-x = 0.0_my_real
-y = 0.0_my_real
+if (my_pde_id == 3) then
+   select case(ipiece)
+   case(1)
+      x = 1-s
+      y = 1
+   case(2)
+      x = cos(s)-1
+      y = sin(s)
+   case(3)
+      x = s-1
+      y = -1
+   case(4)
+      x = cos(s)+1
+      y = sin(s)
+   case(5)
+      x = -s
+      y = 0.5_my_real
+   case(6)
+      x = -0.5_my_real
+      y = -s
+   case(7)
+      x = s
+      y = -0.5_my_real
+   case(8)
+      x = 0.5_my_real
+      y = s
+   end select
+else
+   x = 0.0_my_real
+   y = 0.0_my_real
+endif
 
 end subroutine boundary_point
 
@@ -342,6 +369,7 @@ function boundary_npiece(hole)
 
 !----------------------------------------------------
 
+use phaml
 implicit none
 
 !----------------------------------------------------
@@ -352,7 +380,15 @@ integer :: boundary_npiece
 !----------------------------------------------------
 ! Begin executable code
 
-boundary_npiece = 0
+if (my_pde_id == 3) then
+   if (hole==0 .or. hole==1) then
+      boundary_npiece = 4
+   else
+      boundary_npiece = 0
+   endif
+else
+   boundary_npiece = 0
+endif
 
 end function boundary_npiece
 
@@ -379,13 +415,32 @@ implicit none
 ! Dummy arguments
 
 real(my_real), intent(out) :: start(:), finish(:)
+real(my_real) :: pi
 !----------------------------------------------------
 ! Begin executable code
 
-! Dummy version
-
-start = 0.0_my_real
-finish = 0.0_my_real
+if (my_pde_id == 3) then
+   pi = 4*atan(1.0_my_real)
+   start(1)  = 0
+   finish(1) = 2
+   start(2)  = pi/2
+   finish(2) = 3*pi/2
+   start(3)  = 0
+   finish(3) = 2
+   start(4)  = 3*pi/2
+   finish(4) = 5*pi/2
+   start(5)  = -0.5_my_real
+   finish(5) = 0.5_my_real
+   start(6)  = -0.5_my_real
+   finish(6) = 0.5_my_real
+   start(7)  = -0.5_my_real
+   finish(7) = 0.5_my_real
+   start(8)  = -0.5_my_real
+   finish(8) = 0.5_my_real
+else
+   start = 0.0_my_real
+   finish = 0.0_my_real
+endif
 
 end subroutine boundary_param
 

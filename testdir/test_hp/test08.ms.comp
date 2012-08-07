@@ -1,9 +1,10 @@
 ---------------------------------------------------------
-           PHAML   Version 1.9.1
+           PHAML   Version 1.11.0
 
 Output from the master process
   PDE id is     0
   Number of slave processors is     4
+  Number of OpenMP threads is       1
 
 Subroutine phaml_solve_pde parameters:
   max_elem           infinity
@@ -17,11 +18,18 @@ Subroutine phaml_solve_pde parameters:
   task               BALANCE_REFINE_SOLVE
   solve_init         true
   system_size                 1
+  pde_has_first_order_terms  false
+  pde_has_cross_derivative   false
+  laplacian_operator         true
+  isosceles_right_triangles  true
   print_grid_when    PHASES
   print_grid_who     MASTER
   print_linsys_when  NEVER
   print_solver_when  NEVER
-  print_error_when   NEVER
+  print_error_when   PHASES
+  print_error_who    MASTER
+  print_error_what   ENERGY_L2_ERR
+  print_errest_what  NEVER
   print_time_when    NEVER
   pause_after_draw   false
   pause_after_phases false
@@ -36,7 +44,7 @@ Subroutine phaml_solve_pde parameters:
   edge_rule          MINIMUM_RULE
   hp_strategy        HP_TYPEPARAM
   tp_gamma            2.0000000000E-01
-  refterm            DOUBLE_NEQ_SMOOTH
+  refterm            DOUBLE_NEQ
   derefine           true
   partition_method   RTK
   prebalance         BALANCE_ELEMENTS
@@ -58,12 +66,22 @@ Total Grid:
    degrees of freedom      =           9
    min and max degree      =           1          1
 
+Norms of error:
+   energy norm of error       4.0333158308E+00
+   L2 norm of error           4.5345860840E-01
+
 Total Grid:
    number of vertices      =          12
    number of leaf elements =          14
    number of levels        =           2
    degrees of freedom      =          32
    min and max degree      =           1          2
+
+Norms of error:
+   energy norm of error       2.1059295444E+00
+      reduced by              5.2213355779E-01
+   L2 norm of error           1.0099304273E-01
+      reduced by              2.2271722460E-01
 
 Total Grid:
    number of vertices      =          16
@@ -72,6 +90,12 @@ Total Grid:
    degrees of freedom      =          44
    min and max degree      =           1          2
 
+Norms of error:
+   energy norm of error       1.9925834787E+00
+      reduced by              9.4617765536E-01
+   L2 norm of error           9.3204715763E-02
+      reduced by              9.2288253962E-01
+
 Total Grid:
    number of vertices      =          27
    number of leaf elements =          38
@@ -79,61 +103,113 @@ Total Grid:
    degrees of freedom      =          86
    min and max degree      =           1          2
 
+Norms of error:
+   energy norm of error       1.1931560391E+00
+      reduced by              5.9879852057E-01
+   L2 norm of error           3.2006417294E-02
+      reduced by              3.4339911915E-01
+
 Total Grid:
    number of vertices      =          58
    number of leaf elements =          90
    number of levels        =           6
-   degrees of freedom      =         200
+   degrees of freedom      =         196
    min and max degree      =           1          2
+
+Norms of error:
+   energy norm of error       4.7452184719E-01
+      reduced by              3.9770309299E-01
+   L2 norm of error           6.7019997787E-03
+      reduced by              2.0939550082E-01
 
 Total Grid:
    number of vertices      =          74
    number of leaf elements =         106
    number of levels        =           7
-   degrees of freedom      =         300
+   degrees of freedom      =         352
    min and max degree      =           1          4
 
+Norms of error:
+   energy norm of error       1.7920770933E-01
+      reduced by              3.7765955434E-01
+   L2 norm of error           2.1393160691E-03
+      reduced by              3.1920563111E-01
+
 Total Grid:
-   number of vertices      =         133
-   number of leaf elements =         224
+   number of vertices      =         135
+   number of leaf elements =         227
    number of levels        =           8
-   degrees of freedom      =        1420
-   min and max degree      =           1          5
+   degrees of freedom      =        1092
+   min and max degree      =           1          4
+
+Norms of error:
+   energy norm of error       6.0518520569E-02
+      reduced by              3.3770043038E-01
+   L2 norm of error           1.1511668754E-03
+      reduced by              5.3810042004E-01
 
 Total Grid:
-   number of vertices      =         143
-   number of leaf elements =         244
+   number of vertices      =         157
+   number of leaf elements =         271
    number of levels        =           8
-   degrees of freedom      =        1494
-   min and max degree      =           1          5
+   degrees of freedom      =        1247
+   min and max degree      =           1          4
+
+Norms of error:
+   energy norm of error       3.9029120925E-02
+      reduced by              3.2245600651E-01
+   L2 norm of error           7.4462215037E-04
+      reduced by              3.2342059449E-01
 
 Total Grid:
-   number of vertices      =         198
-   number of leaf elements =         353
+   number of vertices      =         228
+   number of leaf elements =         410
    number of levels        =           8
-   degrees of freedom      =        2445
-   min and max degree      =           1          5
+   degrees of freedom      =        2337
+   min and max degree      =           1          7
+
+Norms of error:
+   energy norm of error       8.1531141000E-03
+      reduced by              2.0889822540E-01
+   L2 norm of error           5.0617215308E-05
+      reduced by              6.7977047531E-02
 
 Total Grid:
-   number of vertices      =         230
-   number of leaf elements =         408
+   number of vertices      =         303
+   number of leaf elements =         528
    number of levels        =           9
-   degrees of freedom      =        4672
-   min and max degree      =           1          8
+   degrees of freedom      =        4744
+   min and max degree      =           1         10
+
+Norms of error:
+   energy norm of error       1.0643425691E-03
+      reduced by              1.3054429952E-01
+   L2 norm of error           7.9684543917E-06
+      reduced by              1.5742577586E-01
 
 Total Grid:
-   number of vertices      =         275
-   number of leaf elements =         496
+   number of vertices      =         305
+   number of leaf elements =         532
    number of levels        =           9
-   degrees of freedom      =        5522
-   min and max degree      =           1          9
+   degrees of freedom      =        5005
+   min and max degree      =           1         10
+
+Norms of error:
+   energy norm of error       6.1421845486E-04
+      reduced by              5.7708718292E-01
+   L2 norm of error           6.3642266246E-06
+      reduced by              7.9867767471E-01
 
 Total Grid:
-   number of vertices      =         275
-   number of leaf elements =         496
+   number of vertices      =         305
+   number of leaf elements =         532
    number of levels        =           9
-   degrees of freedom      =        5522
-   min and max degree      =           1          9
+   degrees of freedom      =        5005
+   min and max degree      =           1         10
+
+Norms of error:
+   energy norm of error       6.1421845486E-04
+   L2 norm of error           6.3642266246E-06
 
 ---------------------------------------------------------
 phaml_solve_pde complete

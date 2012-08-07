@@ -1,9 +1,10 @@
 ---------------------------------------------------------
-           PHAML   Version 1.9.1
+           PHAML   Version 1.11.0
 
 Output from slave number     1
   PDE id is     0
   Number of slave processors is     1
+  Number of OpenMP threads is       1
 
 Subroutine phaml_solve_pde parameters:
   max_elem           infinity
@@ -17,6 +18,10 @@ Subroutine phaml_solve_pde parameters:
   task               BALANCE_REFINE_SOLVE
   solve_init         true
   system_size                 1
+  pde_has_first_order_terms  false
+  pde_has_cross_derivative   false
+  laplacian_operator         true
+  isosceles_right_triangles  true
   print_grid_when    PHASES
   print_grid_who     SLAVES
   print_linsys_when  NEVER
@@ -37,7 +42,7 @@ Subroutine phaml_solve_pde parameters:
   errtype            ABSOLUTE_ERROR
   reftype            H_ADAPTIVE
   edge_rule          MINIMUM_RULE
-  refterm            DOUBLE_NEQ_SMOOTH
+  refterm            DOUBLE_NEQ
   derefine           true
   partition_method   RTK
   prebalance         BALANCE_ELEMENTS
@@ -114,20 +119,20 @@ My Grid:
    min and max degree       =           1          1
 
 Norms of error:
-   energy norm of error       2.7005916214E+00
-      reduced by              7.8045228078E-01
-   energy error estimate      5.1474964886E-01
-      reduced by              5.0222687995E-01
-      effectivity             1.9060625264E-01
-   Linf norm of error         6.3793712868E-01
-      reduced by              7.5673331546E-01
-   Linf error estimate        6.3793712868E-01
-      reduced by              7.5673331546E-01
+   energy norm of error       2.7005933184E+00
+      reduced by              7.8045277121E-01
+   energy error estimate      5.1474755851E-01
+      reduced by              5.0222484046E-01
+      effectivity             1.9060535883E-01
+   Linf norm of error         6.3793306207E-01
+      reduced by              7.5672849156E-01
+   Linf error estimate        6.3793306207E-01
+      reduced by              7.5672849156E-01
       effectivity             1.0000000000E+00
-   L2 norm of error           1.5149193365E-01
-      reduced by              6.6133191458E-01
-   L2 error estimate          1.5149193365E-01
-      reduced by              6.6133191458E-01
+   L2 norm of error           1.5148349537E-01
+      reduced by              6.6129507760E-01
+   L2 error estimate          1.5148349537E-01
+      reduced by              6.6129507760E-01
       effectivity             1.0000000000E+00
 
 My Grid:
@@ -142,20 +147,20 @@ My Grid:
    min and max degree       =           1          1
 
 Norms of error:
-   energy norm of error       1.4320091156E+00
-      reduced by              5.3025755701E-01
-   energy error estimate      2.6302665051E-01
-      reduced by              5.1097975704E-01
-      effectivity             1.8367665934E-01
-   Linf norm of error         1.7983417448E-01
-      reduced by              2.8189952645E-01
-   Linf error estimate        1.7983417448E-01
-      reduced by              2.8189952645E-01
+   energy norm of error       1.4320093568E+00
+      reduced by              5.3025731310E-01
+   energy error estimate      2.6306611856E-01
+      reduced by              5.1105850666E-01
+      effectivity             1.8370418972E-01
+   Linf norm of error         1.7983958206E-01
+      reduced by              2.8190980019E-01
+   Linf error estimate        1.7983958206E-01
+      reduced by              2.8190980019E-01
       effectivity             1.0000000000E+00
-   L2 norm of error           2.8809502934E-02
-      reduced by              1.9017186090E-01
-   L2 error estimate          2.8809502934E-02
-      reduced by              1.9017186090E-01
+   L2 norm of error           2.8815996190E-02
+      reduced by              1.9022531874E-01
+   L2 error estimate          2.8815996190E-02
+      reduced by              1.9022531874E-01
       effectivity             1.0000000000E+00
 
 My Grid:
@@ -170,20 +175,20 @@ My Grid:
    min and max degree       =           1          1
 
 Norms of error:
-   energy norm of error       9.0257495127E-01
-      reduced by              6.3028575825E-01
-   energy error estimate      2.2193383962E-01
-      reduced by              8.4376940203E-01
-      effectivity             2.4588965083E-01
-   Linf norm of error         1.1603117228E-01
-      reduced by              6.4521202722E-01
-   Linf error estimate        1.1603117228E-01
-      reduced by              6.4521202722E-01
+   energy norm of error       9.0257519266E-01
+      reduced by              6.3028582068E-01
+   energy error estimate      2.2194574078E-01
+      reduced by              8.4368805074E-01
+      effectivity             2.4590277086E-01
+   Linf norm of error         1.1603168300E-01
+      reduced by              6.4519546624E-01
+   Linf error estimate        1.1603168300E-01
+      reduced by              6.4519546624E-01
       effectivity             1.0000000000E+00
-   L2 norm of error           1.5247550559E-02
-      reduced by              5.2925420456E-01
-   L2 error estimate          1.5247550559E-02
-      reduced by              5.2925420456E-01
+   L2 norm of error           1.5250038246E-02
+      reduced by              5.2922127506E-01
+   L2 error estimate          1.5250038246E-02
+      reduced by              5.2922127506E-01
       effectivity             1.0000000000E+00
 
 My Grid:
@@ -198,48 +203,20 @@ My Grid:
    min and max degree       =           1          1
 
 Norms of error:
-   energy norm of error       7.0055592507E-01
-      reduced by              7.7617479200E-01
-   energy error estimate      1.7115024026E-01
-      reduced by              7.7117685414E-01
-      effectivity             2.4430632037E-01
-   Linf norm of error         3.8991699994E-02
-      reduced by              3.3604504055E-01
-   Linf error estimate        3.8991699994E-02
-      reduced by              3.3604504055E-01
+   energy norm of error       7.0055591751E-01
+      reduced by              7.7617457605E-01
+   energy error estimate      1.7115074834E-01
+      reduced by              7.7113779133E-01
+      effectivity             2.4430704825E-01
+   Linf norm of error         3.8994303492E-02
+      reduced by              3.3606599925E-01
+   Linf error estimate        3.8994303492E-02
+      reduced by              3.3606599925E-01
       effectivity             1.0000000000E+00
-   L2 norm of error           1.0121586756E-02
-      reduced by              6.6381722866E-01
-   L2 error estimate          1.0121586756E-02
-      reduced by              6.6381722866E-01
-      effectivity             1.0000000000E+00
-
-My Grid:
-   number of vertices       =         554
-   number of vertices I own =         554
-   number of elements       =        2040
-   number of leaf elements  =        1024
-   leaf elements I own      =        1024
-   number of levels         =          12
-   degrees of freedom       =         554
-   degrees of freedom I own =         554
-   min and max degree       =           1          1
-
-Norms of error:
-   energy norm of error       4.6191516772E-01
-      reduced by              6.5935516521E-01
-   energy error estimate      1.1929170111E-01
-      reduced by              6.9699990445E-01
-      effectivity             2.5825456588E-01
-   Linf norm of error         2.2802360447E-02
-      reduced by              5.8480036650E-01
-   Linf error estimate        2.2802360447E-02
-      reduced by              5.8480036650E-01
-      effectivity             1.0000000000E+00
-   L2 norm of error           5.0597314257E-03
-      reduced by              4.9989508045E-01
-   L2 error estimate          5.0597314257E-03
-      reduced by              4.9989508045E-01
+   L2 norm of error           1.0121603079E-02
+      reduced by              6.6371001275E-01
+   L2 error estimate          1.0121603079E-02
+      reduced by              6.6371001275E-01
       effectivity             1.0000000000E+00
 
 My Grid:
@@ -255,13 +232,41 @@ My Grid:
 
 Norms of error:
    energy norm of error       4.6191516772E-01
-   energy error estimate      1.1929170111E-01
-      effectivity             2.5825456588E-01
-   Linf norm of error         2.2802360447E-02
-   Linf error estimate        2.2802360447E-02
+      reduced by              6.5935517233E-01
+   energy error estimate      1.1929170114E-01
+      reduced by              6.9699783547E-01
+      effectivity             2.5825456593E-01
+   Linf norm of error         2.2802360485E-02
+      reduced by              5.8476132263E-01
+   Linf error estimate        2.2802360485E-02
+      reduced by              5.8476132263E-01
       effectivity             1.0000000000E+00
-   L2 norm of error           5.0597314257E-03
-   L2 error estimate          5.0597314257E-03
+   L2 norm of error           5.0597314225E-03
+      reduced by              4.9989427398E-01
+   L2 error estimate          5.0597314225E-03
+      reduced by              4.9989427398E-01
+      effectivity             1.0000000000E+00
+
+My Grid:
+   number of vertices       =         554
+   number of vertices I own =         554
+   number of elements       =        2040
+   number of leaf elements  =        1024
+   leaf elements I own      =        1024
+   number of levels         =          12
+   degrees of freedom       =         554
+   degrees of freedom I own =         554
+   min and max degree       =           1          1
+
+Norms of error:
+   energy norm of error       4.6191516772E-01
+   energy error estimate      1.1929170114E-01
+      effectivity             2.5825456593E-01
+   Linf norm of error         2.2802360485E-02
+   Linf error estimate        2.2802360485E-02
+      effectivity             1.0000000000E+00
+   L2 norm of error           5.0597314225E-03
+   L2 error estimate          5.0597314225E-03
       effectivity             1.0000000000E+00
 
 ---------------------------------------------------------

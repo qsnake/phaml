@@ -1,0 +1,21 @@
+
+------------------------------------------------------
+          PHAML Version 1.11.0 WARNING
+parallel not yet supported in 3D; setting nproc to 1
+------------------------------------------------------
+
+
+Total Grid:
+   number of vertices      =         900
+   number of leaf elements =        3894
+   number of levels        =          11
+   degrees of freedom      =         900
+   min and max degree      =           1          1
+
+Norms of error:
+   energy norm of error       5.6713602914E+00
+   energy error estimate      1.0054968325E+01
+      effectivity             1.7729376744E+00
+   Linf norm of error         4.9948026511E-01
+   Linf error estimate        7.1483902389E-01
+      effectivity             1.4311657013E+00

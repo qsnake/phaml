@@ -29,6 +29,7 @@ module refine_uniform_mod
 
 use global
 use gridtype_mod
+use linsystype_mod
 use refine_elements
 use grid_util
 use hash_mod
@@ -69,7 +70,7 @@ type(refine_options), intent(in) :: refine_control
 !----------------------------------------------------
 ! Local variables:
 
-integer :: element_list(size(grid%element)), edge_list(size(grid%edge)), &
+integer :: element_list(grid%biggest_elem), edge_list(grid%biggest_edge), &
            nelem, nedge, i, delta_dof, delta_dof_own, total_delta_dof, &
            total_delta_dof_own, errcode, old_edge_deg(EDGES_PER_ELEMENT)
 !----------------------------------------------------
@@ -140,7 +141,7 @@ grid%dof_own = grid%dof_own + total_delta_dof_own
 end subroutine refine_uniform_p
 
 !          ----------------
-subroutine refine_uniform_h(grid,refine_control)
+subroutine refine_uniform_h(grid,refine_control,solver_control)
 !          ----------------
 
 !----------------------------------------------------
@@ -152,13 +153,14 @@ subroutine refine_uniform_h(grid,refine_control)
 
 type(grid_type), intent(inout) :: grid
 type(refine_options), intent(in) :: refine_control
+type(solver_options), intent(in) :: solver_control
 !----------------------------------------------------
 ! Local variables:
 
 character(len=1), pointer :: reftype(:)
-integer :: lev, elem, errcode, mate, parent, i, nelem, astat, &
-           element_list(size(grid%element)), vert_lid(2,size(grid%element)), &
-           edge_lid(6,size(grid%element)), elem_lid(4,size(grid%element)), &
+integer :: lev, nlev, elem, errcode, mate, parent, i, nelem, astat, &
+           element_list(grid%biggest_elem),vert_lid(2,grid%biggest_elem),&
+           edge_lid(6,grid%biggest_elem), elem_lid(4,grid%biggest_elem), &
            one_vert_lid(2),one_edge_lid(6),one_elem_lid(4), &
            delta_dof, total_delta_dof, delta_dof_own, total_delta_dof_own, &
            delta_nelem, total_delta_nelem, delta_nelem_leaf, &
@@ -166,10 +168,19 @@ integer :: lev, elem, errcode, mate, parent, i, nelem, astat, &
            total_delta_nelem_leaf_own, delta_nedge, total_delta_nedge, &
            delta_nedge_own, total_delta_nedge_own, delta_nvert, &
            total_delta_nvert, delta_nvert_own, total_delta_nvert_own, &
-           max_nlev, max_max_nlev
+           max_nlev, max_max_nlev, refinement_edge_list(grid%biggest_edge), &
+           refedge, nrefedge
 
 !----------------------------------------------------
 ! Begin executable code
+
+if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+   if (omp_get_num_threads() /= 1) then
+      ierr = PHAML_INTERNAL_ERROR
+      call fatal("refine_uniform_h: OpenMP not yet supported in 3D")
+      stop
+   endif
+endif
 
 ! mark elements that are owned leaves in the input grid, or are needed for
 ! compatibility, for refinement.  Only mark one in each compatibly divisible
@@ -202,11 +213,13 @@ do lev=1,grid%nlev
             parent = elem
 ! traverse the compatibility chain
             do
-               parent = hash_decode_key(grid%element(parent)%mate/2,grid%elem_hash)
+               parent = hash_decode_key(grid%element(parent)%mate/MAX_CHILD,&
+                                        grid%elem_hash)
                if (grid%element(parent)%mate == BOUNDARY) then
                   mate = BOUNDARY
                else
-                  mate = hash_decode_key(grid%element(parent)%mate,grid%elem_hash)
+                  mate = hash_decode_key(grid%element(parent)%mate, &
+                                         grid%elem_hash)
                endif
                if (mate == BOUNDARY) then
                   reftype(parent) = "h"
@@ -228,7 +241,9 @@ end do
 
 ! for each level, starting with the coarsest level ...
 
-do lev=1,grid%nlev
+nrefedge = 0
+nlev = grid%nlev
+do lev=1,nlev
 
 ! create a list of elements to be refined
 
@@ -268,7 +283,7 @@ do lev=1,grid%nlev
 !$omp  private(i,errcode,one_elem_lid,one_edge_lid,one_vert_lid, &
 !$omp    delta_dof, delta_dof_own, delta_nelem, delta_nelem_leaf, &
 !$omp    delta_nelem_leaf_own, delta_nedge, delta_nedge_own, &
-!$omp    delta_nvert, delta_nvert_own, max_nlev) &
+!$omp    delta_nvert, delta_nvert_own, max_nlev, refedge) &
 !$omp  reduction(+ : total_delta_dof, total_delta_dof_own, total_delta_nelem, &
 !$omp    total_delta_nelem_leaf, total_delta_nelem_leaf_own, total_delta_nedge,&
 !$omp    total_delta_nedge_own, total_delta_nvert, total_delta_nvert_own) &
@@ -279,8 +294,9 @@ do lev=1,grid%nlev
       one_elem_lid = elem_lid(:,i)
       one_edge_lid = edge_lid(:,i)
       one_vert_lid = vert_lid(:,i)
-      call bisect_triangle_pair(grid,element_list(i),errcode,refine_control, &
-                                reftype=reftype,vert_child_lid=one_vert_lid, &
+      call h_refine_element(grid,element_list(i),errcode,refedge, &
+                   refine_control,solver_control, &
+                   reftype=reftype,vert_child_lid=one_vert_lid, &
                    edge_child_lid=one_edge_lid,elem_child_lid=one_elem_lid, &
                    delta_dof=delta_dof,delta_dof_own=delta_dof_own, &
                    delta_nelem=delta_nelem,delta_nelem_leaf=delta_nelem_leaf, &
@@ -299,6 +315,14 @@ do lev=1,grid%nlev
       total_delta_nvert = total_delta_nvert + delta_nvert
       total_delta_nvert_own = total_delta_nvert_own + delta_nvert_own
       max_max_nlev = max(max_max_nlev,max_nlev)
+
+! TEMP3D OPENMP this will not work in parallel
+      if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+         if (refedge /= -1) then
+            nrefedge = nrefedge + 1
+            refinement_edge_list(nrefedge) = refedge
+         endif
+      endif
 
    end do
 !$omp end parallel do
@@ -319,6 +343,13 @@ do lev=1,grid%nlev
    call after_h_refine(grid,element_list,nelem,vert_lid,edge_lid,elem_lid)
 
 end do
+
+! for tetrahedra, make sure there are no hanging nodes
+
+if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+   call remove_hanging_nodes(grid,refinement_edge_list,nrefedge, &
+                             refine_control,solver_control)
+endif
 
 end subroutine refine_uniform_h
 

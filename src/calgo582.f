@@ -1052,7 +1052,15 @@ c               bounds checking when compiling this file.
           PLSTRT = DEPTH - LEVEL + 1
           IF (REVERS) XLEVEL = PLSTRT
           LSTART = LVLPTR (PLSTRT)
-          LEND = LVLPTR (PLSTRT - 1) - 1
+c WFM 12/22/2011 I'm guessing that the last time through, it should go the all
+c                the remaining entries of LVLLST.  So I put the following
+c                if-then-else to make LEND be the end of LVLLST instead of
+c                using that 0 subscript
+          IF (PLSTRT == 1) THEN
+             LEND = SIZE(LVLLST)
+          ELSE
+             LEND = LVLPTR (PLSTRT - 1) - 1
+          ENDIF
 C
           DO 300 I = LSTART, LEND
               LVLLSI = LVLLST(I)

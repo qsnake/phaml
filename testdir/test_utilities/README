@@ -5,3 +5,9 @@ test04 evaluate
 test05 update_usermod
 test06 store_matrix
 test07 get_grid_soln
+test08 store_grid as .poly
+test09 store_grid as .poly with solution
+test10 store_grid as .poly with hole
+test11 store_grid as .msh
+test12 store_grid as .msh with solution
+test13 store_grid as .msh with hole

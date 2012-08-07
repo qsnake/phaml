@@ -107,6 +107,9 @@ might as well just make one version of ATLAS with g77.
 BLACS
 -----
 
+This is no longer useful.  It was previously only used for MUMPS.  Now
+configure PETSC to include MUMPS, ScaLAPACK and BLACS.
+
 BLACS Version 1.1, patch level 3
 
 mpiblacs.tgz, mpiblacs-patch03.tgz from netlib.
@@ -300,12 +303,15 @@ make install |& tee install.log
 MUMPS
 -----
 
-MUMPS 4.9.2
+This is no longer useful.  Instead, configure PETSc to include MUMPS.
+
+MUMPS 4.10.0
 
 For a parallel version:
 cp Make.inc/Makefile.INTEL.PAR Makefile.inc (or replace INTEL with appropiate)
 
 Changes to Makefile.inc
+CC = mpicc
 FC = mpif90 (mpif77 for lam)
 FL = mpif90 (mpif77 for lam)
 LAMHF77=ifort (if using lam and desired compiler is not the default)
@@ -325,6 +331,7 @@ LIBBLAS = -lblas
 
 make   (makes the double precision library)
 make z (if you also want to make the double complex library)
+make alllib (to make s, d, c and z libraries)
 move lib/* and copy include/ to the desired locations
 
 Versions 4.8.4 to 4.9.2 have a bug.  The workaround consists in inserting
@@ -406,12 +413,16 @@ May need to add read and execute permission for others on ParMETIS directory.
 PETSc
 -----
 
-PETSc Version 3.0.0 (Versions earlier than 2.3.3 may require changes in
+PETSc Version 3.2.5 (Versions earlier than 2.3.3 may require changes in
                      mkmkfile.sh, petsc_init.F90, and petsc_interf.F90.
                      Search them for "before" for the changes.)
 
 setenv PETSC_DIR `pwd`
 setenv PETSC_ARCH linux
+
+setenv LAMHF77 ifort (if using lam and desired compiler is not the default)
+setenv OMPI_F77 ifort (if using OpenMPI and
+setenv OMPI_FC ifort   desired compiler is not the default)
 
 ./configure --prefix=<install directory> --with-cc=mpicc --with-fc=mpif90 --with-debugging=0 --with-x=0
 
@@ -421,35 +432,59 @@ make install
 clean up with:
 make allclean
 
+If compiling for use with SLEPc, omit --with-x=0
+If debugging is desired, omit --with-debugging=0
+
+To include support for SuperLU, add
+  --download-superlu  for sequential
+  --download-superlu_dist --download-parmetis --download-metis for parallel
+After installing, make a link for libsuperlu.a in the lib directory so I don't
+have to change version number in my makefiles every time it changes.
+
+To include support for MUMPS, add
+  --download-mumps --download-scalapack --download-blacs --download-parmetis --download-metis
+
+To make a sequential version:
+   add --with-mpi=0 to the configure flags and change the compilers
+
+To include support for sequential MUMPS takes more work, at least in 3.2-p5.
+I have been told it will be changed in a future release.
+--with-mumps-dir=<serial mumps dir> --with-mumps-serial --with-mpiuni-namespace)
+
+  edit <petsc dir>/config/PETSc/packages/MUMPS.py
+    change self.liblist to (and omit single precision mumps if necessary)
+    self.liblist   = [['libcmumps.a','libdmumps.a','libsmumps.a','libzmumps.a','libmumps_common.a','libpord.a'],
+                     ['libcmumps.a','libdmumps.a','libsmumps.a','libzmumps.a','libmumps_common.a','libpord.a','libpthread.a'],
+                     ['libcmumps.a','libdmumps.a','libsmumps.a','libzmumps.a','libmumps_common.a','libpord.a','libmpiseq.a']]
+    change self.deps to 
+    self.deps       = [self.blasLapack]
+  use --with-mumps-dir=/local/apps/mumps/intel/none
+  use --CFLAGS=-DMPIUNI_AVOID_MPI_NAMESPACE
+
 The NAG compiler version 5.1(310) reports #error as an unknown fpp directive
 in PETSC__HOME/include/finclude/petscdef.h.  This line will never be reached
 (as long as an int is either 4 or 8 bytes), so just comment it out.
 
 With NAG compiler 5.2(695), I also needed --LIBS=/local/apps/nag/lib/libf52.a
 
+With NAG compiler 5.3(887)
+ - use --with-fc=nagfor
+ - set FFLAGS to the flags shown under pepe in mkmkfiles.sh
+ - if including ScaLAPACK (for MUMPS) add -w=all -dusty -dcfuns to FFLAGS
+ - could use -w=all -dusty anyway to get rid of obsolescent warnings
+
+With Absoft fortran, also need --FFLAGS=-YNO_CDEC
+
+With g95, also need --FFLAGS=-fno-second-underscore
+
 On raritan, I also need
 --with-lapack-lib=/usr/lib/liblapack.a --with-blas-lib=/usr/lib/libblas.a
 
-PETSc with BLOPEX
------------------
-
-setenv PETSC_DIR `pwd`
-setenv PETSC_ARCH linux
-
-./configure --prefix=<petsc installation directory> --FC=mpif90 --CC=mpicc --with-debugging=0 --with-x=0 --download-blopex=1 --with-shared=0
-
-make
-make install
-
-Then copy (if not placed by make install)
-   lobpcg.h, interpreter.h, multivector.h from
-      $PETSC_DIR/externalpackages/blopex_abstract/[krylov,multivector] and
-      $PETSC_DIR/src/contrib/blopex/petsc-interface/petsc-interface.h
-      to the petsc include directory
-   linux/lib/libBLOPEX.a to the petsc lib directory
-
 ScaLAPACK
 ---------
+
+This is no longer useful.  It was previously only used for MUMPS.  Now
+configure PETSC to include MUMPS, ScaLAPACK and BLACS.
 
 ScaLAPACK Version 1.8
 
@@ -474,8 +509,30 @@ make
 
 With the NAG f95 compiler, need -dcfuns -dusty -w=all
 
+SLEPc
+-----
+
+SLEPc Version 3.2
+
+SLEPc picks up most of its options from the PETSc installation.
+Make sure LAMHF77 or OMPI_F77 and OMPI_FC are set to the right compiler.
+
+unsetenv PETSC_ARCH
+setenv PETSC_DIR /local/apps/petsc/intel/openmpi
+setenv SLEPC_DIR `pwd`
+./configure --prefix=/local/apps/slepc/intel/openmpi
+  for ARPACK, --with-arpack-dir=/local/apps/arpack/intel/openmpi/lib
+  for BLOPEX, --download-blopex
+
+setenv PETSC_ARCH arch-installed-petsc (before 3.2, installed-petsc)
+
+make              (Or, they tell you some flags to use on these.  Cut and
+make install       paste the commands they recommend.)
+
 SuperLU
 -------
+
+This is no longer useful.  Instead, configure PETSc to include SuperLU
 
 SuperLU_DIST Version 2.0 of 1/4/06
 

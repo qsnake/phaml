@@ -1,9 +1,10 @@
 ---------------------------------------------------------
-           PHAML   Version 1.9.1
+           PHAML   Version 1.11.0
 
 Output from slave number     1
   PDE id is     0
   Number of slave processors is     1
+  Number of OpenMP threads is       1
 
 Subroutine phaml_solve_pde parameters:
   max_elem           infinity
@@ -17,6 +18,10 @@ Subroutine phaml_solve_pde parameters:
   task               BALANCE_REFINE_SOLVE
   solve_init         true
   system_size                 1
+  pde_has_first_order_terms  false
+  pde_has_cross_derivative   false
+  laplacian_operator         true
+  isosceles_right_triangles  true
   print_grid_when    PHASES
   print_grid_who     SLAVES
   print_linsys_when  PHASES
@@ -39,7 +44,7 @@ Subroutine phaml_solve_pde parameters:
   errtype            ABSOLUTE_ERROR
   reftype            H_ADAPTIVE
   edge_rule          MINIMUM_RULE
-  refterm            DOUBLE_NEQ_SMOOTH
+  refterm            DOUBLE_NEQ
   derefine           true
   partition_method   RTK
   prebalance         BALANCE_ELEMENTS
@@ -79,15 +84,15 @@ Solver information:
 
 Norms of error:
    energy norm of error       4.0333158308E+00
-   energy error estimate      2.7431604171E+00
-      effectivity             6.8012536884E-01
+   energy error estimate      1.3702907531E+01
+      effectivity             3.3974298334E+00
 
 Norms of error:
    energy norm of error       4.0333158308E+00
       reduced by              1.0000000000E+00
-   energy error estimate      2.7431604171E+00
+   energy error estimate      1.3702907531E+01
       reduced by              1.0000000000E+00
-      effectivity             6.8012536884E-01
+      effectivity             3.3974298334E+00
 
 My Grid:
    number of vertices       =          29
@@ -115,9 +120,9 @@ Solver information:
 Norms of error:
    energy norm of error       3.0143042418E+00
       reduced by              7.4735140224E-01
-   energy error estimate      1.0981744617E+00
-      reduced by              4.0033184163E-01
-      effectivity             3.6432104179E-01
+   energy error estimate      5.4179531092E+00
+      reduced by              3.9538711744E-01
+      effectivity             1.7974141542E+00
 
 My Grid:
    number of vertices       =          36
@@ -140,144 +145,144 @@ My Linear System:
 
 Solver information:
    number of iterations =           3
-   relative residual =   6.1447707961E-06
+   relative residual =   6.1447707962E-06
 
 Norms of error:
    energy norm of error       2.9236222992E+00
       reduced by              9.6991612813E-01
-   energy error estimate      8.7510892718E-01
-      reduced by              7.9687604997E-01
-      effectivity             2.9932352323E-01
+   energy error estimate      4.3054794572E+00
+      reduced by              7.9466901437E-01
+      effectivity             1.4726524210E+00
 
 My Grid:
-   number of vertices       =          75
-   number of vertices I own =          75
-   number of elements       =         208
-   number of leaf elements  =         108
-   leaf elements I own      =         108
-   number of levels         =           8
-   degrees of freedom       =          75
-   degrees of freedom I own =          75
+   number of vertices       =          74
+   number of vertices I own =          74
+   number of elements       =         204
+   number of leaf elements  =         106
+   leaf elements I own      =         106
+   number of levels         =           7
+   degrees of freedom       =          74
+   degrees of freedom I own =          74
    min and max degree       =           1          1
 
 My Linear System:
-   number of equations =          75
-   number of equations I own =          75
-   number of nonzeroes =         439
-   condensed matrix number of equations =          75
-   condensed matrix number of equations I own =          75
-   condensed matrix number of nonzeroes =         439
+   number of equations =          74
+   number of equations I own =          74
+   number of nonzeroes =         432
+   condensed matrix number of equations =          74
+   condensed matrix number of equations I own =          74
+   condensed matrix number of nonzeroes =         432
 
 Solver information:
-   number of iterations =           4
-   relative residual =   3.2476317711E-06
+   number of iterations =           3
+   relative residual =   1.4657628864E-05
 
 Norms of error:
-   energy norm of error       2.0694813748E+00
-      reduced by              7.0784840278E-01
-   energy error estimate      5.2467006054E-01
-      reduced by              5.9954828964E-01
-      effectivity             2.5352731700E-01
+   energy norm of error       2.0925858344E+00
+      reduced by              7.1575108555E-01
+   energy error estimate      2.5429959249E+00
+      reduced by              5.9064175088E-01
+      effectivity             1.2152409154E+00
 
 My Grid:
-   number of vertices       =         170
-   number of vertices I own =         170
-   number of elements       =         572
-   number of leaf elements  =         290
-   leaf elements I own      =         290
-   number of levels         =           9
-   degrees of freedom       =         170
-   degrees of freedom I own =         170
-   min and max degree       =           1          1
-
-My Linear System:
-   number of equations =         170
-   number of equations I own =         170
-   number of nonzeroes =        1088
-   condensed matrix number of equations =         170
-   condensed matrix number of equations I own =         170
-   condensed matrix number of nonzeroes =        1088
-
-Solver information:
-   number of iterations =           5
-   relative residual =   1.2655210217E-06
-
-Norms of error:
-   energy norm of error       1.2083481054E+00
-      reduced by              5.8388933581E-01
-   energy error estimate      3.5146556620E-01
-      reduced by              6.6987921102E-01
-      effectivity             2.9086449891E-01
-
-My Grid:
-   number of vertices       =         291
-   number of vertices I own =         291
-   number of elements       =        1000
-   number of leaf elements  =         504
-   leaf elements I own      =         504
+   number of vertices       =         198
+   number of vertices I own =         198
+   number of elements       =         632
+   number of leaf elements  =         320
+   leaf elements I own      =         320
    number of levels         =          10
-   degrees of freedom       =         291
-   degrees of freedom I own =         291
+   degrees of freedom       =         198
+   degrees of freedom I own =         198
    min and max degree       =           1          1
 
 My Linear System:
-   number of equations =         291
-   number of equations I own =         291
-   number of nonzeroes =        1879
-   condensed matrix number of equations =         291
-   condensed matrix number of equations I own =         291
-   condensed matrix number of nonzeroes =        1879
+   number of equations =         198
+   number of equations I own =         198
+   number of nonzeroes =        1232
+   condensed matrix number of equations =         198
+   condensed matrix number of equations I own =         198
+   condensed matrix number of nonzeroes =        1232
 
 Solver information:
    number of iterations =           5
-   relative residual =   7.3235095052E-06
+   relative residual =   1.5382960827E-06
 
 Norms of error:
-   energy norm of error       7.7409901733E-01
-      reduced by              6.4062583774E-01
-   energy error estimate      2.5575286730E-01
-      reduced by              7.2767545927E-01
-      effectivity             3.3038779481E-01
+   energy norm of error       1.2032026194E+00
+      reduced by              5.7498363969E-01
+   energy error estimate      1.4911968160E+00
+      reduced by              5.8639371042E-01
+      effectivity             1.2393563577E+00
 
 My Grid:
-   number of vertices       =         734
-   number of vertices I own =         734
-   number of elements       =        2636
-   number of leaf elements  =        1322
-   leaf elements I own      =        1322
-   number of levels         =          12
-   degrees of freedom       =         734
-   degrees of freedom I own =         734
+   number of vertices       =         297
+   number of vertices I own =         297
+   number of elements       =        1024
+   number of leaf elements  =         516
+   leaf elements I own      =         516
+   number of levels         =          10
+   degrees of freedom       =         297
+   degrees of freedom I own =         297
    min and max degree       =           1          1
 
 My Linear System:
-   number of equations =         734
-   number of equations I own =         734
-   number of nonzeroes =        4844
-   condensed matrix number of equations =         734
-   condensed matrix number of equations I own =         734
-   condensed matrix number of nonzeroes =        4844
+   number of equations =         297
+   number of equations I own =         297
+   number of nonzeroes =        1921
+   condensed matrix number of equations =         297
+   condensed matrix number of equations I own =         297
+   condensed matrix number of nonzeroes =        1921
 
 Solver information:
    number of iterations =           5
-   relative residual =   2.4465444231E-05
+   relative residual =   7.0007895052E-06
 
 Norms of error:
-   energy norm of error       4.6454550966E-01
-      reduced by              6.0011122514E-01
-   energy error estimate      1.5324405115E-01
-      reduced by              5.9918800820E-01
-      effectivity             3.2987952302E-01
+   energy norm of error       7.6690248511E-01
+      reduced by              6.3738432142E-01
+   energy error estimate      1.1411091446E+00
+      reduced by              7.6523040580E-01
+      effectivity             1.4879455560E+00
 
 My Grid:
-   number of vertices       =         734
-   number of vertices I own =         734
-   number of elements       =        2636
-   number of leaf elements  =        1322
-   leaf elements I own      =        1322
+   number of vertices       =         582
+   number of vertices I own =         582
+   number of elements       =        2036
+   number of leaf elements  =        1022
+   leaf elements I own      =        1022
    number of levels         =          12
-   degrees of freedom       =         734
-   degrees of freedom I own =         734
+   degrees of freedom       =         582
+   degrees of freedom I own =         582
+   min and max degree       =           1          1
+
+My Linear System:
+   number of equations =         582
+   number of equations I own =         582
+   number of nonzeroes =        3788
+   condensed matrix number of equations =         582
+   condensed matrix number of equations I own =         582
+   condensed matrix number of nonzeroes =        3788
+
+Solver information:
+   number of iterations =           5
+   relative residual =   1.1524781886E-05
+
+Norms of error:
+   energy norm of error       6.0874961498E-01
+      reduced by              7.9377707961E-01
+   energy error estimate      7.8142536814E-01
+      reduced by              6.8479458938E-01
+      effectivity             1.2836564474E+00
+
+My Grid:
+   number of vertices       =         582
+   number of vertices I own =         582
+   number of elements       =        2036
+   number of leaf elements  =        1022
+   leaf elements I own      =        1022
+   number of levels         =          12
+   degrees of freedom       =         582
+   degrees of freedom I own =         582
    min and max degree       =           1          1
 
 ---------------------------------------------------------

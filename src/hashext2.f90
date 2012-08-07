@@ -23,8 +23,8 @@ module hash_eq_mod
 !----------------------------------------------------
 ! This module contains the hash function for global equation indices.
 ! This version uses 2 integers in the hash key and one integer to indicate
-! whether the equation comes from a vertex, edge or face, and which rank
-! it is on a face or edge.
+! whether the equation comes from a vertex, edge, face or bubble function,
+! and which rank it is on an edge, face or element.
 !----------------------------------------------------
 
 !----------------------------------------------------

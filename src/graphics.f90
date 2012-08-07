@@ -24,7 +24,7 @@
 ! routines that draw the graphics, followed by a short main program, which
 ! is actually a subroutine.
 !
-! RESTRICTION 2D
+! RESTRICTION 2D triangles
 !----------------------------------------------------
 
 module graphics_mod
@@ -122,7 +122,7 @@ real(gldouble), parameter :: MAX_DEGREE = 23
 
 ! the grid data structure
 
-type (grid_type) :: grid
+type (grid_type), save :: grid
 
 ! convenience pointers into the grid data structure
 
@@ -229,7 +229,7 @@ logical :: TEMP_battery = .false.
 
 interface
 
-   function trues(x,y,comp,eigen) ! real (my_real)
+   function trues(x,y,comp,eigen)
    use global
    real (my_real), intent(in) :: x,y
    integer, intent(in) :: comp,eigen
@@ -276,6 +276,12 @@ if (ni > 0) then
 ! initialize graphics
 
    case (GRAPHICS_INIT)
+      global_element_kind = element_kind
+      if (global_element_kind /= TRIANGULAR_ELEMENT) then
+         call fatal("using graphics.f90 for triangles with a different kind of element")
+         stop
+      endif
+      nullify(secret_grid)
       allocate(grid%head_level_elem(1),stat=allocstat)
       if (allocstat /= 0) then
          call fatal("allocation failed in process_message",intlist=(/allocstat/))
@@ -289,6 +295,8 @@ if (ni > 0) then
       ymin = rmess(3)
       ymax = rmess(4)
       maxdomain = max(abs(xmax-xmin),abs(ymax-ymin))
+      nullify(grid%element_errind,grid%element,grid%edge,grid%vertex, &
+              grid%vertex_solution,grid%vertex_exact,grid%vertex_oldsoln)
       deallocate(imess,rmess,stat=allocstat)
       if (allocstat /= 0) then
          call warning("deallocation failed",intlist=(/allocstat/))
@@ -324,7 +332,7 @@ if (ni > 0) then
       if (allocated(part_cent)) deallocate(part_cent,stat=allocstat)
       if (allocated(explode_shift)) deallocate(explode_shift,stat=allocstat)
       call glutdestroywindow(grid_win)
-      call terminate_comm(procs,.true.)
+      call terminate_comm(procs,.true.,.true.)
       deallocate(procs,stat=allocstat)
       deallocate(imess,stat=allocstat)
       stop
@@ -391,34 +399,28 @@ nullify(element,edge,vertex,vertex_solution,vertex_exact)
 if (associated(grid%element_errind)) &
    deallocate(grid%element_errind,stat=allocstat)
 if (associated(grid%element)) then
-   do i=1,size(grid%element)
+   do i=1,grid%biggest_elem
       if (associated(grid%element(i)%solution)) &
          deallocate(grid%element(i)%solution,stat=allocstat)
       if (associated(grid%element(i)%exact)) &
          deallocate(grid%element(i)%exact,stat=allocstat)
-! TEMP071219 for exact solution for the battery problem
       if (TEMP_battery) then
          if (associated(grid%element(i)%oldsoln)) &
             deallocate(grid%element(i)%oldsoln,stat=allocstat)
-         nullify(grid%element(i)%oldsoln)
       endif
-! end TEMP071219
    end do
    deallocate(grid%element,stat=allocstat)
 endif
 if (associated(grid%edge)) then
-   do i=1,size(grid%edge)
+   do i=1,grid%biggest_edge
       if (associated(grid%edge(i)%solution)) &
          deallocate(grid%edge(i)%solution,stat=allocstat)
       if (associated(grid%edge(i)%exact)) &
          deallocate(grid%edge(i)%exact,stat=allocstat)
-! TEMP071219 for exact solution for the battery problem
       if (TEMP_battery) then
          if (associated(grid%edge(i)%oldsoln)) &
             deallocate(grid%edge(i)%oldsoln,stat=allocstat)
-         nullify(grid%edge(i)%oldsoln)
       endif
-! end TEMP071219
    end do
    deallocate(grid%edge,stat=allocstat)
 endif
@@ -438,7 +440,7 @@ if (allocated(neighbors)) deallocate(neighbors,stat=allocstat)
 
 if (nelem > 0) then
    allocate(grid%element(nelem),elem_owner(nelem), &
-            neighbors(EDGES_PER_ELEMENT,nelem), &
+            neighbors(NEIGHBORS_PER_ELEMENT,nelem), &
             stat=allocstat)
    if (allocstat /= 0) then
       call fatal("allocation failed for drawing grid",intlist=(/allocstat/))
@@ -611,14 +613,20 @@ num_elem = 0
 grid%head_level_elem = END_OF_LIST
 grid%nlev = 0
 rind = 0
+grid%biggest_elem = 0
 elem = imess(ind+1)
 do while (elem /= END_OF_ELEMENTS)
+   grid%biggest_elem = max(grid%biggest_elem,elem)
    ind = ind + 1
    ssize = imess(ind+1)
    ind = ind + 1
    element(elem)%gid = hash_unpack_key(imess,ind+1)
    ind = ind + KEY_SIZE
-   call hash_insert(element(elem)%gid,elem,grid%elem_hash)
+! avoid duplicates from different processors by not adding it to the linked
+! list (at end of loop), and hash table, but continue to process the input
+   other_lid = hash_decode_key(element(elem)%gid,grid%elem_hash)
+   duplicate = (other_lid /= HASH_NOT_FOUND)
+   if (.not. duplicate) call hash_insert(element(elem)%gid,elem,grid%elem_hash)
    grid%element_errind(elem,:) = rmess(rind+1)/rmess(rind+2)
    rind = rind + 2
    allocate(element(elem)%solution(ssize/(neigen*ncompnt),ncompnt,neigen), &
@@ -656,10 +664,10 @@ do while (elem /= END_OF_ELEMENTS)
    ind = ind + 1
    elem_owner(elem) = imess(ind+1)
    ind = ind + 1
-   do i=1,EDGES_PER_ELEMENT
+   do i=1,NEIGHBORS_PER_ELEMENT
       neighbors(i,elem) = hash_unpack_key(imess,ind+1+(i-1)*KEY_SIZE)
    end do
-   ind = ind + EDGES_PER_ELEMENT*KEY_SIZE
+   ind = ind + NEIGHBORS_PER_ELEMENT*KEY_SIZE
    grid%nlev = max(grid%nlev,element(elem)%level)
    num_elem = max(num_elem,elem)
    if (element(elem)%level > size(grid%head_level_elem)) then
@@ -673,16 +681,6 @@ do while (elem /= END_OF_ELEMENTS)
       grid%head_level_elem(1:size(head_temp)) = head_temp
       deallocate(head_temp)
    endif
-! avoid duplicates from different processors
-   duplicate = .false.
-   i = grid%head_level_elem(element(elem)%level)
-   do while (i /= END_OF_LIST)
-      if (element(i)%gid == element(elem)%gid) then
-         duplicate = .true.
-         exit
-      endif
-      i = element(i)%next
-   end do
    if (.not. duplicate) then
       element(elem)%next = grid%head_level_elem(element(elem)%level)
       grid%head_level_elem(element(elem)%level) = elem
@@ -691,47 +689,12 @@ do while (elem /= END_OF_ELEMENTS)
 end do
 ind = ind + 1
 
-! unpack the edges
-
-iedge = imess(ind+1)
-do while (iedge /= END_OF_EDGES)
-   ind = ind + 1
-   ssize = imess(ind+1)
-   ind = ind + 1
-   edge(iedge)%assoc_elem = imess(ind+1)
-   ind = ind + 1
-   edge(iedge)%gid = hash_unpack_key(imess,ind+1)
-   other_lid = hash_decode_key(edge(iedge)%gid,grid%edge_hash)
-! insert in hash table if this is the first instance or I am the owner
-   if (other_lid == HASH_NOT_FOUND) then
-      call hash_insert(edge(iedge)%gid,iedge,grid%edge_hash)
-   elseif (elem_owner(edge(iedge)%assoc_elem) == my_processor) then
-      call hash_remove(edge(iedge)%gid,grid%edge_hash)
-      call hash_insert(edge(iedge)%gid,iedge,grid%edge_hash)
-   endif
-   ind = ind + KEY_SIZE
-   edge(iedge)%degree = imess(ind+1)
-   ind = ind + 1
-   allocate(edge(iedge)%solution(ssize/(neigen*ncompnt),ncompnt,neigen), &
-           edge(iedge)%exact(ssize/(neigen*ncompnt),ncompnt,neigen),stat=allocstat)
-   if (allocstat /= 0) then
-      call fatal("allocation failed in unpack_grid",intlist=(/allocstat/))
-      stop
-   endif
-   edge(iedge)%solution=reshape(rmess(rind+1:rind+ssize), &
-                                (/ssize/(neigen*ncompnt),ncompnt,neigen/))
-   rind = rind + ssize
-   edge(iedge)%exact=reshape(rmess(rind+1:rind+ssize), &
-                             (/ssize/(neigen*ncompnt),ncompnt,neigen/))
-   rind = rind + ssize
-   iedge = imess(ind+1)
-end do
-ind = ind+1
-
 ! unpack the vertices
 
+grid%biggest_vert = 0
 vert = imess(ind+1)
 do while (vert /= END_OF_VERTICES)
+   grid%biggest_vert = max(grid%biggest_vert,vert)
    ind = ind + 1
    vertex(vert)%assoc_elem = imess(ind+1)
    ind = ind + 1
@@ -765,6 +728,59 @@ do while (vert /= END_OF_VERTICES)
    all_minerror = min(all_minerror,vertex_solution(vert,:,:)-vertex_exact(vert,:,:))
    all_maxerror = max(all_maxerror,vertex_solution(vert,:,:)-vertex_exact(vert,:,:))
    vert  = imess(ind+1)
+end do
+ind = ind+1
+
+! unpack the edges
+
+grid%biggest_edge = 0
+iedge = imess(ind+1)
+do while (iedge /= END_OF_EDGES)
+   grid%biggest_edge = max(grid%biggest_edge,iedge)
+   ind = ind + 1
+   ssize = imess(ind+1)
+   ind = ind + 1
+   edge(iedge)%assoc_elem = imess(ind+1)
+   ind = ind + 1
+   edge(iedge)%gid = hash_unpack_key(imess,ind+1)
+   other_lid = hash_decode_key(edge(iedge)%gid,grid%edge_hash)
+! insert in hash table if this is the first instance or I am the owner
+   if (other_lid == HASH_NOT_FOUND) then
+      call hash_insert(edge(iedge)%gid,iedge,grid%edge_hash)
+   elseif (elem_owner(edge(iedge)%assoc_elem) == my_processor) then
+      call hash_remove(edge(iedge)%gid,grid%edge_hash)
+      call hash_insert(edge(iedge)%gid,iedge,grid%edge_hash)
+   endif
+   ind = ind + KEY_SIZE
+   edge(iedge)%vertex(1) = hash_decode_key(hash_unpack_key(imess,ind+1), &
+                                           grid%vert_hash)
+   if (edge(iedge)%vertex(1) == HASH_NOT_FOUND) then
+      call fatal("didn't find edge vertex 1 in vertex hash table")
+      stop
+   endif
+   ind = ind + KEY_SIZE
+   edge(iedge)%vertex(2) = hash_decode_key(hash_unpack_key(imess,ind+1), &
+                                           grid%vert_hash)
+   if (edge(iedge)%vertex(2) == HASH_NOT_FOUND) then
+      call fatal("didn't find edge vertex 2 in vertex hash table")
+      stop
+   endif
+   ind = ind + KEY_SIZE
+   edge(iedge)%degree = imess(ind+1)
+   ind = ind + 1
+   allocate(edge(iedge)%solution(ssize/(neigen*ncompnt),ncompnt,neigen), &
+           edge(iedge)%exact(ssize/(neigen*ncompnt),ncompnt,neigen),stat=allocstat)
+   if (allocstat /= 0) then
+      call fatal("allocation failed in unpack_grid",intlist=(/allocstat/))
+      stop
+   endif
+   edge(iedge)%solution=reshape(rmess(rind+1:rind+ssize), &
+                                (/ssize/(neigen*ncompnt),ncompnt,neigen/))
+   rind = rind + ssize
+   edge(iedge)%exact=reshape(rmess(rind+1:rind+ssize), &
+                             (/ssize/(neigen*ncompnt),ncompnt,neigen/))
+   rind = rind + ssize
+   iedge = imess(ind+1)
 end do
 
 maxdomain = max(abs(xmax-xmin),abs(ymax-ymin))
@@ -848,8 +864,8 @@ do elem=1,num_elem
    if (element(elem)%level == -999) cycle
    if (.not. element(elem)%isleaf) cycle
    if (elem_owner(elem) /= my_processor .and.  my_processor/=MASTER) cycle
-   xcent = sum(vertex(element(elem)%vertex)%coord%x)/3
-   ycent = sum(vertex(element(elem)%vertex)%coord%y)/3
+   xcent = sum(vertex(element(elem)%vertex)%coord%x)/VERTICES_PER_ELEMENT
+   ycent = sum(vertex(element(elem)%vertex)%coord%y)/VERTICES_PER_ELEMENT
    call graphics_evaluate_soln((/xcent/),(/ycent/),elem,valcent)
 ! TEMP only makes the adjustment for the first eigen,compnt
    valcent(1) = valcent(1) - graphics_trues(xcent,ycent)
@@ -1999,7 +2015,7 @@ logical, intent(in) :: nolight
 !----------------------------------------------------
 ! Local variables:
 
-logical :: part_bound(EDGES_PER_ELEMENT)
+logical :: part_bound(NEIGHBORS_PER_ELEMENT)
 integer :: i
 integer :: allc(MAX_CHILD), children(MAX_CHILD)
 real(my_real) :: x(VERTICES_PER_ELEMENT), y(VERTICES_PER_ELEMENT)
@@ -2038,7 +2054,7 @@ if (element(elem)%isleaf .or. draw_func == DRAW_LEVELS) then
 
 ! determine if each edge is on a partition boundary
 
-      do i=1,EDGES_PER_ELEMENT
+      do i=1,NEIGHBORS_PER_ELEMENT
          if (neighbors(i,elem) == BOUNDARY) then
             part_bound(i) = .true.
          elseif (elem_owner(hash_decode_key(neighbors(i,elem),grid%elem_hash)) &
@@ -2095,7 +2111,7 @@ integer, intent(in) :: recur_lev
 !----------------------------------------------------
 ! Local variables:
 
-logical :: csides(EDGES_PER_ELEMENT),cpart_bound(EDGES_PER_ELEMENT)
+logical :: csides(EDGES_PER_ELEMENT),cpart_bound(NEIGHBORS_PER_ELEMENT)
 integer :: i, j, cvown(VERTICES_PER_ELEMENT), ceown(EDGES_PER_ELEMENT)
 real(my_real) :: xmid(EDGES_PER_ELEMENT),ymid(EDGES_PER_ELEMENT), &
                  valmr(VERTICES_PER_ELEMENT),val1(1),ppval,ppssval,ppmin, &
@@ -2308,7 +2324,7 @@ else ! draw the triangle
             call glmaterialfv(gl_front_and_back,gl_ambient_and_diffuse,fcolor(i,:))
          endif
 
-         do j=1,3
+         do j=1,VERTICES_PER_ELEMENT
             if (j==i) cycle
             call glnormal3dv(normal)
             call glvertex3d(x(j),y(j),val(j))
@@ -2328,7 +2344,7 @@ else ! draw the triangle
                call glmaterialfv(gl_front_and_back,gl_ambient_and_diffuse,fcolor(i,:))
             endif
 
-            do j=1,3
+            do j=1,VERTICES_PER_ELEMENT
                if (j==i) cycle
                call glnormal3dv(normal)
                call glvertex3d(x(j),y(j),val(j))
@@ -2340,7 +2356,7 @@ else ! draw the triangle
 
       case default
 
-         do j=1,3
+         do j=1,VERTICES_PER_ELEMENT
             if (j==i) cycle
             if (nolight) then
                call glcolor3dv(color(j,:))
@@ -2938,7 +2954,7 @@ real(my_real) :: contour_value(:),contour_ps(:)
 !----------------------------------------------------
 ! Local variables:
 
-real(my_real) :: x(3), y(3)
+real(my_real) :: x(VERTICES_PER_ELEMENT), y(VERTICES_PER_ELEMENT)
 integer :: i
 integer :: allc(MAX_CHILD), children(MAX_CHILD)
 !----------------------------------------------------
@@ -3912,7 +3928,6 @@ end subroutine grid_display
 !          ----------
 subroutine recalcview
 !          ----------
-real, parameter :: pi = 3.1415926
 
 select case(draw_func)
    case(DRAW_NO_FUNCTION)
@@ -4771,7 +4786,8 @@ integer :: lev, elem, i, edge, allocstat
 
 ! initialize data structures for oldsoln; this puts solution in there
 
-allocate(grid%initial_neighbor(3,size(grid%element)),stat=allocstat)
+allocate(grid%initial_neighbor(NEIGHBORS_PER_ELEMENT,grid%biggest_elem), &
+         stat=allocstat)
 if (allocstat /= 0) then
    call fatal("allocation failed in exact_to_oldsoln",intlist=(/allocstat/))
    stop
@@ -4819,7 +4835,7 @@ use opengl_gl
 use opengl_glut
 implicit none
 
-integer :: spawn_form=0, allocstat, system_size, eq_type
+integer :: spawn_form=0, allocstat, system_size, eq_type, ijunk
 character(len=32) :: dummy_char
 logical :: junk1,junk2,update_umod
 type(phaml_solution_type) :: phaml_solution
@@ -4843,7 +4859,7 @@ if (allocstat /= 0) then
    stop
 endif
 call init_comm(procs,spawn_form,junk1,junk2,dummy_char,outunit, &
-               errunit,system_size,eq_type,my_pde_id,nproc,grid%max_blen, &
+               errunit,system_size,eq_type,my_pde_id,nproc,ijunk,grid%max_blen,&
                grid%triangle_files,update_umod)
 if (update_umod) then
    if (PARALLEL /= SEQUENTIAL) then

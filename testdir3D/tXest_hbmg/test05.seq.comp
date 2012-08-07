@@ -1,0 +1,213 @@
+---------------------------------------------------------
+           PHAML   Version 1.9.1
+
+Output from slave number     1
+  PDE id is     0
+  Number of slave processors is     1
+
+Subroutine phaml_solve_pde parameters:
+  max_elem           infinity
+  max_vert                  500
+  max_eq             infinity
+  max_lev            infinity
+  stop_on_maxlev     false
+  max_deg                    22
+  stop_on_maxdeg     false
+  max_refsolveloop   infinity
+  task               BALANCE_REFINE_SOLVE
+  solve_init         true
+  system_size                 1
+  print_grid_when    PHASES
+  print_grid_who     SLAVES
+  print_linsys_when  NEVER
+  print_solver_when  NEVER
+  print_error_when   PHASES
+  print_error_who    SLAVES
+  print_error_what   ENERGY_L2_ERR
+  print_errest_what  NEVER
+  print_time_when    NEVER
+  pause_after_draw   false
+  pause_after_phases false
+  pause_at_start     false
+  pause_at_end       false
+  degree                      4
+  sequential_vert           100
+  inc_factor          2.0000000000E+00
+  error_estimator    EXPLICIT_ERRIND
+  errtype            ABSOLUTE_ERROR
+  reftype            H_ADAPTIVE
+  edge_rule          MINIMUM_RULE
+  refterm            DOUBLE_NEQ_SMOOTH
+  derefine           true
+  partition_method   RTK
+  prebalance         BALANCE_ELEMENTS
+  ignore_quad_err    true
+  solver             CG_SOLVER
+  preconditioner     MG_PRECONDITION
+  mg_cycles                   5
+  mg_tol             MG_NO_TOL
+  mg_prerelax                 1
+  mg_postrelax                2
+  mg_prerelax_ho              2
+  mg_postrelax_ho             2
+  mg_comm            MGCOMM_NONE
+  krylov_iter               100
+  krylov_tol         KRYLOV_ERREST_TOL
+---------------------------------------------------------
+
+My Grid:
+   number of vertices       =           9
+   number of vertices I own =           9
+   number of elements       =           8
+   number of leaf elements  =           8
+   leaf elements I own      =           8
+   number of levels         =           1
+   degrees of freedom       =          81
+   degrees of freedom I own =          81
+   min and max degree       =           4          4
+
+Norms of error:
+   energy norm of error       8.6272423246E-02
+   L2 norm of error           4.3532036132E-03
+
+My Grid:
+   number of vertices       =          19
+   number of vertices I own =          19
+   number of elements       =          40
+   number of leaf elements  =          24
+   leaf elements I own      =          24
+   number of levels         =           3
+   degrees of freedom       =         217
+   degrees of freedom I own =         217
+   min and max degree       =           4          4
+
+Norms of error:
+   energy norm of error       7.7771524423E-03
+      reduced by              9.0146447146E-02
+   L2 norm of error           1.9280929118E-04
+      reduced by              4.4291356048E-02
+
+My Grid:
+   number of vertices       =          28
+   number of vertices I own =          28
+   number of elements       =          72
+   number of leaf elements  =          40
+   leaf elements I own      =          40
+   number of levels         =           4
+   degrees of freedom       =         349
+   degrees of freedom I own =         349
+   min and max degree       =           4          4
+
+Norms of error:
+   energy norm of error       3.9461930987E-03
+      reduced by              5.0740847989E-01
+   L2 norm of error           8.4281216745E-05
+      reduced by              4.3712217512E-01
+
+My Grid:
+   number of vertices       =          51
+   number of vertices I own =          51
+   number of elements       =         144
+   number of leaf elements  =          76
+   leaf elements I own      =          76
+   number of levels         =           5
+   degrees of freedom       =         657
+   degrees of freedom I own =         657
+   min and max degree       =           4          4
+
+Norms of error:
+   energy norm of error       8.4877573754E-04
+      reduced by              2.1508722871E-01
+   L2 norm of error           1.6252205310E-05
+      reduced by              1.9283306456E-01
+
+My Grid:
+   number of vertices       =         111
+   number of vertices I own =         111
+   number of elements       =         376
+   number of leaf elements  =         192
+   leaf elements I own      =         192
+   number of levels         =           7
+   degrees of freedom       =        1593
+   degrees of freedom I own =        1593
+   min and max degree       =           4          4
+
+Norms of error:
+   energy norm of error       1.9610592356E-04
+      reduced by              2.3104562829E-01
+   L2 norm of error           2.3152921290E-06
+      reduced by              1.4246018217E-01
+
+My Grid:
+   number of vertices       =         182
+   number of vertices I own =         182
+   number of elements       =         632
+   number of leaf elements  =         320
+   leaf elements I own      =         320
+   number of levels         =           7
+   degrees of freedom       =        2645
+   degrees of freedom I own =        2645
+   min and max degree       =           4          4
+
+Norms of error:
+   energy norm of error       4.4301736258E-05
+      reduced by              2.2590718044E-01
+   L2 norm of error           3.9319690634E-07
+      reduced by              1.6982604546E-01
+
+My Grid:
+   number of vertices       =         363
+   number of vertices I own =         363
+   number of elements       =        1332
+   number of leaf elements  =         670
+   leaf elements I own      =         670
+   number of levels         =           9
+   degrees of freedom       =        5469
+   degrees of freedom I own =        5469
+   min and max degree       =           4          4
+
+Norms of error:
+   energy norm of error       1.4419188371E-05
+      reduced by              3.2547682300E-01
+   L2 norm of error           8.9770859301E-08
+      reduced by              2.2831018722E-01
+
+My Grid:
+   number of vertices       =         712
+   number of vertices I own =         712
+   number of elements       =        2672
+   number of leaf elements  =        1340
+   leaf elements I own      =        1340
+   number of levels         =           9
+   degrees of freedom       =       10885
+   degrees of freedom I own =       10885
+   min and max degree       =           4          4
+
+Norms of error:
+   energy norm of error       2.5555686948E-06
+      reduced by              1.7723387954E-01
+   L2 norm of error           1.1682508824E-08
+      reduced by              1.3013698337E-01
+
+My Grid:
+   number of vertices       =         712
+   number of vertices I own =         712
+   number of elements       =        2672
+   number of leaf elements  =        1340
+   leaf elements I own      =        1340
+   number of levels         =           9
+   degrees of freedom       =       10885
+   degrees of freedom I own =       10885
+   min and max degree       =           4          4
+
+Norms of error:
+   energy norm of error       2.5555686948E-06
+   L2 norm of error           1.1682508824E-08
+
+---------------------------------------------------------
+phaml_solve_pde complete
+
+number of loops through phases =           7
+termination condition:
+  maximum vertices achieved
+---------------------------------------------------------

@@ -52,15 +52,23 @@ module view_modifier
 ! back while holding down a button selected for explode.  It is up to
 ! the application to figure out what to do with it.  If there are
 ! multiple windows, the same explode_factor applies to all.
+! Likewise for explode_elem_factor.
 
 use opengl_gl
 use opengl_glu
 use opengl_glut
+use gridtype_mod, only : element_kind
+use global, only : TETRAHEDRAL_ELEMENT
 implicit none
 private
-public :: view_modifier_init, reset_view, explode_factor
-private :: ZOOM, PAN, ROTATE, SCALEX, SCALEY, SCALEZ, EXPLODE, LIGHT, RESET, &
-           ABOVE, ABOVE_ORIGIN, QUIT, PI, &
+public :: view_modifier_init, reset_view, explode_factor, explode_elem_factor, &
+          yz_cutting_plane_value, xz_cutting_plane_value, CUTTING_PLANE_OFF, &
+          xy_cutting_plane_value, cutting_plane_speed, modview_xmin, &
+          modview_xmax, modview_ymin, modview_ymax, modview_zmin, modview_zmax,&
+          modview_requests_redraw, reset_look_from_at
+private :: ZOOM, PAN, ROTATE, SCALEX, SCALEY, SCALEZ, EXPLODE, EXPLODE_ELEM, &
+           LIGHT, RESET, ABOVE, ABOVE_ORIGIN, TOWARD_XZ, TOWARD_YZ, QUIT, PI, &
+           YZ_CUTPLANE, XZ_CUTPLANE, XY_CUTPLANE, &
            left_button_func, middle_button_func, arrow_key_func, &
            init_lookat, init_lookfrom, abszmax, init_lightpos, &
            init_xscale_factor, init_yscale_factor, init_zscale_factor, &
@@ -74,10 +82,14 @@ private :: ZOOM, PAN, ROTATE, SCALEX, SCALEY, SCALEZ, EXPLODE, LIGHT, RESET, &
 integer, parameter :: MAXWIN = 4
 
 integer(kind=glcint), parameter :: ZOOM = 1, PAN = 2, ROTATE = 3, SCALEX = 4, &
-                      SCALEY = 5, SCALEZ = 6, EXPLODE = 7, LIGHT = 8
-integer(kind=glcint), parameter :: RESET = 10, ABOVE = 11, &
-                      ABOVE_ORIGIN = 12, QUIT = 13
-real(kind=gldouble), parameter :: PI = 3.141592653589793_gldouble
+                      SCALEY = 5, SCALEZ = 6, EXPLODE = 7, EXPLODE_ELEM = 8, &
+                      LIGHT = 9, YZ_CUTPLANE = 10, XZ_CUTPLANE = 11, &
+                      XY_CUTPLANE = 12
+integer(kind=glcint), parameter :: RESET = 13, ABOVE = 14, &
+                      ABOVE_ORIGIN = 15, TOWARD_XZ = 16, TOWARD_YZ = 17, &
+                      QUIT = 18
+real(kind=gldouble), parameter :: PI = 3.141592653589793_gldouble, &
+                                  CUTTING_PLANE_OFF = huge(0.0_gldouble)
 
 type, private :: cart2D ! 2D cartesian coordinates
    real(kind=gldouble) :: x, y
@@ -99,7 +111,15 @@ real(kind=gldouble), save, dimension(MAXWIN) :: xscale_factor, yscale_factor, &
                                                 init_yscale_factor, &
                                                 init_zscale_factor
 real(kind=glfloat), save :: explode_factor = 1.0_glfloat
+real(kind=glfloat), save :: explode_elem_factor = 1.0_glfloat
+real(kind=gldouble), save :: yz_cutting_plane_value = CUTTING_PLANE_OFF, &
+                             xz_cutting_plane_value = CUTTING_PLANE_OFF, &
+                             xy_cutting_plane_value = CUTTING_PLANE_OFF, &
+                             cutting_plane_speed = .015625_gldouble
+real(kind=gldouble), save :: modview_xmin, modview_xmax, modview_ymin, &
+                             modview_ymax, modview_zmin, modview_zmax
 logical, save :: moving_left, moving_middle
+logical, save :: modview_requests_redraw = .false.
 type(cart2D), save :: begin_left, begin_middle
 integer(kind=glcint), save, dimension(MAXWIN) :: winids = -1
 type(cart3D), save, dimension(MAXWIN) :: init_lookfrom, init_lookat
@@ -115,8 +135,8 @@ end interface
 ! ------- Initial configuration -------
 
 ! Set the initial operation performed by each button and the arrow keys.
-! The operations are ZOOM, PAN, ROTATE, SCALEX, SCALEY, SCALEZ, EXPLODE and
-!   LIGHT
+! The operations are ZOOM, PAN, ROTATE, SCALEX, SCALEY, SCALEZ, EXPLODE,
+!   EXPLODE_ELEM, and LIGHT
 
 integer, save, dimension(MAXWIN) ::   left_button_func = ROTATE, &
                                     middle_button_func = ZOOM, &
@@ -195,6 +215,62 @@ call glutPostRedisplay
 return
 end subroutine view_from_above
 
+!          --------------
+subroutine view_toward_xz(win)
+!          --------------
+
+integer, intent(in) :: win
+
+! This sets the view to be toward the xz plane
+
+type(sphere3D) :: slookfrom
+type(cart3D) :: cpos
+real(kind=glfloat) :: apos(4)
+
+slookfrom = cart2sphere(cart3D(1.0,0.0,0.0))
+angle(win)%x = -180.0_gldouble*slookfrom%theta/PI
+angle(win)%y = -180.0_gldouble*slookfrom%phi/PI
+cpos = sphere2cart(lightpos(win))
+apos(1) = cpos%x
+apos(2) = cpos%y
+apos(3) = cpos%z
+apos(4) = 0
+call reset_view
+call gllightfv(gl_light0, gl_position, apos)
+
+call glutPostRedisplay
+
+return
+end subroutine view_toward_xz
+
+!          --------------
+subroutine view_toward_yz(win)
+!          --------------
+
+integer, intent(in) :: win
+
+! This sets the view to be toward the yz plane
+
+type(sphere3D) :: slookfrom
+type(cart3D) :: cpos
+real(kind=glfloat) :: apos(4)
+
+slookfrom = cart2sphere(cart3D(0.0,1.0,0.0))
+angle(win)%x = -180.0_gldouble*slookfrom%theta/PI
+angle(win)%y = -180.0_gldouble*slookfrom%phi/PI
+cpos = sphere2cart(lightpos(win))
+apos(1) = cpos%x
+apos(2) = cpos%y
+apos(3) = cpos%z
+apos(4) = 0
+call reset_view
+call gllightfv(gl_light0, gl_position, apos)
+
+call glutPostRedisplay
+
+return
+end subroutine view_toward_yz
+
 !          ----------------------
 subroutine view_from_above_origin(win)
 !          ----------------------
@@ -224,6 +300,20 @@ call glutPostRedisplay
 
 return
 end subroutine view_from_above_origin
+
+!          ------------------
+subroutine reset_look_from_at(lookfrom_x, lookfrom_y, lookfrom_z, &
+                              lookat_x, lookat_y, lookat_z)
+!          ------------------
+real(gldouble), intent(in) :: lookfrom_x, lookfrom_y, lookfrom_z, &
+                              lookat_x, lookat_y, lookat_z
+integer :: win
+
+win = find_win()
+init_lookfrom(win) = cart3D(lookfrom_x, lookfrom_y, lookfrom_z)
+init_lookat(win) = cart3D(lookat_x, lookat_y, lookat_z)
+call reset_to_init(win)
+end subroutine reset_look_from_at
 
 !          ----------
 subroutine reset_view(toggle_color_key)
@@ -356,6 +446,33 @@ case (SCALEZ)
       factor = 1.0_gldouble
    end if
    zscale_factor(win) = zscale_factor(win) * factor
+case (YZ_CUTPLANE)
+   if (y < begin%y) then
+      yz_cutting_plane_value = min(modview_xmax, &
+                                   yz_cutting_plane_value + cutting_plane_speed)
+   else if (y > begin%y) then
+      yz_cutting_plane_value = max(modview_xmin, &
+                                   yz_cutting_plane_value - cutting_plane_speed)
+   end if
+   modview_requests_redraw = .true.
+case (XZ_CUTPLANE)
+   if (y < begin%y) then
+      xz_cutting_plane_value = min(modview_ymax, &
+                                   xz_cutting_plane_value + cutting_plane_speed)
+   else if (y > begin%y) then
+      xz_cutting_plane_value = max(modview_ymin, &
+                                   xz_cutting_plane_value - cutting_plane_speed)
+   end if
+   modview_requests_redraw = .true.
+case (XY_CUTPLANE)
+   if (y < begin%y) then
+      xy_cutting_plane_value = min(modview_zmax, &
+                                   xy_cutting_plane_value + cutting_plane_speed)
+   else if (y > begin%y) then
+      xy_cutting_plane_value = max(modview_zmin, &
+                                   xy_cutting_plane_value - cutting_plane_speed)
+   end if
+   modview_requests_redraw = .true.
 case (EXPLODE)
    if (y < begin%y) then
       factor = 1.0_gldouble + .002_gldouble*(begin%y-y)
@@ -366,6 +483,16 @@ case (EXPLODE)
    end if
    explode_factor = explode_factor * factor
    if (explode_factor < 1.0_glfloat) explode_factor = 1.0_glfloat
+case (EXPLODE_ELEM)
+   if (y < begin%y) then
+      factor = 1.0_gldouble + .002_gldouble*(begin%y-y)
+   else if (y > begin%y) then
+      factor = 1.0_gldouble/(1.0_gldouble + .002_gldouble*(y-begin%y))
+   else
+      factor = 1.0_gldouble
+   end if
+   explode_elem_factor = explode_elem_factor * factor
+   if (explode_elem_factor < 1.0_glfloat) explode_elem_factor = 1.0_glfloat
 case (LIGHT)
    lightpos(win)%theta = lightpos(win)%theta + .01_gldouble*(x - begin%x)
    lightpos(win)%phi = lightpos(win)%phi + .01_gldouble*(y - begin%y)
@@ -475,6 +602,36 @@ case(SCALEZ)
       factor = 1.0_gldouble
    end select
    zscale_factor(win) = zscale_factor(win) * factor
+case (YZ_CUTPLANE)
+   select case(key)
+   case(GLUT_KEY_DOWN)
+      yz_cutting_plane_value = max(modview_xmin, &
+                                   yz_cutting_plane_value - cutting_plane_speed)
+   case(GLUT_KEY_UP)
+      yz_cutting_plane_value = min(modview_xmax, &
+                                   yz_cutting_plane_value + cutting_plane_speed)
+   end select
+   modview_requests_redraw = .true.
+case (XZ_CUTPLANE)
+   select case(key)
+   case(GLUT_KEY_DOWN)
+      xz_cutting_plane_value = max(modview_xmin, &
+                                   xz_cutting_plane_value - cutting_plane_speed)
+   case(GLUT_KEY_UP)
+      xz_cutting_plane_value = min(modview_xmax, &
+                                   xz_cutting_plane_value + cutting_plane_speed)
+   end select
+   modview_requests_redraw = .true.
+case (XY_CUTPLANE)
+   select case(key)
+   case(GLUT_KEY_DOWN)
+      xy_cutting_plane_value = max(modview_xmin, &
+                                   xy_cutting_plane_value - cutting_plane_speed)
+   case(GLUT_KEY_UP)
+      xy_cutting_plane_value = min(modview_xmax, &
+                                   xy_cutting_plane_value + cutting_plane_speed)
+   end select
+   modview_requests_redraw = .true.
 case(EXPLODE)
    select case(key)
    case(GLUT_KEY_DOWN)
@@ -486,6 +643,17 @@ case(EXPLODE)
    end select
    explode_factor = explode_factor * factor
    if (explode_factor < 1.0_glfloat) explode_factor = 1.0_glfloat
+case(EXPLODE_ELEM)
+   select case(key)
+   case(GLUT_KEY_DOWN)
+      factor = 1.0_gldouble/(1.0_gldouble + .02_gldouble)
+   case(GLUT_KEY_UP)
+      factor = 1.0_gldouble + .02_gldouble
+   case default
+      factor = 1.0_gldouble
+   end select
+   explode_elem_factor = explode_elem_factor * factor
+   if (explode_elem_factor < 1.0_glfloat) explode_elem_factor = 1.0_glfloat
 case (LIGHT)
    select case(key)
    case(GLUT_KEY_LEFT)
@@ -530,6 +698,10 @@ case(ABOVE)
    call view_from_above(win)
 case(ABOVE_ORIGIN)
    call view_from_above_origin(win)
+case(TOWARD_XZ)
+   call view_toward_xz(win)
+case(TOWARD_YZ)
+   call view_toward_yz(win)
 case(QUIT)
    stop
 
@@ -619,6 +791,9 @@ init_lookat(win) = cart3D(lookat_x, lookat_y, lookat_z)
 init_xscale_factor(win) = 1.0_gldouble
 init_yscale_factor(win) = 1.0_gldouble
 init_zscale_factor(win) = 0.5_gldouble/abszmax
+if (element_kind == TETRAHEDRAL_ELEMENT) then
+   init_zscale_factor(win) = 2*init_zscale_factor(win)
+endif
 init_lightpos(win) = sphere3D(2.91_gldouble,2.32_gldouble,10.0_gldouble)
 
 ! set the callback functions
@@ -636,8 +811,18 @@ call glutAddMenuEntry("pan",PAN)
 call glutAddMenuEntry("scale x",SCALEX)
 call glutAddMenuEntry("scale y",SCALEY)
 call glutAddMenuEntry("scale z",SCALEZ)
-call glutAddMenuEntry("explode",EXPLODE)
-call glutAddMenuEntry("move light",LIGHT)
+if (element_kind == TETRAHEDRAL_ELEMENT) then
+   call glutAddMenuEntry("move xz cutting plane",XZ_CUTPLANE)
+   call glutAddMenuEntry("move yz cutting plane",YZ_CUTPLANE)
+   call glutAddMenuEntry("move xy cutting plane",XY_CUTPLANE)
+endif
+call glutAddMenuEntry("explode partitions",EXPLODE)
+if (element_kind == TETRAHEDRAL_ELEMENT) then
+   call glutAddMenuEntry("explode elements",EXPLODE_ELEM)
+endif
+if (element_kind /= TETRAHEDRAL_ELEMENT) then
+   call glutAddMenuEntry("move light",LIGHT)
+endif
 button_middle = glutCreateMenu(set_middle_button)
 call glutAddMenuEntry("rotate",ROTATE)
 call glutAddMenuEntry("zoom",ZOOM)
@@ -645,8 +830,18 @@ call glutAddMenuEntry("pan",PAN)
 call glutAddMenuEntry("scale x",SCALEX)
 call glutAddMenuEntry("scale y",SCALEY)
 call glutAddMenuEntry("scale z",SCALEZ)
-call glutAddMenuEntry("explode",EXPLODE)
-call glutAddMenuEntry("move light",LIGHT)
+if (element_kind == TETRAHEDRAL_ELEMENT) then
+   call glutAddMenuEntry("move xz cutting plane",XZ_CUTPLANE)
+   call glutAddMenuEntry("move yz cutting plane",YZ_CUTPLANE)
+   call glutAddMenuEntry("move xy cutting plane",XY_CUTPLANE)
+endif
+call glutAddMenuEntry("explode partitions",EXPLODE)
+if (element_kind == TETRAHEDRAL_ELEMENT) then
+   call glutAddMenuEntry("explode elements",EXPLODE_ELEM)
+endif
+if (element_kind /= TETRAHEDRAL_ELEMENT) then
+   call glutAddMenuEntry("move light",LIGHT)
+endif
 arrow_keys = glutCreateMenu(set_arrow_keys)
 call glutAddMenuEntry("rotate",ROTATE)
 call glutAddMenuEntry("zoom",ZOOM)
@@ -654,8 +849,18 @@ call glutAddMenuEntry("pan",PAN)
 call glutAddMenuEntry("scale x",SCALEX)
 call glutAddMenuEntry("scale y",SCALEY)
 call glutAddMenuEntry("scale z",SCALEZ)
-call glutAddMenuEntry("explode",EXPLODE)
-call glutAddMenuEntry("move light",LIGHT)
+if (element_kind == TETRAHEDRAL_ELEMENT) then
+   call glutAddMenuEntry("move xz cutting plane",XZ_CUTPLANE)
+   call glutAddMenuEntry("move yz cutting plane",YZ_CUTPLANE)
+   call glutAddMenuEntry("move xy cutting plane",XY_CUTPLANE)
+endif
+call glutAddMenuEntry("explode partitions",EXPLODE)
+if (element_kind == TETRAHEDRAL_ELEMENT) then
+   call glutAddMenuEntry("explode elements",EXPLODE_ELEM)
+endif
+if (element_kind /= TETRAHEDRAL_ELEMENT) then
+   call glutAddMenuEntry("move light",LIGHT)
+endif
 menuid = glutCreateMenu(menu_handler)
 call glutAddSubMenu("left mouse button",button_left)
 call glutAddSubMenu("middle mouse button",button_middle)
@@ -663,6 +868,10 @@ call glutAddSubMenu("arrow keys",arrow_keys)
 call glutAddMenuEntry("reset to initial view",RESET)
 call glutAddMenuEntry("view from above",ABOVE)
 call glutAddMenuEntry("view from above origin",ABOVE_ORIGIN)
+if (element_kind == TETRAHEDRAL_ELEMENT) then
+   call glutAddMenuEntry("view toward xz plane",TOWARD_XZ)
+   call glutAddMenuEntry("view toward yz plane",TOWARD_YZ)
+endif
 call glutAddMenuEntry("quit",QUIT)
 
 ! set the perspective
@@ -679,7 +888,7 @@ call gluPerspective(10.0_gldouble, 1.0_gldouble, maxdomain*0.05_gldouble, &
 
 ! this has a wider zoom range, but might have depth buffer precision problems
 !call gluPerspective(10.0_gldouble, 1.0_gldouble, maxdomain*0.0001_gldouble, &
-!                     maxdomain*1000.0_gldouble)
+!                    maxdomain*1000.0_gldouble)
 
 ! this one is terrible for depth buffer precision, but allows zooming to
 ! see the elements at refinement level 53

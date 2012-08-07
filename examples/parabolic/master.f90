@@ -80,6 +80,9 @@ call phaml_create(soln,nproc,update_umod=.true., &
 call phaml_solve_pde(soln,                      &
                      max_elem=nelem,            &
                      task=SET_INITIAL,          &
+                     pde_has_first_order_terms=.false., &
+                     pde_has_cross_derivative=.false., &
+                     laplacian_operator=.false., &
                      refterm=ONE_REF_HALF_ERRIND, &
                      error_estimator=INITIAL_CONDITION, &
                      print_header_who=NO_ONE,   &
@@ -102,8 +105,9 @@ do
                         max_refsolveloop=1,      &
                         refterm=KEEP_NELEM,      &
                         max_elem=nelem,          &
-                        mg_cycles=10,             &
+                        mg_cycles=10,            &
                         draw_grid_when=FINAL ,   &
+                        print_warnings=.false.,  &
                         print_header_who=NO_ONE, &
                         print_trailer_who=NO_ONE)
    print *,"time = ",t

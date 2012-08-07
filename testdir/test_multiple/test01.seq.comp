@@ -1,0 +1,104 @@
+
+---------------------------------------------------------
+phaml_solve_pde complete
+
+number of loops through phases =           1
+termination condition:
+  maximum vertices achieved
+---------------------------------------------------------
+solving pde 1, iteration           1
+
+Total Grid:
+   number of vertices      =          19
+   number of leaf elements =          25
+   number of levels        =           4
+   degrees of freedom      =          19
+   min and max degree      =           1          1
+
+Norms of error:
+   energy norm of error       2.2837600139E-01
+   energy error estimate      2.0709566826E-01
+      effectivity             9.0681887327E-01
+   Linf norm of error         8.6052182199E-02
+   Linf error estimate        3.8494274052E-02
+      effectivity             4.4733640761E-01
+solving pde 2, iteration           1
+
+Total Grid:
+   number of vertices      =          30
+   number of leaf elements =          43
+   number of levels        =           5
+   degrees of freedom      =          30
+   min and max degree      =           1          1
+
+Norms of error:
+   energy norm of error       1.7471628639E+00
+   energy error estimate      2.3352392592E+00
+      effectivity             1.3365893400E+00
+   Linf norm of error         2.8838513354E-01
+   Linf error estimate        2.7359305458E-01
+      effectivity             9.4870720700E-01
+solving pde 1, iteration           2
+
+Total Grid:
+   number of vertices      =          48
+   number of leaf elements =          74
+   number of levels        =           5
+   degrees of freedom      =          48
+   min and max degree      =           1          1
+
+Norms of error:
+   energy norm of error       1.1024231848E-01
+   energy error estimate      1.4145984125E-01
+      effectivity             1.2831718636E+00
+   Linf norm of error         1.4003455701E-02
+   Linf error estimate        1.0330118376E-02
+      effectivity             7.3768351156E-01
+solving pde 2, iteration           2
+
+Total Grid:
+   number of vertices      =          64
+   number of leaf elements =         106
+   number of levels        =           6
+   degrees of freedom      =          64
+   min and max degree      =           1          1
+
+Norms of error:
+   energy norm of error       1.1943654217E+00
+   energy error estimate      1.4718348147E+00
+      effectivity             1.2323153266E+00
+   Linf norm of error         1.5422599407E-01
+   Linf error estimate        1.0876606994E-01
+      effectivity             7.0523824855E-01
+solving pde 1, iteration           3
+
+Total Grid:
+   number of vertices      =          98
+   number of leaf elements =         166
+   number of levels        =           6
+   degrees of freedom      =          98
+   min and max degree      =           1          1
+
+Norms of error:
+   energy norm of error       7.5849442559E-02
+   energy error estimate      9.3508671189E-02
+      effectivity             1.2328194913E+00
+   Linf norm of error         7.0170697099E-03
+   Linf error estimate        4.3734928844E-03
+      effectivity             6.2326484775E-01
+solving pde 2, iteration           3
+
+Total Grid:
+   number of vertices      =         132
+   number of leaf elements =         228
+   number of levels        =           7
+   degrees of freedom      =         132
+   min and max degree      =           1          1
+
+Norms of error:
+   energy norm of error       8.2887075020E-01
+   energy error estimate      1.0067646160E+00
+      effectivity             1.2146219610E+00
+   Linf norm of error         6.8214653473E-02
+   Linf error estimate        4.1600612500E-02
+      effectivity             6.0984862315E-01

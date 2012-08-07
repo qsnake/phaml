@@ -36,21 +36,22 @@ use hash_mod
 use hash_eq_mod
 use stopwatch
 use petsc_init_mod
+use slepc_init_mod
+use omp_lib
 
 implicit none
 private
 public proc_info, init_comm, terminate_comm, increase_universe, &
        decrease_universe, phaml_send, phaml_recv, phaml_alltoall, &
        phaml_global_max, phaml_global_min, phaml_global_sum, PARALLEL, &
-       phaml_barrier, pause_until_enter, warning, fatal, &
+       phaml_barrier, phaml_barrier_master,pause_until_enter, warning, fatal, &
        my_proc, num_proc, log_nproc, hostname, graphics_proc, &
        this_processors_procs, pack_procs_size, pack_procs, unpack_procs, &
        cleanup_unpack_procs, slaves_communicator, max_real_buffer, &
        sequential_send, sequential_recv, print_comm, &
        GRAPHICS_TERMINATE, GRAPHICS_INIT, GRAPHICS_GRID, &
-       GRAPHICS_CLOSE, &
-       NORMAL_SPAWN, DEBUG_SLAVE, DEBUG_GRAPHICS, DEBUG_BOTH, &
-       HOSTLEN
+       GRAPHICS_CLOSE, NORMAL_SPAWN, DEBUG_SLAVE, DEBUG_GRAPHICS, DEBUG_BOTH, &
+       VTUNE_SLAVE, VTUNE_GRAPHICS, VTUNE_BOTH, HOSTLEN
 
 !----------------------------------------------------
 ! The following types are defined:
@@ -97,10 +98,16 @@ integer, parameter :: GRAPHICS_TERMINATE = 1, &
 integer, parameter :: NORMAL_SPAWN       = 1, &
                       DEBUG_SLAVE        = 2, &
                       DEBUG_GRAPHICS     = 3, &
-                      DEBUG_BOTH         = 4
+                      DEBUG_BOTH         = 4, &
+! Undocumented feature to run the slaves and/or graphics under Intel's VTune.
+! This requires that debug_command be present and contain the command line
+! arguments for VTune (except the target).
+                      VTUNE_SLAVE        = 5, &
+                      VTUNE_GRAPHICS     = 6, &
+                      VTUNE_BOTH         = 7
 
 ! If you change this, also change it in phaml.f90
-integer, parameter :: DEBUGLEN = 64
+integer, parameter :: DEBUGLEN = 256
 
 logical :: print_comm = .false. ! for debugging and tuning
 !----------------------------------------------------
@@ -315,7 +322,7 @@ contains
 !          ---------
 subroutine init_comm(procs,spawn_form,i_draw_grid,master_draws_grid, &
                      graphics_host,output_unit,error_unit,system_size,eq_type, &
-                     pde_id,nproc,max_blen,triangle_files,update_umod, &
+                     pde_id,nproc,nthread,max_blen,triangle_files,update_umod, &
                      debug_command,display)
 !          ---------
 
@@ -335,7 +342,7 @@ logical, intent(inout) :: i_draw_grid, master_draws_grid
 !(next two are intent(in) for master, intent(out) for slaves and graphics)
 character(len=*), intent(inout) :: graphics_host
 integer, intent(inout) :: output_unit, error_unit, pde_id, system_size, eq_type
-integer, intent(in) :: nproc
+integer, intent(in) :: nproc, nthread
 real(my_real), intent(inout) :: max_blen
 character(len=*), intent(inout) :: triangle_files
 logical, intent(inout) :: update_umod
@@ -345,7 +352,8 @@ character(len=*), intent(in), optional :: debug_command, display
 !----------------------------------------------------
 ! Local variables:
 
-integer :: from_proc,ni,nr,temp,proc,ngraph,i,j,info,my_type,spawninfo,allocstat
+integer :: from_proc,ni,nr,temp,proc,ngraph,i,j,info,my_type,spawninfo, &
+           allocstat,loc_nthread,nword
 logical :: i_have_graphics
 integer, pointer :: int_hostname(:)
 integer, pointer :: irecv(:)
@@ -359,7 +367,7 @@ character(len=HOSTLEN) :: loc_graphics_host
 
 type (proc_info) :: univ_procs
 integer :: name_length, univ_size
-character(len=DEBUGLEN) :: spawn_argv(6)
+character(len=DEBUGLEN) :: spawn_argv(32)
 character(len=DEBUGLEN) :: loc_debug_command, loc_display
 integer :: parent_comm, child_comm, new_universe
 logical, save :: first_call = .true.
@@ -543,6 +551,18 @@ if (parent_comm == MPI_COMM_NULL) then ! I am the master process, start slaves
          call fatal("mpi_comm_spawn returned error code",intlist=(/info/))
          return
       endif
+   case (VTUNE_SLAVE,VTUNE_BOTH)
+      call unpack_vtune_args(loc_debug_command,spawn_argv,nword)
+      spawn_argv(nword+1) = "phaml_slave"
+      spawn_argv(nword+2) = ""
+      call mpi_comm_spawn_char('amplxe-cl',spawn_argv,procs%nproc, &
+                               MPI_INFO_NULL,0,universe,child_comm, &
+                               MPI_ERRCODES_IGNORE,info)
+      if (info /= 0) then
+         ierr = PHAML_INTERNAL_ERROR
+         call fatal("mpi_comm_spawn returned error code",intlist=(/info/))
+         return
+      endif
    case default
       ierr = USER_INPUT_ERROR
       call fatal("illegal value for spawn_form",intlist=(/spawn_form/))
@@ -606,7 +626,8 @@ if (parent_comm == MPI_COMM_NULL) then ! I am the master process, start slaves
    else
       isend(4) = 0
    endif
-   isend(5) = 0    ! not used
+   loc_nthread = nthread
+   isend(5) = nthread
    isend(6) = 0    ! not used
    isend(7) = pde_id
    isend(8) = spawn_form
@@ -685,6 +706,7 @@ else ! I am either a slave or a graphics server
    procs%nproc = irecv(2)
    i_draw_grid = irecv(3)==1
    master_draws_grid = irecv(4)==1
+   loc_nthread = irecv(5)
    pde_id = irecv(7)
    spawn_form = irecv(8)
    output_unit = irecv(9)
@@ -718,6 +740,8 @@ else ! I am either a slave or a graphics server
    if (my_type == GRAPHICS) then
       procs%my_proc = procs%nproc+1
    endif
+
+   call omp_set_num_threads(loc_nthread)
 
 ! get the universal ids from the master
 
@@ -824,7 +848,7 @@ if (my_type == MASTER .or. my_type == SLAVES) then
 ! spawn the graphics servers
 
       select case(spawn_form)
-      case (NORMAL_SPAWN,DEBUG_SLAVE)
+      case (NORMAL_SPAWN,DEBUG_SLAVE,VTUNE_SLAVE)
          call mpi_comm_spawn('phaml_graphics',MPI_ARGV_NULL,ngraph, &
                              spawninfo,0,universe,child_comm, &
                              MPI_ERRCODES_IGNORE,info)
@@ -855,6 +879,18 @@ if (my_type == MASTER .or. my_type == SLAVES) then
             call fatal("mpi_comm_spawn returned error code",intlist=(/info/))
             return
          endif
+   case (VTUNE_GRAPHICS,VTUNE_BOTH)
+      call unpack_vtune_args(loc_debug_command,spawn_argv,nword)
+      spawn_argv(nword+1) = "phaml_graphics"
+      spawn_argv(nword+2) = ""
+      call mpi_comm_spawn_char('amplxe-cl',spawn_argv,procs%nproc, &
+                               MPI_INFO_NULL,0,universe,child_comm, &
+                               MPI_ERRCODES_IGNORE,info)
+      if (info /= 0) then
+         ierr = PHAML_INTERNAL_ERROR
+         call fatal("mpi_comm_spawn returned error code",intlist=(/info/))
+         return
+      endif
       case default
          ierr = USER_INPUT_ERROR
          call fatal("illegal value for spawn_form",intlist=(/spawn_form/))
@@ -944,7 +980,7 @@ if (my_type == MASTER .or. my_type == SLAVES) then
       else
          isend(4) = 0
       endif
-      isend(5) = 0   ! not used
+      isend(5) = loc_nthread
       isend(6) = 0   ! not used
       isend(7) = pde_id
       isend(8) = spawn_form
@@ -1064,6 +1100,7 @@ endif
 ! initialize PETSc
 
 if (my_type == SLAVES) then
+   call slepc_init(procs%slaves)
    call petsc_init(procs%slaves)
 endif
 
@@ -1071,7 +1108,7 @@ return
 end subroutine init_comm
 
 !          --------------
-subroutine terminate_comm(procs,finalize_mpi)
+subroutine terminate_comm(procs,finalize_mpi,no_graphics)
 !          --------------
 
 !----------------------------------------------------
@@ -1085,6 +1122,7 @@ implicit none
 
 type (proc_info), intent(inout) :: procs
 logical, intent(in) :: finalize_mpi
+logical, intent(in) :: no_graphics ! TEMP see comment below
 !----------------------------------------------------
 
 !----------------------------------------------------
@@ -1199,7 +1237,8 @@ if (procs%my_proc == MASTER) then
    call mpi_comm_dup(newintercomm,universe,info)
    call mpi_comm_free(newintercomm,info)
 
-   if (finalize_mpi) then
+! TEMP see comment about no_graphics in the slaves section
+   if (finalize_mpi .and. no_graphics) then
       call mpi_finalize(info) ! get out of MPI
    endif
 
@@ -1245,14 +1284,20 @@ else
    if (allocated(univ_id)) deallocate(univ_id,stat=allocstat)
    if (associated(procs%all_procs)) deallocate(procs%all_procs,stat=allocstat)
 
+   call slepc_finalize
    call petsc_finalize ! terminate PETSc; only slaves called petsc_init
-   call mpi_finalize(info) ! get out of MPI
+! TEMP I don't know why, but with Open MPI, if I do graphics then the slaves
+!      and master get hung up in mpi_finalize (but not the graphics engine).
+!      We can't tell if Open MPI is the MPI library, so just don't call
+!      mpi_finalize if we're doing graphics.
+   if (no_graphics) then
+      call mpi_finalize(info) ! get out of MPI
+   endif
 
 endif
 
 nullify(this_processors_procs)
 
-return
 end subroutine terminate_comm
 
 !          -----------------
@@ -1273,8 +1318,8 @@ integer, intent(in) :: recv_int(:)
 ! Local variables:
 
 integer :: i, info, from_proc, ni, nr, allocstat, new_universe, &
-           spawn_what, spawn_form, nspawn, child_comm, spawninfo
-character(len=DEBUGLEN) :: debug_command, display, spawn_argv(6)
+           spawn_what, spawn_form, nspawn, child_comm, spawninfo, nword
+character(len=DEBUGLEN) :: debug_command, display, spawn_argv(32)
 character(len=HOSTLEN) :: graphics_host
 integer, pointer :: irecv(:)
 real(my_real), pointer :: rrecv(:)
@@ -1332,6 +1377,18 @@ case (SLAVES)
          call fatal("mpi_comm_spawn returned error code",intlist=(/info/))
          return
       endif
+   case (VTUNE_SLAVE,VTUNE_BOTH)
+      call unpack_vtune_args(debug_command,spawn_argv,nword)
+      spawn_argv(nword+1) = "phaml_slave"
+      spawn_argv(nword+2) = ""
+      call mpi_comm_spawn_char('amplxe-cl',spawn_argv,procs%nproc, &
+                               MPI_INFO_NULL,0,universe,child_comm, &
+                               MPI_ERRCODES_IGNORE,info)
+      if (info /= 0) then
+         ierr = PHAML_INTERNAL_ERROR
+         call fatal("mpi_comm_spawn returned error code",intlist=(/info/))
+         return
+      endif
    case default
       ierr = USER_INPUT_ERROR
       call fatal("illegal value for spawn_form",intlist=(/spawn_form/))
@@ -1375,6 +1432,18 @@ case (GRAPHICS)
       endif
       call mpi_comm_spawn_char('xterm',spawn_argv,nspawn, &
                                spawninfo,0,universe,child_comm, &
+                               MPI_ERRCODES_IGNORE,info)
+      if (info /= 0) then
+         ierr = PHAML_INTERNAL_ERROR
+         call fatal("mpi_comm_spawn returned error code",intlist=(/info/))
+         return
+      endif
+   case (VTUNE_GRAPHICS,VTUNE_BOTH)
+      call unpack_vtune_args(debug_command,spawn_argv,nword)
+      spawn_argv(nword+1) = "phaml_graphics"
+      spawn_argv(nword+2) = ""
+      call mpi_comm_spawn_char('amplxe-cl',spawn_argv,procs%nproc, &
+                               MPI_INFO_NULL,0,universe,child_comm, &
                                MPI_ERRCODES_IGNORE,info)
       if (info /= 0) then
          ierr = PHAML_INTERNAL_ERROR
@@ -1454,6 +1523,43 @@ real(my_real), pointer :: rrecv(:)
    call mpi_comm_free(newintercomm,info)
 
 end subroutine decrease_universe
+
+!          -----------------
+subroutine unpack_vtune_args(debug_command,spawn_argv,nword)
+!          -----------------
+
+!----------------------------------------------------
+! This routine splits the arguments given in debug_command into
+! individual words in spawn_argv
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+
+character(len=*), intent(in) :: debug_command
+character(len=*), intent(out) :: spawn_argv(:)
+integer, intent(out) :: nword
+!----------------------------------------------------
+! Local variables:
+
+character(len=DEBUGLEN) :: strshift
+integer :: blank
+!----------------------------------------------------
+! Begin executable code
+
+spawn_argv = ""
+strshift = debug_command
+nword = 0
+
+do
+   blank = index(strshift," ")
+   if (blank == 1) exit
+   nword = nword + 1
+   spawn_argv(nword) = strshift(1:blank-1)
+   strshift = strshift(blank+1:)
+end do
+
+end subroutine unpack_vtune_args
 
 !          ----------
 subroutine phaml_send(procs,proc,int_message,ni,real_message,nr,tag)
@@ -1587,8 +1693,6 @@ if (print_comm) then
       write(outunit,"(2(A,I11))") "proc ",procs%my_proc," waiting to receive tag ",tag
    endif
 endif
-
-! check for a message that some processor had a fatal error
 
 call mpi_iprobe(MPI_ANY_SOURCE,ERR_TAG,universe,message_waiting,status,info)
 if (message_waiting) then
@@ -1728,6 +1832,7 @@ integer :: displs(procs%nproc), nsenda(1), irecv(procs%nproc)
 
 if (print_comm) then
    write(outunit,"(2(A,I11))") "proc ",procs%my_proc," in phaml_alltoall_int, tag ",tag
+   write(outunit,"(I11,A)")  nsend," integers "
 endif
 
 ! use an all-gather to find out how much data each processor is sending
@@ -1827,6 +1932,7 @@ integer :: displs(procs%nproc), nsenda(1), irecv(procs%nproc)
 
 if (print_comm) then
    write(outunit,"(2(A,I11))") "proc ",procs%my_proc," in phaml_alltoall_real, tag ",tag
+   write(outunit,"(I11,A)")  nsend," reals"
 endif
 
 ! use an all-gather to find out how much data each processor is sending
@@ -1933,6 +2039,7 @@ integer :: sdispls(procs%nproc), rdispls(procs%nproc), isend(procs%nproc), &
 
 if (print_comm) then
    write(outunit,"(2(A,I11))") "proc ",procs%my_proc," in phaml_alltoall_intv, tag ",tag
+   write(outunit,"(A,128I11)")  "   number of integers ",nsend
 endif
 
 ! determine the starting point of each sent message
@@ -2039,6 +2146,7 @@ integer :: sdispls(procs%nproc), rdispls(procs%nproc), isend(procs%nproc), &
 
 if (print_comm) then
    write(outunit,"(2(A,I11))") "proc ",procs%my_proc," in phaml_alltoall_realv, tag ",tag
+   write(outunit,"(A,128I11)")  "   number of reals ",nsend
 endif
 
 ! determine the starting point of each sent message
@@ -2892,6 +3000,52 @@ else
 endif
 
 end subroutine phaml_barrier
+
+!          --------------------
+subroutine phaml_barrier_master(procs)
+!          --------------------
+
+!----------------------------------------------------
+! This routine waits until all processors (including master) get to it
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+type(proc_info), intent(in) :: procs
+
+!----------------------------------------------------
+! Local variables:
+
+integer :: i, p, no_int(1), ni, nr, allocstat
+real(my_real) :: no_reals(1)
+integer, pointer :: recv_int(:)
+real(my_real), pointer :: recv_real(:)
+!----------------------------------------------------
+! Begin executable code
+
+! master waits for a message from all others and then sends them one
+
+if (procs%my_proc == MASTER) then
+   do i=1,procs%nproc
+      call phaml_recv(procs,p,recv_int,ni,recv_real,nr,41)
+      if (associated(recv_int)) deallocate(recv_int,stat=allocstat)
+      if (associated(recv_real)) deallocate(recv_real,stat=allocstat)
+   end do
+   do i=1,procs%nproc
+      call phaml_send(procs,i,no_int,0,no_reals,0,42)
+   end do
+
+! other processors send a message to processor 1 and wait for a reply
+
+else
+   call phaml_send(procs,MASTER,no_int,0,no_reals,0,41)
+   call phaml_recv(procs,p,recv_int,ni,recv_real,nr,42)
+   if (associated(recv_int)) deallocate(recv_int,stat=allocstat)
+   if (associated(recv_real)) deallocate(recv_real,stat=allocstat)
+
+endif
+
+end subroutine phaml_barrier_master
 
 !          -----------------
 subroutine pause_until_enter(procs,really_pause,just_one,dont_pausewatch)

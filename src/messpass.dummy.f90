@@ -32,13 +32,15 @@ use global
 use hash_mod
 use hash_eq_mod
 use stopwatch
+use petsc_init_mod
+use slepc_init_mod
 
 implicit none
 private
 public proc_info, init_comm, terminate_comm, increase_universe, &
        decrease_universe, phaml_send, phaml_recv, phaml_alltoall, &
        phaml_global_max, phaml_global_min, phaml_global_sum, PARALLEL, &
-       phaml_barrier, pause_until_enter, warning, fatal, &
+       phaml_barrier, phaml_barrier_master, pause_until_enter, warning, fatal, &
        my_proc, num_proc, log_nproc, hostname, graphics_proc, &
        this_processors_procs, pack_procs_size, pack_procs, unpack_procs, &
        cleanup_unpack_procs, slaves_communicator, max_real_buffer, &
@@ -46,6 +48,7 @@ public proc_info, init_comm, terminate_comm, increase_universe, &
        GRAPHICS_TERMINATE, GRAPHICS_INIT, GRAPHICS_GRID, &
        GRAPHICS_CLOSE, UNKNOWN_SENDER, &
        NORMAL_SPAWN, DEBUG_SLAVE, DEBUG_GRAPHICS, DEBUG_BOTH, &
+       VTUNE_SLAVE, VTUNE_GRAPHICS, VTUNE_BOTH, &
        HOSTLEN
 
 !----------------------------------------------------
@@ -74,13 +77,16 @@ end type message_list
 integer, parameter :: PARALLEL=SEQUENTIAL
 integer, parameter :: UNKNOWN_SENDER = -2
 integer, parameter :: GRAPHICS_TERMINATE = 1, &
-                               GRAPHICS_INIT      = 2, &
-                               GRAPHICS_GRID      = 3, &
-                               GRAPHICS_CLOSE     = 5
-integer, parameter :: NORMAL_SPAWN =   1, &
-                               DEBUG_SLAVE  =   2, &
-                               DEBUG_GRAPHICS = 3, &
-                               DEBUG_BOTH     = 4
+                      GRAPHICS_INIT      = 2, &
+                      GRAPHICS_GRID      = 3, &
+                      GRAPHICS_CLOSE     = 5
+integer, parameter :: NORMAL_SPAWN   = 1, &
+                      DEBUG_SLAVE    = 2, &
+                      DEBUG_GRAPHICS = 3, &
+                      DEBUG_BOTH     = 4, &
+                      VTUNE_SLAVE    = 5, &
+                      VTUNE_GRAPHICS = 6, &
+                      VTUNE_BOTH     = 7
 !----------------------------------------------------
 ! The following variables are defined:
 
@@ -112,14 +118,14 @@ contains
 
 subroutine init_comm(procs,spawn_form,i_draw_grid,master_draws_grid, &
                      graphics_host,output_unit,error_unit,system_size,eq_type, &
-                     pde_id,nproc,max_blen,triangle_files,update_umod, &
+                     pde_id,nproc,nthread,max_blen,triangle_files,update_umod, &
                      debug_command,display)
 type (proc_info), target :: procs
 integer, intent(inout) :: spawn_form
 logical, intent(inout) :: i_draw_grid, master_draws_grid
 character(len=*), intent(inout) :: graphics_host
 integer, intent(inout) :: output_unit, error_unit, pde_id, system_size, eq_type
-integer, intent(in) :: nproc
+integer, intent(in) :: nproc, nthread
 real(my_real), intent(inout) :: max_blen
 character(len=*), intent(inout) :: triangle_files
 logical, intent(inout) :: update_umod
@@ -127,9 +133,12 @@ character(len=*), intent(in), optional :: debug_command, display
 logical :: l
 integer :: i
 procs%nothing = nproc
+procs%nothing = nthread
 procs%do_graphics = i_draw_grid .or. master_draws_grid
 this_processors_procs => procs
 update_umod = .false.
+call slepc_init(0)
+call petsc_init(0)
 ! just to avoid compiler warnings that the dummy arguments aren't used
 l = i_draw_grid
 l = master_draws_grid
@@ -282,9 +291,9 @@ close(unit=iounit,status="DELETE")
 
 end subroutine sequential_recv
 
-subroutine terminate_comm(procs,finalize_mpi)
+subroutine terminate_comm(procs,finalize_mpi,no_graphics)
 type (proc_info), intent(inout) :: procs
-logical, intent(in) :: finalize_mpi
+logical, intent(in) :: finalize_mpi, no_graphics
 if (procs%do_graphics) then
    call sequential_send((/GRAPHICS_TERMINATE/),1,(/0.0_my_real/),0)
 endif
@@ -587,6 +596,10 @@ end subroutine cleanup_unpack_procs
 subroutine phaml_barrier(procs)
 type(proc_info), intent(in) :: procs
 end subroutine phaml_barrier
+
+subroutine phaml_barrier_master(procs)
+type(proc_info), intent(in) :: procs
+end subroutine phaml_barrier_master
 
 !          -----------------
 subroutine pause_until_enter(procs,really_pause,just_one,dont_pausewatch)

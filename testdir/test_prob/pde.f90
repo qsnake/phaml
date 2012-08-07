@@ -31,6 +31,7 @@
 
 module phaml_user_mod
 integer :: probno=0
+double precision, parameter :: pi=3.14159265358979d0
 end module phaml_user_mod
 
 !          --------
@@ -76,7 +77,7 @@ real(my_real), intent(out) :: cxx(:,:),cxy(:,:),cyy(:,:),cx(:,:),cy(:,:), &
 !----------------------------------------------------
 ! Local variables
 
-real(my_real) :: pi,a,t,tx,ty,txx,tyy,px,qy
+real(my_real) :: a,t,tx,ty,txx,tyy,px,qy
 !----------------------------------------------------
 
 interface
@@ -112,7 +113,6 @@ case(1)
    cxx(1,1) = 1.0_my_real
    cyy(1,1) = 1.0_my_real
    c(1,1) = 0.0_my_real
-   pi = 4*atan(1.0_my_real)
    rs(1) = (4*pi**2*x**2 - 2)*sin(2*pi*y + 1)
 case(2)
    cxx(1,1) = 1.0_my_real
@@ -148,6 +148,11 @@ case(5)
    rs = -90*(x**8*y**10+x**10*y**8) &
            - cxy(1,1)*100*x**9*y**9 &
            - (1-y)*10*x**10*y**9
+case(6)
+   cxx = 1.0_my_real
+   cyy = 1.0_my_real
+   c = 0.0_my_real
+   rs = 8*pi**2*sin(2*pi*x+1)*sin(2*pi*y+1)
 
 case default
    print *,"illegal problem number in pdecoefs"
@@ -227,8 +232,6 @@ end interface
 !----------------------------------------------------
 ! Begin executable code
 
-! Dirichlet boundary conditions
-
 select case(probno)
 case(1)
    select case(bmark)
@@ -275,6 +278,19 @@ case (3,4,5)
    c = 0.0_my_real
    rs(1) = trues(x,y,1,1)
 
+case(6)
+   select case(bmark)
+   case (1)
+      itype = DIRICHLET
+      c = 0.0_my_real
+      rs = trues(x,y,1,1)
+   case (-8, 8, -9, 9)
+      itype = PERIODIC
+      c = 0.0_my_real
+      rs = 0.0_my_real
+   case default
+      print *,"illegal bmark passed to bconds"
+   end select
 case default
    print *,"illegal problem number in bconds"
    stop
@@ -344,13 +360,11 @@ integer, intent(in) :: comp,eigen
 real (my_real) :: trues
 !----------------------------------------------------
 
-real(my_real) :: pi
 !----------------------------------------------------
 ! Begin executable code
 
 select case(probno)
 case(1)
-   pi = 4*atan(1.0_my_real)
    trues = x**2 * sin(2*pi*y + 1)
 case(2)
    trues = x**2 + y**2
@@ -360,6 +374,8 @@ case(4)
    trues = x**10 + y**10
 case(5)
    trues = x**10 * y**10
+case(6)
+   trues = sin(2*pi*x+1)*sin(2*pi*y+1)
 case default
    print *,"illegal problem number in trues"
    stop
@@ -395,13 +411,11 @@ integer, intent(in) :: comp,eigen
 real (my_real) :: truexs
 !----------------------------------------------------
 
-real (my_real) :: pi
 !----------------------------------------------------
 ! Begin executable code
 
 select case(probno)
 case(1)
-   pi = 4*atan(1.0_my_real)
    truexs = 2*x * sin(2*pi*y + 1)
 case(2)
    truexs = 2*x
@@ -411,6 +425,8 @@ case(4)
    truexs = 10*x**9
 case(5)
    truexs = 10*x**9 * y**10
+case(6)
+   truexs = 2*pi*cos(2*pi*x+1)*sin(2*pi*y+1)
 case default
    print *,"illegal problem number in truexs"
    stop
@@ -446,13 +462,11 @@ integer, intent(in) :: comp,eigen
 real (my_real) :: trueys
 !----------------------------------------------------
 
-real(my_real) :: pi
 !----------------------------------------------------
 ! Begin executable code
 
 select case (probno)
 case(1)
-   pi = 4*atan(1.0_my_real)
    trueys = x**2 * 2*pi*cos(2*pi*y + 1)
 case(2)
    trueys = 2*y
@@ -462,6 +476,8 @@ case(4)
    trueys = 10*y**9
 case(5)
    trueys = 10*y**9 * x**10
+case(6)
+   trueys = 2*pi*sin(2*pi*x+1)*cos(2*pi*y+1)
 case default
    print *,"illegal problem number in trueys"
    stop

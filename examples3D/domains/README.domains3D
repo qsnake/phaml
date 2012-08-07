@@ -1,0 +1,6 @@
+This example shows how to define 3D domains with Gmsh's .geo files.  The
+.msh files are output from Gmsh.  Edit master.f90 to select the domain to use.
+
+If you are solving a problem on the unit cube, you can use unitcube.msh and
+you don't need to have Gmsh.  See the section on 3D problems in the User's
+Guide for the assignment of boundary markers in this file.

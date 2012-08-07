@@ -1,0 +1,325 @@
+
+------------------------------------------------------
+          PHAML Version 1.11.0 WARNING
+parallel not yet supported in 3D; setting nproc to 1
+------------------------------------------------------
+
+---------------------------------------------------------
+           PHAML   Version 1.11.0
+
+Output from the master process
+  PDE id is     0
+  Number of slave processors is     1
+  Number of OpenMP threads is       1
+
+Subroutine phaml_solve_pde parameters:
+  max_elem           infinity
+  max_vert                  500
+  max_eq             infinity
+  max_lev            infinity
+  stop_on_maxlev     false
+  max_deg                    22
+  stop_on_maxdeg     false
+  max_refsolveloop   infinity
+  task               BALANCE_REFINE_SOLVE
+  solve_init         true
+  system_size                 1
+  pde_has_first_order_terms  false
+  pde_has_cross_derivative   false
+  laplacian_operator         true
+  isosceles_right_triangles  false
+  print_grid_when    PHASES
+  print_grid_who     MASTER
+  print_linsys_when  PHASES
+  print_linsys_who   MASTER
+  print_solver_when  PHASES
+  print_solver_who   MASTER
+  print_error_when   PHASES
+  print_error_who    MASTER
+  print_error_what   ENERGY_LINF_L2_ERR
+  print_errest_what  ENERGY_LINF_L2_ERREST
+  print_time_when    NEVER
+  pause_after_draw   false
+  pause_after_phases false
+  pause_at_start     false
+  pause_at_end       false
+  degree             existing
+  sequential_vert           100
+  inc_factor          2.0000000000E+00
+  error_estimator    HIERARCHICAL_COEFFICIENT
+  errtype            RELATIVE ERROR
+  reftype            H_ADAPTIVE
+  edge_rule          MINIMUM_RULE
+  refterm            DOUBLE_NEQ
+  derefine           false
+  partition_method   RTK
+  ignore_quad_err    true
+  solver             PETSC_CG_SOLVER
+  preconditioner     PETSC_SOR_PRECONDITION
+  petsc_matrix_free  false
+  petsc_rtol         default
+  petsc_atol         default
+  petsc_dtol         default
+  petsc_maxits       default
+  petsc_sor_omega    default
+  petsc_sor_its      default
+  petsc_sor_lits     default
+---------------------------------------------------------
+
+Total Grid:
+   number of vertices      =          14
+   number of leaf elements =          24
+   number of levels        =           1
+   degrees of freedom      =          14
+   min and max degree      =           1          1
+
+Total Linear System:
+   number of equations =          14
+   number of nonzeroes =         112
+   condensed matrix number of equations =          14
+   condensed matrix number of nonzeroes =         112
+
+Solver information:
+   number of iterations =           0
+   relative residual =   0.0000000000E+00
+
+Norms of error:
+   energy norm of error       1.8595424054E+00
+   energy error estimate      6.3737732620E-01
+      effectivity             3.4276030724E-01
+   Linf norm of error         5.3719416082E-01
+   Linf error estimate        4.9999968211E-01
+      effectivity             9.3076157296E-01
+   L2 norm of error           1.5294923119E+01
+   L2 error estimate          2.3273676874E-01
+      effectivity             1.5216602720E-02
+
+Total Grid:
+   number of vertices      =          36
+   number of leaf elements =          85
+   number of levels        =           4
+   degrees of freedom      =          36
+   min and max degree      =           1          1
+
+Total Linear System:
+   number of equations =          36
+   number of nonzeroes =         332
+   condensed matrix number of equations =          36
+   condensed matrix number of nonzeroes =         332
+
+Solver information:
+   number of iterations =           3
+   relative residual =   1.0076892914E-06
+
+Norms of error:
+   energy norm of error       1.0531642184E+00
+      reduced by              5.6635665601E-01
+   energy error estimate      5.7965391657E-01
+      reduced by              9.0943604791E-01
+      effectivity             5.5039271790E-01
+   Linf norm of error         5.3716698549E-01
+      reduced by              9.9994941248E-01
+   Linf error estimate        3.3121950993E-01
+      reduced by              6.6243944103E-01
+      effectivity             6.1660436862E-01
+   L2 norm of error           7.0980507973E+00
+      reduced by              4.6407888042E-01
+   L2 error estimate          1.5596244379E-01
+      reduced by              6.7012378246E-01
+      effectivity             2.1972573632E-02
+
+Total Grid:
+   number of vertices      =          69
+   number of leaf elements =         227
+   number of levels        =           6
+   degrees of freedom      =          69
+   min and max degree      =           1          1
+
+Total Linear System:
+   number of equations =          69
+   number of nonzeroes =         747
+   condensed matrix number of equations =          69
+   condensed matrix number of nonzeroes =         747
+
+Solver information:
+   number of iterations =           5
+   relative residual =   1.0297407936E-06
+
+Norms of error:
+   energy norm of error       8.8024102710E-01
+      reduced by              8.3580605163E-01
+   energy error estimate      7.5523292661E-01
+      reduced by              1.3029031721E+00
+      effectivity             8.5798423768E-01
+   Linf norm of error         4.1522878748E-01
+      reduced by              7.7299759423E-01
+   Linf error estimate        3.6842532372E-01
+      reduced by              1.1123297773E+00
+      effectivity             8.8728270974E-01
+   L2 norm of error           3.0310341229E+00
+      reduced by              4.2702344763E-01
+   L2 error estimate          2.1209547586E-01
+      reduced by              1.3599137761E+00
+      effectivity             6.9974624916E-02
+
+Total Grid:
+   number of vertices      =         139
+   number of leaf elements =         465
+   number of levels        =           7
+   degrees of freedom      =         139
+   min and max degree      =           1          1
+
+Total Linear System:
+   number of equations =         139
+   number of nonzeroes =        1521
+   condensed matrix number of equations =         139
+   condensed matrix number of nonzeroes =        1521
+
+Solver information:
+   number of iterations =           6
+   relative residual =   2.6888089428E-06
+
+Norms of error:
+   energy norm of error       7.7406915071E-01
+      reduced by              8.7938317673E-01
+   energy error estimate      7.9404526076E-01
+      reduced by              1.0513912103E+00
+      effectivity             1.0258066221E+00
+   Linf norm of error         3.4333411325E-01
+      reduced by              8.2685527496E-01
+   Linf error estimate        3.3121950993E-01
+      reduced by              8.9901396187E-01
+      effectivity             9.6471482778E-01
+   L2 norm of error           1.8608614680E+00
+      reduced by              6.1393616587E-01
+   L2 error estimate          1.8187719460E-01
+      reduced by              8.5752510214E-01
+      effectivity             9.7738170048E-02
+
+Total Grid:
+   number of vertices      =         247
+   number of leaf elements =         964
+   number of levels        =           8
+   degrees of freedom      =         247
+   min and max degree      =           1          1
+
+Total Linear System:
+   number of equations =         247
+   number of nonzeroes =        2939
+   condensed matrix number of equations =         247
+   condensed matrix number of nonzeroes =        2939
+
+Solver information:
+   number of iterations =           7
+   relative residual =   3.4642268290E-06
+
+Norms of error:
+   energy norm of error       7.1986329018E-01
+      reduced by              9.2997284483E-01
+   energy error estimate      8.1029082234E-01
+      reduced by              1.0204592388E+00
+      effectivity             1.1256176463E+00
+   Linf norm of error         2.8815718831E-01
+      reduced by              8.3929087497E-01
+   Linf error estimate        2.9781529805E-01
+      reduced by              8.9914781323E-01
+      effectivity             1.0335168100E+00
+   L2 norm of error           1.1687224687E+00
+      reduced by              6.2805452679E-01
+   L2 error estimate          1.6135605701E-01
+      reduced by              8.8717036442E-01
+      effectivity             1.3806191061E-01
+
+Total Grid:
+   number of vertices      =         474
+   number of leaf elements =        1912
+   number of levels        =          10
+   degrees of freedom      =         474
+   min and max degree      =           1          1
+
+Total Linear System:
+   number of equations =         474
+   number of nonzeroes =        5694
+   condensed matrix number of equations =         474
+   condensed matrix number of nonzeroes =        5694
+
+Solver information:
+   number of iterations =          10
+   relative residual =   5.6717210307E-06
+
+Norms of error:
+   energy norm of error       5.8656459333E-01
+      reduced by              8.1482776152E-01
+   energy error estimate      8.8067125464E-01
+      reduced by              1.0868582370E+00
+      effectivity             1.5014054115E+00
+   Linf norm of error         2.6631882485E-01
+      reduced by              9.2421371268E-01
+   Linf error estimate        2.3824157182E-01
+      reduced by              7.9996418375E-01
+      effectivity             8.9457278115E-01
+   L2 norm of error           7.3984350898E-01
+      reduced by              6.3303609605E-01
+   L2 error estimate          1.3403263718E-01
+      reduced by              8.3066381060E-01
+      effectivity             1.8116349681E-01
+
+Total Grid:
+   number of vertices      =         900
+   number of leaf elements =        3894
+   number of levels        =          11
+   degrees of freedom      =         900
+   min and max degree      =           1          1
+
+Total Linear System:
+   number of equations =         900
+   number of nonzeroes =       11218
+   condensed matrix number of equations =         900
+   condensed matrix number of nonzeroes =       11218
+
+Solver information:
+   number of iterations =          12
+   relative residual =   7.7446972370E-06
+
+Norms of error:
+   energy norm of error       4.7502521286E-01
+      reduced by              8.0984297085E-01
+   energy error estimate      8.2595581278E-01
+      reduced by              9.3787075305E-01
+      effectivity             1.7387620497E+00
+   Linf norm of error         1.6649342170E-01
+      reduced by              6.2516580193E-01
+   Linf error estimate        2.3827967463E-01
+      reduced by              1.0001599335E+00
+      effectivity             1.4311657013E+00
+   L2 norm of error           4.7744278472E-01
+      reduced by              6.4532942295E-01
+   L2 error estimate          9.9053100095E-02
+      reduced by              7.3902224249E-01
+      effectivity             2.0746590642E-01
+
+Total Grid:
+   number of vertices      =         900
+   number of leaf elements =        3894
+   number of levels        =          11
+   degrees of freedom      =         900
+   min and max degree      =           1          1
+
+Norms of error:
+   energy norm of error       4.7502521286E-01
+   energy error estimate      8.2595581278E-01
+      effectivity             1.7387620497E+00
+   Linf norm of error         1.6649342170E-01
+   Linf error estimate        2.3827967463E-01
+      effectivity             1.4311657013E+00
+   L2 norm of error           4.7744278472E-01
+   L2 error estimate          9.9053100095E-02
+      effectivity             2.0746590642E-01
+
+---------------------------------------------------------
+phaml_solve_pde complete
+
+number of loops through phases =           6
+termination condition:
+  maximum vertices achieved
+---------------------------------------------------------

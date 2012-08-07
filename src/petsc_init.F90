@@ -22,8 +22,6 @@ module petsc_init_mod
 
 !----------------------------------------------------
 ! This module contains routines that initialize and finalize PETSc.
-! They cannot be in the petsc_interf module because petsc_interf
-! uses message_passing, and message_passing calls these routines.
 !----------------------------------------------------
 
 !----------------------------------------------------
@@ -34,7 +32,7 @@ use global
 
 implicit none
 private
-public petsc_init, petsc_finalize
+public petsc_init, petsc_finalize, petsc_init_called, petsc_final_called
 
 !----------------------------------------------------
 ! The PETSc include files.  Note the use of preprocessor #include instead of
@@ -56,6 +54,7 @@ public petsc_init, petsc_finalize
 !----------------------------------------------------
 ! The following variables are defined:
 
+logical, save :: petsc_init_called = .false., petsc_final_called = .false.
 !----------------------------------------------------
 
 contains
@@ -80,15 +79,19 @@ MPI_Comm petsc_world_communicator
 !----------------------------------------------------
 ! Begin executable code
 
-petsc_world_communicator = slaves_communicator
+if (petsc_init_called) return
 
 ! For PETSc versions before 2.3.0
+!petsc_world_communicator = slaves_communicator
 !call PetscSetCommWorld(slaves_communicator,jerr)
 
 ! For PETSc versons 2.3.0 and later
 PETSC_COMM_WORLD = slaves_communicator
 
 call PetscInitialize(PETSC_NULL_CHARACTER,jerr)
+
+petsc_init_called = .true.
+petsc_final_called = .false.
 
 end subroutine petsc_init
 
@@ -110,7 +113,11 @@ integer :: jerr
 !----------------------------------------------------
 ! Begin executable code
 
+if (petsc_final_called) return
+
 call PetscFinalize(jerr)
+petsc_init_called = .false.
+petsc_final_called = .true.
 
 end subroutine petsc_finalize
 

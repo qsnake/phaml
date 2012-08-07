@@ -74,6 +74,10 @@ call phaml_solve_pde(soln,                      &
                      refterm=DOUBLE_NEQ, &
                      error_estimator=INITIAL_CONDITION, &
                      degree=4,                  &
+                     pde_has_first_order_terms=.false., &
+                     pde_has_cross_derivative=.false., &
+                     laplacian_operator=.false., &
+                     isosceles_right_triangles=.true., &
                      print_header_who=NO_ONE,   &
                      print_trailer_who=NO_ONE)
 

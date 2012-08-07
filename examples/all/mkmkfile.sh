@@ -49,15 +49,17 @@ echo "#   C compiler:       " $PHAML_C 1>>$f
 echo "#   Hash size:        " $PHAML_HASHSIZE 1>>$f
 echo "#   Parallel form:    " $PHAML_PARALLEL 1>>$f
 echo "#   Parallel library: " $PHAML_PARLIB 1>>$f
+echo "#   Element:          " $PHAML_ELEMENT 1>>$f
 echo "#   Graphics:         " $PHAML_GRAPHICS 1>>$f
 echo "#   BLAS:             " $PHAML_BLAS 1>>$f
 echo "#   LAPACK:           " $PHAML_LAPACK 1>>$f
+echo "#   SLEPc:            " $PHAML_SLEPC 1>>$f
 echo "#   ARPACK:           " $PHAML_ARPACK 1>>$f
 echo "#   BLOPEX:           " $PHAML_BLOPEX 1>>$f
-echo "#   HYPRE:            " $PHAML_HYPRE 1>>$f
-echo "#   MUMPS:            " $PHAML_MUMPS 1>>$f
 echo "#   PETSc:            " $PHAML_PETSC 1>>$f
+echo "#   MUMPS:            " $PHAML_MUMPS 1>>$f
 echo "#   SUPERLU:          " $PHAML_SUPERLU 1>>$f
+echo "#   HYPRE:            " $PHAML_HYPRE 1>>$f
 echo "#   Zoltan:           " $PHAML_ZOLTAN 1>>$f
 echo "#   ParMETIS:         " $PHAML_PARMETIS 1>>$f
 echo "#   JOSTLE:           " $PHAML_JOSTLE 1>>$f
@@ -138,6 +140,22 @@ echo "	"'$(LINKER) $(LINKFLAGS) -o phaml_graphics \' 1>>$f
 echo "	"'graphmain.o \' 1>>$f
 echo "	pde.o usermod.o "'\' 1>>$f
 echo "	"'-L$(PHAML_LIBDIR) -lphaml \' 1>>$f
+if [ -n "$SLEPCLIBS" ]
+then
+echo "	$SLEPCLIBS "'\' 1>>$f
+fi
+if [ -n "$ARPACKLIBS" ]
+then
+echo "	$ARPACKLIBS "'\' 1>>$f
+fi
+if [ -n "$PETSCLIBS" ]
+then
+echo "	$PETSCLIBS "'\' 1>>$f
+fi
+if [ -n "$MUMPSLIBS" ]
+then
+echo "	$MUMPSLIBS "'\' 1>>$f
+fi
 if [ -n "$SUPERLULIBS" ]
 then
 echo "	$SUPERLULIBS "'\' 1>>$f
@@ -146,25 +164,9 @@ if [ -n "$HYPRELIBS" ]
 then
 echo "	$HYPRELIBS "'\' 1>>$f
 fi
-if [ -n "$ARPACKLIBS" ]
-then
-echo "	$ARPACKLIBS "'\' 1>>$f
-fi
 if [ -n "$ZOLTANLIBS" ]
 then
 echo "	$ZOLTANLIBS "'\' 1>>$f
-fi
-if [ -n "$PETSCLIBS" ]
-then
-echo "	$PETSCLIBS "'\' 1>>$f
-fi
-if [ -n "$BLOPEXLIBS" ]
-then
-echo "	$BLOPEXLIBS "'\' 1>>$f
-fi
-if [ -n "$MUMPSLIBS" ]
-then
-echo "	$MUMPSLIBS "'\' 1>>$f
 fi
 echo "	$MESSPASSLIBS "'\' 1>>$f
 echo "	$OGLLIBS "'\' 1>>$f
@@ -192,106 +194,24 @@ echo "	pde.o usermod.o" 1>>$f
 echo "	"'$(LINKER) $(LINKFLAGS) -o phaml_slave \' 1>>$f
 echo "	"'slave.o \' 1>>$f
 echo "	pde.o usermod.o "'\' 1>>$f
-echo "	"'-L$(PHAML_LIBDIR) -lphaml \' 1>>$f
-if [ -n "$HYPRELIBS" ]
-then
-echo "	$HYPRELIBS "'\' 1>>$f
-fi
-if [ -n "$ZOLTANLIBS" ]
-then
-echo "	$ZOLTANLIBS "'\' 1>>$f
-fi
-if [ -n "$ARPACKLIBS" ]
-then
-echo "	$ARPACKLIBS "'\' 1>>$f
-fi
-if [ -n "$PETSCLIBS" ]
-then
-echo "	$PETSCLIBS "'\' 1>>$f
-fi
-if [ -n "$BLOPEXLIBS" ]
-then
-echo "	$BLOPEXLIBS "'\' 1>>$f
-fi
-if [ -n "$MUMPSLIBS" ]
-then
-echo "	$MUMPSLIBS "'\' 1>>$f
-fi
-if [ -n "$SUPERLULIBS" ]
-then
-echo "	$SUPERLULIBS "'\' 1>>$f
-fi
-if [ -n "$LAPACKLIBS" -o -n "$BLASLIBS" -o -n "$OTHERLIBS" ]
-then
-   echo "	$MESSPASSLIBS "'\' 1>>$f
-else
-   echo "	$MESSPASSLIBS" 1>>$f
-fi
-if [ -n "$LAPACKLIBS" ]
-then
-   if [ -n "$BLASLIBS" -o -n "$OTHERLIBS" ]
-   then
-      echo "	$LAPACKLIBS "'\' 1>>$f
-   else
-      echo "	$LAPACKLIBS " 1>>$f
-   fi
-fi
-if [ -n "$BLASLIBS" ]
-then
-   if [ -n "$OTHERLIBS" ]
-   then
-      echo "	$BLASLIBS "'\' 1>>$f
-   else
-      echo "	$BLASLIBS " 1>>$f
-   fi
-fi
-if [ -n "$OTHERLIBS" ]
-then
-echo "	$OTHERLIBS" 1>>$f
-fi
-echo "" 1>>$f
-fi
-
-echo "phaml: "'\' 1>>$f
-echo "	$MAIN.o pde.o usermod.o" 1>>$f
-echo "	"'$(LINKER) $(LINKFLAGS) -o phaml \' 1>>$f
-echo "	$MAIN.o pde.o usermod.o "'\' 1>>$f
-if [ -n "$SUPERLULIBS" -o -n "$HYPRELIBS" -o -n "$ZOLTANLIBS" -o -n "$ARPACKLIBS" -o -n "$PETSCLIBS" -o -n "$BLOPEXLIBS" -o -n "$MUMPSLIBS" -o -n "$LAPACKLIBS" -o -n "$BLASLIBS" -o -n "$MESSPASSLIBS" -o -n "$PHAML_GETS_GRAPHICSLIBS" -o -n "$OTHERLIBS" ]
+if [ -n "$SLEPCLIBS" -o -n "$ARPACKLIBS" -o -n "$PETSCLIBS" -o -n "$MUMPSLIBS" -o -n "$SUPERLULIBS" -o -n "$HYPRELIBS" -o -n "$ZOLTANLIBS" -o -n "$LAPACKLIBS" -o -n "$BLASLIBS" -o -n "$MESSPASSLIBS" -o -n "$PHAML_GETS_GRAPHICSLIBS" -o -n "$OTHERLIBS" ]
 then
 echo "	"'-L$(PHAML_LIBDIR) -lphaml \' 1>>$f
 else
 echo "	"'-L$(PHAML_LIBDIR) -lphaml' 1>>$f
 fi
-if [ -n "$SUPERLULIBS" ]
+if [ -n "$SLEPCLIBS" ]
 then
-   if [ -n "$HYPRELIBS" -o -n "$ZOLTANLIBS" -o -n "$ARPACKLIBS" -o -n "$PETSCLIBS" -o -n "$BLOPEXLIBS" -o -n "$MUMPSLIBS" -o -n "$LAPACKLIBS" -o -n "$BLASLIBS" -o -n "$MESSPASSLIBS" -o -n "$PHAML_GETS_GRAPHICSLIBS" -o -n "$OTHERLIBS" ]
+   if [ -n "$ARPACKLIBS" -o -n "$PETSCLIBS" -o -n "$MUMPSLIBS" -o -n "$SUPERLULIBS" -o -n "$HYPRELIBS" -o -n "$ZOLTANLIBS" -o -n "$LAPACKLIBS" -o -n "$BLASLIBS" -o -n "$MESSPASSLIBS" -o -n "$PHAML_GETS_GRAPHICSLIBS" -o -n "$OTHERLIBS" ]
    then
-echo "	$SUPERLULIBS "'\' 1>>$f
+echo "	$SLEPCLIBS "'\' 1>>$f
    else
-echo "	$SUPERLULIBS " 1>>$f
-   fi
-fi
-if [ -n "$HYPRELIBS" ]
-then
-   if [ -n "$ZOLTANLIBS" -o -n "$ARPACKLIBS" -o -n "$PETSCLIBS" -o -n "$BLOPEXLIBS" -o -n "$MUMPSLIBS" -o -n "$LAPACKLIBS" -o -n "$BLASLIBS" -o -n "$MESSPASSLIBS" -o -n "$PHAML_GETS_GRAPHICSLIBS" -o -n "$OTHERLIBS" ]
-   then
-echo "	$HYPRELIBS "'\' 1>>$f
-   else
-echo "	$HYPRELIBS " 1>>$f
-   fi
-fi
-if [ -n "$ZOLTANLIBS" ]
-then
-   if [ -n "$ARPACKLIBS" -o -n "$PETSCLIBS" -o -n "$BLOPEXLIBS" -o -n "$MUMPSLIBS" -o -n "$LAPACKLIBS" -o -n "$BLASLIBS" -o -n "$MESSPASSLIBS" -o -n "$PHAML_GETS_GRAPHICSLIBS" -o -n "$OTHERLIBS" ]
-   then
-echo "	$ZOLTANLIBS "'\' 1>>$f
-   else
-echo "	$ZOLTANLIBS " 1>>$f
+echo "	$SLEPCLIBS " 1>>$f
    fi
 fi
 if [ -n "$ARPACKLIBS" ]
 then
-   if [ -n "$PETSCLIBS" -o -n "$BLOPEXLIBS" -o -n "$MUMPSLIBS" -o -n "$LAPACKLIBS" -o -n "$BLASLIBS" -o -n "$MESSPASSLIBS" -o -n "$PHAML_GETS_GRAPHICSLIBS" -o -n "$OTHERLIBS" ]
+   if [ -n "$PETSCLIBS" -o -n "$MUMPSLIBS" -o -n "$SUPERLULIBS" -o -n "$HYPRELIBS" -o -n "$ZOLTANLIBS" -o -n "$LAPACKLIBS" -o -n "$BLASLIBS" -o -n "$MESSPASSLIBS" -o -n "$PHAML_GETS_GRAPHICSLIBS" -o -n "$OTHERLIBS" ]
    then
 echo "	$ARPACKLIBS "'\' 1>>$f
    else
@@ -300,29 +220,168 @@ echo "	$ARPACKLIBS " 1>>$f
 fi
 if [ -n "$PETSCLIBS" ]
 then
-   if [ -n "$BLOPEXLIBS" -o -n "$MUMPSLIBS" -o -n "$LAPACKLIBS" -o -n "$BLASLIBS" -o -n "$MESSPASSLIBS" -o -n "$PHAML_GETS_GRAPHICSLIBS" -o -n "$OTHERLIBS" ]
+   if [ -n "$MUMPSLIBS" -o -n "$SUPERLULIBS" -o -n "$HYPRELIBS" -o -n "$ZOLTANLIBS" -o -n "$LAPACKLIBS" -o -n "$BLASLIBS" -o -n "$MESSPASSLIBS" -o -n "$PHAML_GETS_GRAPHICSLIBS" -o -n "$OTHERLIBS" ]
    then
 echo "	$PETSCLIBS "'\' 1>>$f
    else
 echo "	$PETSCLIBS " 1>>$f
    fi
 fi
-if [ -n "$BLOPEXLIBS" ]
-then
-   if [ -n "$MUMPSLIBS" -o -n "$LAPACKLIBS" -o -n "$BLASLIBS" -o -n "$MESSPASSLIBS" -o -n "$PHAML_GETS_GRAPHICSLIBS" -o -n "$OTHERLIBS" ]
-   then
-echo "	$BLOPEXLIBS "'\' 1>>$f
-   else
-echo "	$BLOPEXLIBS " 1>>$f
-   fi
-fi
 if [ -n "$MUMPSLIBS" ]
 then
-   if [ -n "$LAPACKLIBS" -o -n "$BLASLIBS" -o -n "$MESSPASSLIBS" -o -n "$PHAML_GETS_GRAPHICSLIBS" -o -n "$OTHERLIBS" ]
+   if [ -n "$SUPERLULIBS" -o -n "$HYPRELIBS" -o -n "$ZOLTANLIBS" -o -n "$LAPACKLIBS" -o -n "$BLASLIBS" -o -n "$MESSPASSLIBS" -o -n "$PHAML_GETS_GRAPHICSLIBS" -o -n "$OTHERLIBS" ]
    then
 echo "	$MUMPSLIBS "'\' 1>>$f
    else
 echo "	$MUMPSLIBS " 1>>$f
+   fi
+fi
+if [ -n "$SUPERLULIBS" ]
+then
+   if [ -n "$HYPRELIBS" -o -n "$ZOLTANLIBS" -o -n "$LAPACKLIBS" -o -n "$BLASLIBS" -o -n "$MESSPASSLIBS" -o -n "$PHAML_GETS_GRAPHICSLIBS" -o -n "$OTHERLIBS" ]
+   then
+echo "	$SUPERLULIBS "'\' 1>>$f
+   else
+echo "	$SUPERLULIBS " 1>>$f
+   fi
+fi
+if [ -n "$HYPRELIBS" ]
+then
+   if [ -n "$ZOLTANLIBS" -o -n "$LAPACKLIBS" -o -n "$BLASLIBS" -o -n "$MESSPASSLIBS" -o -n "$PHAML_GETS_GRAPHICSLIBS" -o -n "$OTHERLIBS" ]
+   then
+echo "	$HYPRELIBS "'\' 1>>$f
+   else
+echo "	$HYPRELIBS " 1>>$f
+   fi
+fi
+if [ -n "$ZOLTANLIBS" ]
+then
+   if [ -n "$LAPACKLIBS" -o -n "$BLASLIBS" -o -n "$MESSPASSLIBS" -o -n "$PHAML_GETS_GRAPHICSLIBS" -o -n "$OTHERLIBS" ]
+   then
+echo "	$ZOLTANLIBS "'\' 1>>$f
+   else
+echo "	$ZOLTANLIBS " 1>>$f
+   fi
+fi
+if [ -n "$MESSPASSLIBS" ]
+then
+   if [ -n "$LAPACKLIBS" -o -n "$BLASLIBS" -o -n "$PHAML_GETS_GRAPHICSLIBS" -o -n "$OTHERLIBS" ]
+   then
+echo "	$MESSPASSLIBS "'\' 1>>$f
+   else
+echo "	$MESSPASSLIBS " 1>>$f
+   fi
+fi
+# OGLLIBS must come before anything that gives a directory containing glut or gl
+if [ -n "$PHAML_GETS_GRAPHICSLIBS" ]
+then
+echo "  $OGLLIBS "'\' 1>>$f
+fi
+if [ -n "$LAPACKLIBS" ]
+then
+   if [ -n "$BLASLIBS" -o -n "$PHAML_GETS_GRAPHICSLIBS" -o -n "$OTHERLIBS" ]
+   then
+echo "	$LAPACKLIBS "'\' 1>>$f
+   else
+echo "	$LAPACKLIBS " 1>>$f
+   fi
+fi
+if [ -n "$BLASLIBS" ]
+then
+   if [ -n "$PHAML_GETS_GRAPHICSLIBS" -o -n "$OTHERLIBS" ]
+   then
+echo "	$BLASLIBS "'\' 1>>$f
+   else
+echo "	$BLASLIBS " 1>>$f
+   fi
+fi
+if [ -n "$OTHERLIBS" ]
+then
+   if [ -n "$PHAML_GETS_GRAPHICSLIBS" ]
+   then
+echo "	$OTHERLIBS "'\' 1>>$f
+   else
+echo "	$OTHERLIBS " 1>>$f
+   fi
+fi
+if [ -n "$PHAML_GETS_GRAPHICSLIBS" ]
+then
+echo "	$XLIBS" 1>>$f
+fi
+echo "" 1>>$f
+fi
+
+echo "phaml: "'\' 1>>$f
+echo "	$MAIN.o pde.o usermod.o" 1>>$f
+echo "	"'$(LINKER) $(LINKFLAGS) -o phaml \' 1>>$f
+echo "	$MAIN.o pde.o usermod.o "'\' 1>>$f
+if [ -n "$SLEPCLIBS" -o -n "$ARPACKLIBS" -o -n "$PETSCLIBS" -o -n "$MUMPSLIBS" -o -n "$SUPERLULIBS" -o -n "$HYPRELIBS" -o -n "$ZOLTANLIBS" -o -n "$LAPACKLIBS" -o -n "$BLASLIBS" -o -n "$MESSPASSLIBS" -o -n "$PHAML_GETS_GRAPHICSLIBS" -o -n "$OTHERLIBS" ]
+then
+echo "	"'-L$(PHAML_LIBDIR) -lphaml \' 1>>$f
+else
+echo "	"'-L$(PHAML_LIBDIR) -lphaml' 1>>$f
+fi
+if [ -n "$SLEPCLIBS" ]
+then
+   if [ -n "$ARPACKLIBS" -o -n "$PETSCLIBS" -o -n "$MUMPSLIBS" -o -n "$SUPERLULIBS" -o -n "$HYPRELIBS" -o -n "$ZOLTANLIBS" -o -n "$LAPACKLIBS" -o -n "$BLASLIBS" -o -n "$MESSPASSLIBS" -o -n "$PHAML_GETS_GRAPHICSLIBS" -o -n "$OTHERLIBS" ]
+   then
+echo "	$SLEPCLIBS "'\' 1>>$f
+   else
+echo "	$SLEPCLIBS " 1>>$f
+   fi
+fi
+if [ -n "$ARPACKLIBS" ]
+then
+   if [ -n "$PETSCLIBS" -o -n "$MUMPSLIBS" -o -n "$SUPERLULIBS" -o -n "$HYPRELIBS" -o -n "$ZOLTANLIBS" -o -n "$LAPACKLIBS" -o -n "$BLASLIBS" -o -n "$MESSPASSLIBS" -o -n "$PHAML_GETS_GRAPHICSLIBS" -o -n "$OTHERLIBS" ]
+   then
+echo "	$ARPACKLIBS "'\' 1>>$f
+   else
+echo "	$ARPACKLIBS " 1>>$f
+   fi
+fi
+if [ -n "$PETSCLIBS" ]
+then
+   if [ -n "$MUMPSLIBS" -o -n "$SUPERLULIBS" -o -n "$HYPRELIBS" -o -n "$ZOLTANLIBS" -o -n "$LAPACKLIBS" -o -n "$BLASLIBS" -o -n "$MESSPASSLIBS" -o -n "$PHAML_GETS_GRAPHICSLIBS" -o -n "$OTHERLIBS" ]
+   then
+echo "	$PETSCLIBS "'\' 1>>$f
+   else
+echo "	$PETSCLIBS " 1>>$f
+   fi
+fi
+if [ -n "$MUMPSLIBS" ]
+then
+   if [ -n "$SUPERLULIBS" -o -n "$HYPRELIBS" -o -n "$ZOLTANLIBS" -o -n "$LAPACKLIBS" -o -n "$BLASLIBS" -o -n "$MESSPASSLIBS" -o -n "$PHAML_GETS_GRAPHICSLIBS" -o -n "$OTHERLIBS" ]
+   then
+echo "	$MUMPSLIBS "'\' 1>>$f
+   else
+echo "	$MUMPSLIBS " 1>>$f
+   fi
+fi
+if [ -n "$SUPERLULIBS" ]
+then
+   if [ -n "$HYPRELIBS" -o -n "$ZOLTANLIBS" -o -n "$LAPACKLIBS" -o -n "$BLASLIBS" -o -n "$MESSPASSLIBS" -o -n "$PHAML_GETS_GRAPHICSLIBS" -o -n "$OTHERLIBS" ]
+   then
+echo "	$SUPERLULIBS "'\' 1>>$f
+   else
+echo "	$SUPERLULIBS " 1>>$f
+   fi
+fi
+if [ -n "$HYPRELIBS" ]
+then
+   if [ -n "$ZOLTANLIBS" -o -n "$LAPACKLIBS" -o -n "$BLASLIBS" -o -n "$MESSPASSLIBS" -o -n "$PHAML_GETS_GRAPHICSLIBS" -o -n "$OTHERLIBS" ]
+   then
+echo "	$HYPRELIBS "'\' 1>>$f
+   else
+echo "	$HYPRELIBS " 1>>$f
+   fi
+fi
+if [ -n "$ZOLTANLIBS" ]
+then
+   if [ -n "$LAPACKLIBS" -o -n "$BLASLIBS" -o -n "$MESSPASSLIBS" -o -n "$PHAML_GETS_GRAPHICSLIBS" -o -n "$OTHERLIBS" ]
+   then
+echo "	$ZOLTANLIBS "'\' 1>>$f
+   else
+echo "	$ZOLTANLIBS " 1>>$f
    fi
 fi
 if [ -n "$MESSPASSLIBS" ]
@@ -406,5 +465,4 @@ echo "	"'$(F90) $(FFLAGS) '"$MODFLAG"'$(PHAML_MODDIR)'" $ZOLTANMOD -c pde.f90" 1
 echo "" 1>>$f
 
 echo "clean:" 1>>$f
-echo "	rm -f *.o *.mod phaml phaml_slave phaml_graphics *.M *.stb" 1>>$f
-echo "	rm -f example_save* /tmp/phaml_example_save*" 1>>$f
+echo "	rm -f example_save* /tmp/phaml_example_save* *.o *.mod phaml phaml_slave phaml_graphics *.M *.stb" 1>>$f

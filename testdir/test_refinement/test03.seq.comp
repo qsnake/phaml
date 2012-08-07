@@ -1,9 +1,10 @@
 ---------------------------------------------------------
-           PHAML   Version 1.9.1
+           PHAML   Version 1.11.0
 
 Output from slave number     1
   PDE id is     0
   Number of slave processors is     1
+  Number of OpenMP threads is       1
 
 Subroutine phaml_solve_pde parameters:
   max_elem           infinity
@@ -17,6 +18,10 @@ Subroutine phaml_solve_pde parameters:
   task               BALANCE_REFINE_SOLVE
   solve_init         true
   system_size                 1
+  pde_has_first_order_terms  false
+  pde_has_cross_derivative   false
+  laplacian_operator         true
+  isosceles_right_triangles  true
   print_grid_when    FINAL
   print_grid_who     SLAVES
   print_linsys_when  NEVER
@@ -34,7 +39,7 @@ Subroutine phaml_solve_pde parameters:
   errtype            ABSOLUTE_ERROR
   reftype            H_ADAPTIVE
   edge_rule          MINIMUM_RULE
-  refterm            DOUBLE_NEQ_SMOOTH
+  refterm            DOUBLE_NEQ
   derefine           true
   partition_method   RTK
   prebalance         BALANCE_ELEMENTS
@@ -50,14 +55,14 @@ Subroutine phaml_solve_pde parameters:
 ---------------------------------------------------------
 
 My Grid:
-   number of vertices       =          75
-   number of vertices I own =          75
-   number of elements       =         208
-   number of leaf elements  =         108
-   leaf elements I own      =         108
-   number of levels         =           8
-   degrees of freedom       =          75
-   degrees of freedom I own =          75
+   number of vertices       =          74
+   number of vertices I own =          74
+   number of elements       =         204
+   number of leaf elements  =         106
+   leaf elements I own      =         106
+   number of levels         =           7
+   degrees of freedom       =          74
+   degrees of freedom I own =          74
    min and max degree       =           1          1
 
 ---------------------------------------------------------
@@ -68,11 +73,12 @@ termination condition:
   maximum loops through phases achieved
 ---------------------------------------------------------
 ---------------------------------------------------------
-           PHAML   Version 1.9.1
+           PHAML   Version 1.11.0
 
 Output from slave number     1
   PDE id is     0
   Number of slave processors is     1
+  Number of OpenMP threads is       1
 
 Subroutine phaml_solve_pde parameters:
   max_elem           infinity
@@ -86,6 +92,10 @@ Subroutine phaml_solve_pde parameters:
   task               BALANCE_REFINE_SOLVE
   solve_init         true
   system_size                 1
+  pde_has_first_order_terms  false
+  pde_has_cross_derivative   false
+  laplacian_operator         true
+  isosceles_right_triangles  true
   print_grid_when    PHASES
   print_grid_who     SLAVES
   print_linsys_when  NEVER
@@ -103,7 +113,7 @@ Subroutine phaml_solve_pde parameters:
   errtype            ABSOLUTE_ERROR
   reftype            P_UNIFORM
   edge_rule          MINIMUM_RULE
-  refterm            DOUBLE_NEQ_SMOOTH
+  refterm            DOUBLE_NEQ
   derefine           true
   partition_method   RTK
   prebalance         BALANCE_ELEMENTS
@@ -119,69 +129,69 @@ Subroutine phaml_solve_pde parameters:
 ---------------------------------------------------------
 
 My Grid:
-   number of vertices       =          75
-   number of vertices I own =          75
-   number of elements       =         208
-   number of leaf elements  =         108
-   leaf elements I own      =         108
-   number of levels         =           8
-   degrees of freedom       =          75
-   degrees of freedom I own =          75
+   number of vertices       =          74
+   number of vertices I own =          74
+   number of elements       =         204
+   number of leaf elements  =         106
+   leaf elements I own      =         106
+   number of levels         =           7
+   degrees of freedom       =          74
+   degrees of freedom I own =          74
    min and max degree       =           1          1
 
 My Grid:
-   number of vertices       =          75
-   number of vertices I own =          75
-   number of elements       =         208
-   number of leaf elements  =         108
-   leaf elements I own      =         108
-   number of levels         =           8
-   degrees of freedom       =         257
-   degrees of freedom I own =         257
+   number of vertices       =          74
+   number of vertices I own =          74
+   number of elements       =         204
+   number of leaf elements  =         106
+   leaf elements I own      =         106
+   number of levels         =           7
+   degrees of freedom       =         253
+   degrees of freedom I own =         253
    min and max degree       =           2          2
 
 My Grid:
-   number of vertices       =          75
-   number of vertices I own =          75
-   number of elements       =         208
-   number of leaf elements  =         108
-   leaf elements I own      =         108
-   number of levels         =           8
-   degrees of freedom       =         547
-   degrees of freedom I own =         547
+   number of vertices       =          74
+   number of vertices I own =          74
+   number of elements       =         204
+   number of leaf elements  =         106
+   leaf elements I own      =         106
+   number of levels         =           7
+   degrees of freedom       =         538
+   degrees of freedom I own =         538
    min and max degree       =           3          3
 
 My Grid:
-   number of vertices       =          75
-   number of vertices I own =          75
-   number of elements       =         208
-   number of leaf elements  =         108
-   leaf elements I own      =         108
-   number of levels         =           8
-   degrees of freedom       =         945
-   degrees of freedom I own =         945
+   number of vertices       =          74
+   number of vertices I own =          74
+   number of elements       =         204
+   number of leaf elements  =         106
+   leaf elements I own      =         106
+   number of levels         =           7
+   degrees of freedom       =         929
+   degrees of freedom I own =         929
    min and max degree       =           4          4
 
 My Grid:
-   number of vertices       =          75
-   number of vertices I own =          75
-   number of elements       =         208
-   number of leaf elements  =         108
-   leaf elements I own      =         108
-   number of levels         =           8
-   degrees of freedom       =        1451
-   degrees of freedom I own =        1451
+   number of vertices       =          74
+   number of vertices I own =          74
+   number of elements       =         204
+   number of leaf elements  =         106
+   leaf elements I own      =         106
+   number of levels         =           7
+   degrees of freedom       =        1426
+   degrees of freedom I own =        1426
    min and max degree       =           5          5
 
 My Grid:
-   number of vertices       =          75
-   number of vertices I own =          75
-   number of elements       =         208
-   number of leaf elements  =         108
-   leaf elements I own      =         108
-   number of levels         =           8
-   degrees of freedom       =        1451
-   degrees of freedom I own =        1451
+   number of vertices       =          74
+   number of vertices I own =          74
+   number of elements       =         204
+   number of leaf elements  =         106
+   leaf elements I own      =         106
+   number of levels         =           7
+   degrees of freedom       =        1426
+   degrees of freedom I own =        1426
    min and max degree       =           5          5
 
 ---------------------------------------------------------

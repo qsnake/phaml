@@ -1,9 +1,10 @@
 ---------------------------------------------------------
-           PHAML   Version 1.9.1
+           PHAML   Version 1.11.0
 
 Output from slave number     1
   PDE id is     0
   Number of slave processors is     1
+  Number of OpenMP threads is       1
 
 Subroutine phaml_solve_pde parameters:
   max_elem           infinity
@@ -17,6 +18,10 @@ Subroutine phaml_solve_pde parameters:
   task               BALANCE_REFINE_SOLVE
   solve_init         true
   system_size                 1
+  pde_has_first_order_terms  false
+  pde_has_cross_derivative   false
+  laplacian_operator         true
+  isosceles_right_triangles  true
   print_grid_when    FINAL
   print_grid_who     SLAVES
   print_linsys_when  NEVER
@@ -37,7 +42,7 @@ Subroutine phaml_solve_pde parameters:
   errtype            ABSOLUTE_ERROR
   reftype            H_ADAPTIVE
   edge_rule          MINIMUM_RULE
-  refterm            DOUBLE_NEQ_SMOOTH
+  refterm            DOUBLE_NEQ
   derefine           true
   partition_method   RTK
   prebalance         BALANCE_ELEMENTS
@@ -53,20 +58,20 @@ Subroutine phaml_solve_pde parameters:
 ---------------------------------------------------------
 
 My Grid:
-   number of vertices       =         593
-   number of vertices I own =         593
-   number of elements       =        2212
-   number of leaf elements  =        1110
-   leaf elements I own      =        1110
-   number of levels         =           9
-   degrees of freedom       =         593
-   degrees of freedom I own =         593
+   number of vertices       =         677
+   number of vertices I own =         677
+   number of elements       =        2520
+   number of leaf elements  =        1264
+   leaf elements I own      =        1264
+   number of levels         =          10
+   degrees of freedom       =         677
+   degrees of freedom I own =         677
    min and max degree       =           1          1
 
 Norms of error:
-   energy norm of error       8.2911516291E-02
-   Linf norm of error         4.7204838494E-03
-   L2 norm of error           1.7385631033E-03
+   energy norm of error       7.4433246824E-02
+   Linf norm of error         4.1537747860E-03
+   L2 norm of error           1.5654216751E-03
 
 ---------------------------------------------------------
 phaml_solve_pde complete

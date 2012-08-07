@@ -1,0 +1,397 @@
+
+------------------------------------------------------
+          PHAML Version 1.11.0 WARNING
+parallel not yet supported in 3D; setting nproc to 1
+------------------------------------------------------
+
+---------------------------------------------------------
+           PHAML   Version 1.11.0
+
+Output from slave number     1
+  PDE id is     0
+  Number of slave processors is     1
+  Number of OpenMP threads is       1
+
+Subroutine phaml_solve_pde parameters:
+  max_elem           infinity
+  max_vert                  500
+  max_eq             infinity
+  max_lev            infinity
+  stop_on_maxlev     false
+  max_deg                    22
+  stop_on_maxdeg     false
+  max_refsolveloop   infinity
+  task               BALANCE_REFINE_SOLVE
+  solve_init         true
+  system_size                 1
+  pde_has_first_order_terms  false
+  pde_has_cross_derivative   false
+  laplacian_operator         true
+  isosceles_right_triangles  false
+  print_grid_when    FREQUENTLY
+  print_grid_who     SLAVES
+  print_linsys_when  FREQUENTLY
+  print_linsys_who   SLAVES
+  print_solver_when  PHASES
+  print_solver_who   SLAVES
+  print_error_when   FREQUENTLY
+  print_error_who    SLAVES
+  print_error_what   LINF_L2_ERR
+  print_errest_what   LINF_L2_ERREST
+  print_time_when    NEVER
+  pause_after_draw   false
+  pause_after_phases false
+  pause_at_start     false
+  pause_at_end       false
+  degree             existing
+  sequential_vert           100
+  inc_factor          2.0000000000E+00
+  error_estimator    HIERARCHICAL_COEFFICIENT
+  errtype            ABSOLUTE_ERROR
+  reftype            H_ADAPTIVE
+  edge_rule          MINIMUM_RULE
+  refterm            DOUBLE_NEQ
+  derefine           false
+  partition_method   RTK
+  ignore_quad_err    true
+  solver             PETSC_CG_SOLVER
+  preconditioner     PETSC_SOR_PRECONDITION
+  petsc_matrix_free  false
+  petsc_rtol         default
+  petsc_atol         default
+  petsc_dtol         default
+  petsc_maxits       default
+  petsc_sor_omega    default
+  petsc_sor_its      default
+  petsc_sor_lits     default
+---------------------------------------------------------
+
+My Grid:
+   number of vertices       =          14
+   number of vertices I own =          14
+   number of elements       =          24
+   number of leaf elements  =          24
+   leaf elements I own      =          24
+   number of levels         =           1
+   degrees of freedom       =          14
+   degrees of freedom I own =          14
+   min and max degree       =           1          1
+
+My Linear System:
+   number of equations =          14
+   number of equations I own =          14
+   number of nonzeroes =         112
+   condensed matrix number of equations =          14
+   condensed matrix number of equations I own =          14
+   condensed matrix number of nonzeroes =         112
+  0 KSP preconditioned resid norm 0.000000000000e+00 true resid norm 0.000000000000e+00 ||r(i)||/||b||            nan
+
+Solver information:
+   number of iterations =           0
+   relative residual =   0.0000000000E+00
+
+Norms of error:
+   Linf norm of error         1.6115824825E+00
+   Linf error estimate        1.4999990463E+00
+      effectivity             9.3076157296E-01
+   L2 norm of error           2.2486700451E+00
+   L2 error estimate          5.5198429827E-01
+      effectivity             2.4547145077E-01
+
+Norms of error:
+   Linf norm of error         1.6115824825E+00
+      reduced by              1.0000000000E+00
+   Linf error estimate        1.4999990463E+00
+      reduced by              1.0000000000E+00
+      effectivity             9.3076157296E-01
+   L2 norm of error           2.2486700451E+00
+      reduced by              1.0000000000E+00
+   L2 error estimate          5.5198429827E-01
+      reduced by              1.0000000000E+00
+      effectivity             2.4547145077E-01
+
+My Grid:
+   number of vertices       =          36
+   number of vertices I own =          36
+   number of elements       =         146
+   number of leaf elements  =          85
+   leaf elements I own      =          85
+   number of levels         =           4
+   degrees of freedom       =          36
+   degrees of freedom I own =          36
+   min and max degree       =           1          1
+
+My Linear System:
+   number of equations =          36
+   number of equations I own =          36
+   number of nonzeroes =         332
+   condensed matrix number of equations =          36
+   condensed matrix number of equations I own =          36
+   condensed matrix number of nonzeroes =         332
+  0 KSP preconditioned resid norm 6.699397387237e-01 true resid norm 6.601425934707e+00 ||r(i)||/||b|| 1.000000000000e+00
+  1 KSP preconditioned resid norm 2.740295153561e-02 true resid norm 3.381009211843e-01 ||r(i)||/||b|| 5.121634697236e-02
+  2 KSP preconditioned resid norm 1.393165658790e-04 true resid norm 1.602477308136e-03 ||r(i)||/||b|| 2.427471464477e-04
+  3 KSP preconditioned resid norm 8.228292168790e-07 true resid norm 1.047362890805e-05 ||r(i)||/||b|| 1.586570691188e-06
+
+Solver information:
+   number of iterations =           3
+   relative residual =   1.0076892914E-06
+
+Norms of error:
+   Linf norm of error         1.6115009565E+00
+      reduced by              9.9994941248E-01
+   Linf error estimate        9.9365852980E-01
+      reduced by              6.6243944103E-01
+      effectivity             6.1660436862E-01
+   L2 norm of error           1.8564906037E+00
+      reduced by              8.2559493677E-01
+   L2 error estimate          3.1872600741E-01
+      reduced by              5.7741861210E-01
+      effectivity             1.7168199331E-01
+
+My Grid:
+   number of vertices       =          69
+   number of vertices I own =          69
+   number of elements       =         430
+   number of leaf elements  =         227
+   leaf elements I own      =         227
+   number of levels         =           6
+   degrees of freedom       =          69
+   degrees of freedom I own =          69
+   min and max degree       =           1          1
+
+My Linear System:
+   number of equations =          69
+   number of equations I own =          69
+   number of nonzeroes =         747
+   condensed matrix number of equations =          69
+   condensed matrix number of equations I own =          69
+   condensed matrix number of nonzeroes =         747
+  0 KSP preconditioned resid norm 9.623952969035e-01 true resid norm 9.661933863514e+00 ||r(i)||/||b|| 1.000000000000e+00
+  1 KSP preconditioned resid norm 1.437885843693e-01 true resid norm 8.604329628320e-01 ||r(i)||/||b|| 8.905390732193e-02
+  2 KSP preconditioned resid norm 9.983203976988e-03 true resid norm 9.335960856524e-02 ||r(i)||/||b|| 9.662621363803e-03
+  3 KSP preconditioned resid norm 7.223615757644e-04 true resid norm 5.713784106523e-03 ||r(i)||/||b|| 5.913706497308e-04
+  4 KSP preconditioned resid norm 7.467861294039e-05 true resid norm 5.727443107955e-04 ||r(i)||/||b|| 5.927843420232e-05
+  5 KSP preconditioned resid norm 1.673065195856e-06 true resid norm 1.633624855031e-05 ||r(i)||/||b|| 1.690784555253e-06
+
+Solver information:
+   number of iterations =           5
+   relative residual =   1.0297407936E-06
+
+Norms of error:
+   Linf norm of error         1.2456863625E+00
+      reduced by              7.7299759423E-01
+   Linf error estimate        1.1052759712E+00
+      reduced by              1.1123297773E+00
+      effectivity             8.8728270974E-01
+   L2 norm of error           1.1723384089E+00
+      reduced by              6.3148092784E-01
+   L2 error estimate          3.1828360512E-01
+      reduced by              9.9861196679E-01
+      effectivity             2.7149464924E-01
+
+My Grid:
+   number of vertices       =         139
+   number of vertices I own =         139
+   number of elements       =         906
+   number of leaf elements  =         465
+   leaf elements I own      =         465
+   number of levels         =           7
+   degrees of freedom       =         139
+   degrees of freedom I own =         139
+   min and max degree       =           1          1
+
+My Linear System:
+   number of equations =         139
+   number of equations I own =         139
+   number of nonzeroes =        1521
+   condensed matrix number of equations =         139
+   condensed matrix number of equations I own =         139
+   condensed matrix number of nonzeroes =        1521
+  0 KSP preconditioned resid norm 1.785549901626e+00 true resid norm 1.649652043723e+01 ||r(i)||/||b|| 1.000000000000e+00
+  1 KSP preconditioned resid norm 1.927112725816e-01 true resid norm 9.652165982948e-01 ||r(i)||/||b|| 5.851031446101e-02
+  2 KSP preconditioned resid norm 4.459175227315e-02 true resid norm 2.576881691788e-01 ||r(i)||/||b|| 1.562075894485e-02
+  3 KSP preconditioned resid norm 6.356907148980e-03 true resid norm 4.168061073990e-02 ||r(i)||/||b|| 2.526630442977e-03
+  4 KSP preconditioned resid norm 6.807018368024e-04 true resid norm 4.527811343949e-03 ||r(i)||/||b|| 2.744706898147e-04
+  5 KSP preconditioned resid norm 7.297629243464e-05 true resid norm 4.558326778672e-04 ||r(i)||/||b|| 2.763205001938e-05
+  6 KSP preconditioned resid norm 5.769483246924e-06 true resid norm 3.968292515252e-05 ||r(i)||/||b|| 2.405533051865e-06
+
+Solver information:
+   number of iterations =           6
+   relative residual =   2.6888089428E-06
+
+Norms of error:
+   Linf norm of error         1.0300023397E+00
+      reduced by              8.2685527496E-01
+   Linf error estimate        9.9365852980E-01
+      reduced by              8.9901396187E-01
+      effectivity             9.6471482778E-01
+   L2 norm of error           8.5681268425E-01
+      reduced by              7.3085781181E-01
+   L2 error estimate          2.2743651842E-01
+      reduced by              7.1457189363E-01
+      effectivity             2.6544485464E-01
+
+My Grid:
+   number of vertices       =         247
+   number of vertices I own =         247
+   number of elements       =        1904
+   number of leaf elements  =         964
+   leaf elements I own      =         964
+   number of levels         =           8
+   degrees of freedom       =         247
+   degrees of freedom I own =         247
+   min and max degree       =           1          1
+
+My Linear System:
+   number of equations =         247
+   number of equations I own =         247
+   number of nonzeroes =        2939
+   condensed matrix number of equations =         247
+   condensed matrix number of equations I own =         247
+   condensed matrix number of nonzeroes =        2939
+  0 KSP preconditioned resid norm 1.892889500332e+00 true resid norm 1.290221694599e+01 ||r(i)||/||b|| 1.000000000000e+00
+  1 KSP preconditioned resid norm 1.883720085011e-01 true resid norm 1.084108735135e+00 ||r(i)||/||b|| 8.402499660900e-02
+  2 KSP preconditioned resid norm 4.442882091882e-02 true resid norm 2.432924325360e-01 ||r(i)||/||b|| 1.885663785956e-02
+  3 KSP preconditioned resid norm 9.626137768236e-03 true resid norm 5.636259067095e-02 ||r(i)||/||b|| 4.368442331027e-03
+  4 KSP preconditioned resid norm 1.155615942020e-03 true resid norm 6.310074933205e-03 ||r(i)||/||b|| 4.890690460113e-04
+  5 KSP preconditioned resid norm 2.034556097822e-04 true resid norm 1.043241892937e-03 ||r(i)||/||b|| 8.085756868792e-05
+  6 KSP preconditioned resid norm 4.183232397484e-05 true resid norm 2.473302682447e-04 ||r(i)||/||b|| 1.916959459604e-05
+  7 KSP preconditioned resid norm 9.536463484017e-06 true resid norm 4.487535746498e-05 ||r(i)||/||b|| 3.478112145598e-06
+
+Solver information:
+   number of iterations =           7
+   relative residual =   3.4642268290E-06
+
+Norms of error:
+   Linf norm of error         8.6447156494E-01
+      reduced by              8.3929087497E-01
+   Linf error estimate        8.9344589416E-01
+      reduced by              8.9914781323E-01
+      effectivity             1.0335168100E+00
+   L2 norm of error           6.2478476411E-01
+      reduced by              7.2919644585E-01
+   L2 error estimate          1.7688708344E-01
+      reduced by              7.7774266271E-01
+      effectivity             2.8311683254E-01
+
+My Grid:
+   number of vertices       =         474
+   number of vertices I own =         474
+   number of elements       =        3800
+   number of leaf elements  =        1912
+   leaf elements I own      =        1912
+   number of levels         =          10
+   degrees of freedom       =         474
+   degrees of freedom I own =         474
+   min and max degree       =           1          1
+
+My Linear System:
+   number of equations =         474
+   number of equations I own =         474
+   number of nonzeroes =        5694
+   condensed matrix number of equations =         474
+   condensed matrix number of equations I own =         474
+   condensed matrix number of nonzeroes =        5694
+  0 KSP preconditioned resid norm 3.133021465433e+00 true resid norm 1.355905254065e+01 ||r(i)||/||b|| 1.000000000000e+00
+  1 KSP preconditioned resid norm 5.104958562352e-01 true resid norm 1.564323128412e+00 ||r(i)||/||b|| 1.153711237361e-01
+  2 KSP preconditioned resid norm 1.159849472346e-01 true resid norm 3.980563012937e-01 ||r(i)||/||b|| 2.935723569920e-02
+  3 KSP preconditioned resid norm 4.175812391929e-02 true resid norm 1.370489525909e-01 ||r(i)||/||b|| 1.010756114264e-02
+  4 KSP preconditioned resid norm 1.524185042198e-02 true resid norm 5.651099925994e-02 ||r(i)||/||b|| 4.167769030360e-03
+  5 KSP preconditioned resid norm 6.617312106312e-03 true resid norm 2.353888404081e-02 ||r(i)||/||b|| 1.736027201771e-03
+  6 KSP preconditioned resid norm 3.018173423120e-03 true resid norm 1.116416881611e-02 ||r(i)||/||b|| 8.233738148474e-04
+  7 KSP preconditioned resid norm 8.565805149234e-04 true resid norm 3.120985138704e-03 ||r(i)||/||b|| 2.301772287811e-04
+  8 KSP preconditioned resid norm 2.179365592015e-04 true resid norm 8.614400067373e-04 ||r(i)||/||b|| 6.353246321267e-05
+  9 KSP preconditioned resid norm 6.353783790759e-05 true resid norm 2.367659032848e-04 ||r(i)||/||b|| 1.746183242340e-05
+ 10 KSP preconditioned resid norm 1.851789468539e-05 true resid norm 6.567884717441e-05 ||r(i)||/||b|| 4.843911252466e-06
+
+Solver information:
+   number of iterations =          10
+   relative residual =   5.6717210307E-06
+
+Norms of error:
+   Linf norm of error         7.9895647454E-01
+      reduced by              9.2421371268E-01
+   Linf error estimate        7.1472471545E-01
+      reduced by              7.9996418375E-01
+      effectivity             8.9457278115E-01
+   L2 norm of error           4.3502622408E-01
+      reduced by              6.9628174224E-01
+   L2 error estimate          1.3024736232E-01
+      reduced by              7.3633054372E-01
+      effectivity             2.9940117426E-01
+
+My Grid:
+   number of vertices       =         900
+   number of vertices I own =         900
+   number of elements       =        7764
+   number of leaf elements  =        3894
+   leaf elements I own      =        3894
+   number of levels         =          11
+   degrees of freedom       =         900
+   degrees of freedom I own =         900
+   min and max degree       =           1          1
+
+My Linear System:
+   number of equations =         900
+   number of equations I own =         900
+   number of nonzeroes =       11218
+   condensed matrix number of equations =         900
+   condensed matrix number of equations I own =         900
+   condensed matrix number of nonzeroes =       11218
+  0 KSP preconditioned resid norm 4.904361231453e+00 true resid norm 1.681234108543e+01 ||r(i)||/||b|| 1.000000000000e+00
+  1 KSP preconditioned resid norm 8.902122670997e-01 true resid norm 2.181930142491e+00 ||r(i)||/||b|| 1.297814582397e-01
+  2 KSP preconditioned resid norm 2.467685714312e-01 true resid norm 7.338451558603e-01 ||r(i)||/||b|| 4.364919508421e-02
+  3 KSP preconditioned resid norm 9.502404771174e-02 true resid norm 2.713559495754e-01 ||r(i)||/||b|| 1.614028339042e-02
+  4 KSP preconditioned resid norm 5.081061342965e-02 true resid norm 1.378068775619e-01 ||r(i)||/||b|| 8.196769079430e-03
+  5 KSP preconditioned resid norm 2.995602381136e-02 true resid norm 7.534731396767e-02 ||r(i)||/||b|| 4.481666984080e-03
+  6 KSP preconditioned resid norm 1.321281075234e-02 true resid norm 3.979023015764e-02 ||r(i)||/||b|| 2.366727510193e-03
+  7 KSP preconditioned resid norm 6.185027465475e-03 true resid norm 1.802308737877e-02 ||r(i)||/||b|| 1.072015330119e-03
+  8 KSP preconditioned resid norm 2.143027187227e-03 true resid norm 6.454942223551e-03 ||r(i)||/||b|| 3.839407130007e-04
+  9 KSP preconditioned resid norm 6.393805882247e-04 true resid norm 1.871385544014e-03 ||r(i)||/||b|| 1.113102294621e-04
+ 10 KSP preconditioned resid norm 2.352616132357e-04 true resid norm 6.930650390702e-04 ||r(i)||/||b|| 4.122358900217e-05
+ 11 KSP preconditioned resid norm 8.144388587286e-05 true resid norm 2.465454139384e-04 ||r(i)||/||b|| 1.466454984975e-05
+ 12 KSP preconditioned resid norm 2.540049869819e-05 true resid norm 7.420128426076e-05 ||r(i)||/||b|| 4.413501004037e-06
+
+Solver information:
+   number of iterations =          12
+   relative residual =   7.7446972370E-06
+
+Norms of error:
+   Linf norm of error         4.9948026511E-01
+      reduced by              6.2516580193E-01
+   Linf error estimate        7.1483902389E-01
+      reduced by              1.0001599335E+00
+      effectivity             1.4311657013E+00
+   L2 norm of error           3.0141434629E-01
+      reduced by              6.9286477368E-01
+   L2 error estimate          8.8734346205E-02
+      reduced by              6.8127557152E-01
+      effectivity             2.9439324072E-01
+
+My Grid:
+   number of vertices       =         900
+   number of vertices I own =         900
+   number of elements       =        7764
+   number of leaf elements  =        3894
+   leaf elements I own      =        3894
+   number of levels         =          11
+   degrees of freedom       =         900
+   degrees of freedom I own =         900
+   min and max degree       =           1          1
+
+Norms of error:
+   Linf norm of error         4.9948026511E-01
+   Linf error estimate        7.1483902389E-01
+      effectivity             1.4311657013E+00
+   L2 norm of error           3.0141434629E-01
+   L2 error estimate          8.8734346205E-02
+      effectivity             2.9439324072E-01
+
+---------------------------------------------------------
+phaml_solve_pde complete
+
+number of loops through phases =           6
+termination condition:
+  maximum vertices achieved
+---------------------------------------------------------

@@ -476,13 +476,13 @@ integer, intent(in) :: index
 call phaml_copy_soln_to_old(phaml_soluts(index))
 end subroutine phaml_copy_soln_to_old_int
 
-subroutine phaml_create_int(index,nproc,draw_grid_who, &
+subroutine phaml_create_int(index,nproc,nthread,draw_grid_who, &
                             spawn_form,debug_command,display,graphics_host, &
                             output_unit,error_unit,output_now,id,system_size, &
                             eq_type,max_blen,triangle_files,update_umod)
 integer, intent(in) :: index
-integer, optional :: nproc,draw_grid_who,spawn_form,output_unit,error_unit, &
-                     output_now,id,system_size,eq_type
+integer, optional :: nproc,nthread,draw_grid_who,spawn_form,output_unit, &
+                     error_unit,output_now,id,system_size,eq_type
 character(len=*), optional, intent(in) :: debug_command,display
 character(len=*), optional, intent(in) :: graphics_host
 real(my_real), optional, intent(in) :: max_blen
@@ -497,7 +497,7 @@ if (index > MAX_PHAML_SOLUTIONS) then
    print *,"-----------------------------------------------------------------"
    stop
 endif
-call phaml_create(phaml_soluts(index),nproc,draw_grid_who, &
+call phaml_create(phaml_soluts(index),nproc,nthread,draw_grid_who, &
                   spawn_form,debug_command,display,graphics_host, &
                   output_unit,error_unit,output_now,id,system_size, &
                   eq_type,max_blen,triangle_files,update_umod)
@@ -548,19 +548,17 @@ subroutine phaml_query_int(index,nvert,nvert_proc,nvert_own,nelem, &
                        l2_error,max_error_indicator, linf_error_estimate, &
                        energy_error_estimate,l2_error_estimate, linf_solution,&
                        l2_solution, energy_solution,linf_u,l2_u,energy_u, &
-                       linf_true,l2_true,energy_true, &
-                       eigenvalues,eigenvalue_error_estimate,max_linsys_resid, &
-                       ave_linsys_resid,eigen_l2_resid,arpack_iter, &
-                       arpack_nconv,arpack_numop,arpack_numopb, arpack_numreo, &
-                       arpack_info,comp,eigen,error_estimator,eigen_variance)
+                       linf_true,l2_true,energy_true,eigenvalues, &
+                       eigenvalue_error_estimate, eigensolver_eval_errest, &
+                       eigensolver_l2_residual,eigensolver_niter, &
+                       eigensolver_nconv,comp,eigen,error_estimator)
 integer, intent(in) :: index
 integer, intent(inout), optional :: nvert_proc(:)
 integer, intent(out), optional :: nvert,nvert_own(:),nelem, &
                                   nelem_proc(:),nelem_own(:),neq, &
                                   neq_proc(:),neq_own(:),nlev, &
                                   min_degree,max_degree, &
-                                  arpack_iter, arpack_nconv, arpack_numop, &
-                                  arpack_numopb, arpack_numreo, arpack_info
+                                  eigensolver_niter, eigensolver_nconv
 real(my_real),intent(out), optional :: linf_error, energy_error, l2_error, &
                                   max_error_indicator, &
                                   linf_error_estimate, &
@@ -569,9 +567,8 @@ real(my_real),intent(out), optional :: linf_error, energy_error, l2_error, &
                                   linf_solution, l2_solution, energy_solution, &
                                   linf_u, l2_u, energy_u, eigenvalues(:), &
                                   linf_true, l2_true, energy_true, &
-                                  max_linsys_resid, ave_linsys_resid, &
-                                  eigen_l2_resid(:), &
-                                  eigen_variance(:)
+                                  eigensolver_eval_errest(:), &
+                                  eigensolver_l2_residual(:)
 integer, intent(in), optional :: comp, eigen, error_estimator
 call phaml_query(phaml_soluts(index),nvert,nvert_proc,nvert_own,nelem, &
                  nelem_proc,nelem_own,neq,neq_proc,neq_own,nlev, &
@@ -579,11 +576,10 @@ call phaml_query(phaml_soluts(index),nvert,nvert_proc,nvert_own,nelem, &
                  l2_error,max_error_indicator, linf_error_estimate, &
                  energy_error_estimate,l2_error_estimate, linf_solution,&
                  l2_solution, energy_solution,linf_u,l2_u,energy_u, &
-                 linf_true,l2_true,energy_true, &
-                 eigenvalues,eigenvalue_error_estimate,max_linsys_resid, &
-                 ave_linsys_resid,eigen_l2_resid,arpack_iter, &
-                 arpack_nconv,arpack_numop,arpack_numopb, arpack_numreo, &
-                 arpack_info,comp,eigen,error_estimator,eigen_variance)
+                 linf_true,l2_true,energy_true,eigenvalues, &
+                 eigenvalue_error_estimate,eigensolver_eval_errest, &
+                 eigensolver_l2_residual,eigensolver_niter, &
+                 eigensolver_nconv,comp,eigen,error_estimator)
 end subroutine phaml_query_int
 
 subroutine phaml_restore_int(index,unit,do_draw_grid,pause)
@@ -618,9 +614,11 @@ subroutine phaml_solve_pde_int(index, iterm, max_elem, max_vert, max_eq, &
    preconditioner, mg_cycles, mg_tol, mg_prerelax, mg_postrelax,              &
    mg_prerelax_ho, mg_postrelax_ho, dd_iterations, krylov_iter,               &
    krylov_restart, krylov_tol, mg_comm, ignore_quad_err, eigensolver,         &
-   num_eval, lambda0, lambda0_side, transformation, scale_evec, arpack_ncv,   &
-   arpack_maxit, arpack_tol, blopex_maxit, blopex_atol, blopex_rtol,          &
-   degree, inc_quad_order,                                                    &
+   num_eval, lambda0, transformation, st_shift, st_antishift,                 &
+   harmonic_extraction, slepc_true_residual, scale_evec,                      &
+   eigen_ncv, eigen_maxit, eigen_tol, degree, inc_quad_order,                 &
+   pde_has_first_order_terms, pde_has_cross_derivative,                       &
+   laplacian_operator, isosceles_right_triangles,                             &
    hypre_BoomerAMG_MaxLevels,hypre_BoomerAMG_MaxIter,hypre_BoomerAMG_Tol,     &
    hypre_BoomerAMG_StrongThreshold,hypre_BoomerAMG_MaxRowSum,                 &
    hypre_BoomerAMG_CoarsenType,hypre_BoomerAMG_MeasureType,                   &
@@ -646,7 +644,11 @@ logical, optional, intent(in) :: pause_after_draw, pause_at_start, &
                                  pause_at_end, pause_after_phases, &
                                  ignore_quad_err, petsc_matrix_free, &
                                  derefine, print_warnings, solve_init, &
-                                 stop_on_maxlev, stop_on_maxdeg
+                                 stop_on_maxlev, stop_on_maxdeg, &
+                                 pde_has_first_order_terms, &
+                                 pde_has_cross_derivative, &
+                                 laplacian_operator, isosceles_right_triangles,&
+                                 harmonic_extraction, slepc_true_residual
 integer, optional, intent(in) :: max_elem, max_vert, max_eq, max_lev, max_deg, &
            print_grid_when, print_error_when, print_time_when, print_eval_when,&
            print_linsys_when, print_linsys_who, print_grid_who, &
@@ -660,12 +662,13 @@ integer, optional, intent(in) :: max_elem, max_vert, max_eq, max_lev, max_deg, &
            mg_prerelax_ho, mg_postrelax_ho, dd_iterations, edge_rule, &
            reftype, refterm, hp_strategy, t3s_nunif, t3s_maxref, t3s_maxdeginc,&
            nlp_max_h_dec, nlp_max_h_inc, nlp_max_p_dec, nlp_max_p_inc, &
-           eigensolver, num_eval, arpack_ncv, arpack_maxit, blopex_maxit, &
-           coarse_size, coarse_method, lambda0_side, transformation, &
+           eigensolver, num_eval, &
+           eigen_ncv, eigen_maxit, &
+           coarse_size, coarse_method, transformation, &
            scale_evec, krylov_iter, krylov_restart
 real(my_real), optional, intent(in) :: term_energy_err, term_Linf_err, &
                                        term_L2_err, inc_factor, lambda0, &
-                                       arpack_tol, blopex_atol, blopex_rtol, &
+                                       eigen_tol, st_shift, st_antishift, &
                                        mg_tol, reftol, krylov_tol, &
                                        t3s_gamma, t3s_eta, tp_gamma, &
                                        sp_gamma_h, sp_gamma_p, refsoln_pbias
@@ -691,8 +694,7 @@ real(my_real), optional, intent(in) :: hypre_BoomerAMG_RelaxWeight(:)
 
 real(my_real), optional, intent(in) :: petsc_richardson_damping_factor, &
    petsc_chebychev_emin, petsc_chebychev_emax, petsc_rtol, petsc_atol,  &
-   petsc_dtol, petsc_sor_omega,          &
-   petsc_eisenstat_omega
+   petsc_dtol, petsc_sor_omega, petsc_eisenstat_omega
 
 integer, optional, intent(in) :: petsc_gmres_max_steps, petsc_maxits,    &
    petsc_ilu_levels, petsc_icc_levels, petsc_sor_its, &
@@ -723,9 +725,11 @@ call phaml_solve_pde(phaml_soluts(index), iterm, max_elem, max_vert, max_eq, &
    preconditioner, mg_cycles, mg_tol, mg_prerelax, mg_postrelax,              &
    mg_prerelax_ho, mg_postrelax_ho, dd_iterations, krylov_iter,               &
    krylov_restart, krylov_tol, mg_comm, ignore_quad_err, eigensolver,         &
-   num_eval, lambda0, lambda0_side, transformation, scale_evec, arpack_ncv,   &
-   arpack_maxit, arpack_tol, blopex_maxit, blopex_atol, blopex_rtol,          &
-   degree, inc_quad_order,                                                    &
+   num_eval, lambda0, transformation, st_shift, st_antishift,                 &
+   harmonic_extraction, slepc_true_residual, scale_evec,                      &
+   eigen_ncv, eigen_maxit, eigen_tol, degree, inc_quad_order,                 &
+   pde_has_first_order_terms, pde_has_cross_derivative,                       &
+   laplacian_operator, isosceles_right_triangles,                             &
    hypre_BoomerAMG_MaxLevels,hypre_BoomerAMG_MaxIter,hypre_BoomerAMG_Tol,     &
    hypre_BoomerAMG_StrongThreshold,hypre_BoomerAMG_MaxRowSum,                 &
    hypre_BoomerAMG_CoarsenType,hypre_BoomerAMG_MeasureType,                   &

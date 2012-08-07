@@ -66,6 +66,9 @@ call phaml_create(soln,nproc,draw_grid_who = MASTER)
 call phaml_solve_pde(soln,                      &
                      max_vert=nvert,            &
                      task=SET_INITIAL,          &
+                     pde_has_first_order_terms=.false., &
+                     pde_has_cross_derivative=.false., &
+                     laplacian_operator=.false., &
                      refterm=DOUBLE_NEQ,        &
                      error_estimator=INITIAL_CONDITION, &
                      print_header_who=NO_ONE,   &

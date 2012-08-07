@@ -44,12 +44,13 @@ implicit none
 
 type(phaml_solution_type) :: soln
 integer :: ngridx, ngridy
-real :: xmin,xmax,ymin,ymax
+real(my_real) :: xmin,xmax,ymin,ymax
 
 interface
    subroutine make_data_files(nx,ny,xmin,xmax,ymin,ymax)
+   use phaml
    integer, intent(in) :: nx, ny
-   real, intent(in) :: xmin,xmax,ymin,ymax
+   real(my_real), intent(in) :: xmin,xmax,ymin,ymax
    end subroutine make_data_files
 end interface
 
@@ -58,16 +59,16 @@ end interface
 
 ! create the triangle data files
 
-xmin = 0.0
-xmax = 1.0
-ymin = 0.0
-ymax = 2.0
+xmin = 0.0_my_real
+xmax = 1.0_my_real
+ymin = 0.0_my_real
+ymax = 2.0_my_real
 ngridx = 4
 ngridy = 8
 call make_data_files(ngridx,ngridy,xmin,xmax,ymin,ymax)
 
 call phaml_create(soln,nproc=4,triangle_files="rectangle.1", &
-draw_grid_who=MASTER)
+                  draw_grid_who=MASTER)
 
 call phaml_solve_pde(soln,                         &
                      max_vert=3200,                &
@@ -101,22 +102,23 @@ subroutine make_data_files(nx,ny,xmin,xmax,ymin,ymax)
 ! compiler dependent.  That call may need to be changed, or may not be
 ! supported at all, on some compilers.
 
+use phaml
 implicit none
 
 integer, intent(in) :: nx, ny
-real, intent(in) :: xmin,xmax,ymin,ymax
+real(my_real), intent(in) :: xmin,xmax,ymin,ymax
 
 integer :: i, j, count, bmark
-real :: xvals(0:nx), yvals(0:ny)
+real(my_real) :: xvals(0:nx), yvals(0:ny)
 
 ! values for the grid lines
 
 do i=0,nx
-   xvals(i) = xmin + (xmax-xmin)*i/real(nx)
+   xvals(i) = xmin + (xmax-xmin)*i/real(nx,kind=my_real)
 end do
 
 do i=0,ny
-   yvals(i) = ymin + (ymax-ymin)*i/real(ny)
+   yvals(i) = ymin + (ymax-ymin)*i/real(ny,kind=my_real)
 end do
 
 ! write a .poly file with the grid of nodes, boundary edges, and bmark

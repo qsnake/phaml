@@ -49,42 +49,11 @@ use sysdep
 implicit none
 private
 public print_linear_system, print_linsys_info, print_solver_info, &
-       print_error_info, norm_error, norm_solution, norm_true, store_matrix
+       print_error_info, print_eigenvalues, norm_error, norm_solution, &
+       norm_true, store_matrix
 
 !----------------------------------------------------
 ! Non-module procedures used are:
-
-interface
-
-   function trues(x,y,comp,eigen)
-   use global
-   real (my_real), intent(in) :: x,y
-   integer, intent(in) :: comp,eigen
-   real (my_real) :: trues
-   end function trues
-
-   function truexs(x,y,comp,eigen)
-   use global
-   real (my_real), intent(in) :: x,y
-   integer, intent(in) :: comp,eigen
-   real (my_real) :: truexs
-   end function truexs
-
-   function trueys(x,y,comp,eigen)
-   use global
-   real (my_real), intent(in) :: x,y
-   integer, intent(in) :: comp,eigen
-   real (my_real) :: trueys
-   end function trueys
-
-   subroutine pdecoefs(x,y,cxx,cxy,cyy,cx,cy,c,rs)
-   use global
-   real(my_real), intent(in) :: x,y
-   real(my_real), intent(out) :: cxx(:,:),cxy(:,:),cyy(:,:),cx(:,:),cy(:,:), &
-                                 c(:,:),rs(:)
-   end subroutine pdecoefs
-
-end interface
 
 !----------------------------------------------------
 ! Undocumented feature.  Write the number of degrees of freedom and
@@ -134,7 +103,7 @@ write(outunit,"(A)")  "Linear System:"
 write(outunit,"(A)")  "--------------"
 write(outunit,"(A)")
 
-write(outunit,"(A,I11)")  "  number of levels ",ls%nlev
+write(outunit,"(A,I11)")  "  number of levels ",ls%nlev_vert
 write(outunit,"(A)")  "  beginning of each level"
 write(outunit,"(7I11)")  ls%begin_level
 write(outunit,"(A)")  "  beginning of each row"
@@ -144,23 +113,30 @@ write(outunit,"(7I11)")  ls%end_row
 
 if (present(grid)) then
    write(outunit,"(A)")  "  equation correspondence: eqn, grid point, type, basis rank, system rank"
-   write(outunit,"(A,I2,A,I2,A,I2)")  "    types are ",VERTEX_ID," vertex; ",EDGE_ID," edge; ", &
-                     ELEMENT_ID," element;"
-   do i=1,ls%neq_vert + ls%neq_edge + ls%neq_face
+   select case (global_element_kind)
+   case (TRIANGULAR_ELEMENT)
+      write(outunit,"(A,I2,A,I2,A,I2,A,I2)")  "    types are ", &
+            VERTEX_ID," vertex; ",EDGE_ID," edge; ",ELEMENT_ID," element;"
+   case (TETRAHEDRAL_ELEMENT)
+      write(outunit,"(A,I2,A,I2,A,I2,A,I2)")  "    types are ", &
+            VERTEX_ID," vertex; ",EDGE_ID," edge; ",FACE_ID," face;", &
+            ELEMENT_ID," element;"
+   end select
+   do i=1,ls%neq_full
       call eq_to_grid(ls,ls%gid(i),objtype,brank,srank,glid,grid)
       write(outunit,"(A,5I11)") "    ",i,glid,objtype,brank,srank
    end do
 endif
 
 write(outunit,"(A)")  "  matrix values and column indices"
-do i=1,ls%neq_vert + ls%neq_edge + ls%neq_face
+do i=1,ls%neq_full
    write(outunit,"(SS,1P,4E18.10E2)")  ls%matrix_val(ls%begin_row(i):ls%end_row(i))
    write(outunit,"(4I21)")  ls%column_index(ls%begin_row(i):ls%end_row(i))
 end do
 
 if (associated(ls%mass)) then
    write(outunit,"(A)")  "  mass matrix values"
-   do i=1,ls%neq_vert + ls%neq_edge + ls%neq_face
+   do i=1,ls%neq_full
       write(outunit,"(SS,1P,4E18.10E2)")  ls%mass(ls%begin_row(i):ls%end_row(i))
       write(outunit,"(4I21)")  ls%column_index(ls%begin_row(i):ls%end_row(i))
    end do
@@ -226,7 +202,8 @@ real (my_real), allocatable :: new_energy_error(:), new_Linf_error(:), &
                                new_L2_error(:), new_energy_errest(:), &
                                new_Linf_errest(:), new_L2_errest(:), &
                                normte(:), normtinf(:), normt2(:), &
-                               normse(:), normsinf(:), norms2(:)
+                               normse(:), normsinf(:), norms2(:), &
+                               tempvec(:)
 real (my_real), allocatable :: iold_energy_error(:,:), iold_Linf_error(:,:), &
                                iold_L2_error(:,:), iold_energy_errest(:,:), &
                                iold_Linf_errest(:,:), iold_L2_errest(:,:), &
@@ -300,7 +277,7 @@ endif
 allocate(new_energy_error(nevec),new_Linf_error(nsoln),new_L2_error(nsoln), &
       new_energy_errest(nevec),new_Linf_errest(nsoln),new_L2_errest(nsoln), &
       normte(nevec), normtinf(nsoln), normt2(nsoln), &
-      normse(nevec), normsinf(nsoln), norms2(nsoln), &
+      normse(nevec), normsinf(nsoln), norms2(nsoln), tempvec(2*(nevec+nsoln)), &
       stat=allocstat)
 if (allocstat /= 0) then
    ierr = ALLOC_FAILED
@@ -328,7 +305,10 @@ if (my_proc(procs) /= MASTER) then
    do evec=1,nevec
       do comp=1,grid%system_size
          soln = soln + 1
-         true_provided=(trues(0.5_my_real,0.5_my_real,comp,evec)/=huge(0.0_my_real))
+         true_provided=(my_trues((grid%boundbox_max%x+grid%boundbox_min%x)/2, &
+                                 (grid%boundbox_max%y+grid%boundbox_min%y)/2, &
+                     (zcoord(grid%boundbox_max)+zcoord(grid%boundbox_min))/2, &
+                                  comp, evec)/=huge(0.0_my_real))
          if (true_provided) then
             select case (io_control%print_error_what)
             case (ENERGY_ERR)
@@ -412,6 +392,26 @@ if (my_proc(procs) /= MASTER) then
             endif
          endif
       end do
+   end do
+endif
+
+! combine individual parts of the norms of true and solution
+
+if (grid%errtype == RELATIVE_ERROR .and. my_proc(procs) /= MASTER) then
+   tempvec(1:nevec) = normte**2
+   tempvec(nevec+1:2*nevec) = normse**2
+   tempvec(2*nevec+1:2*nevec+nsoln) = normt2**2
+   tempvec(2*nevec+nsoln+1:2*nevec+2*nsoln) = norms2**2
+   tempvec = sqrt(phaml_global_sum(procs,tempvec,1305))
+   normte = tempvec(1:nevec)
+   normse = tempvec(nevec+1:2*nevec)
+   normt2 = tempvec(2*nevec+1:2*nevec+nsoln)
+   norms2 = tempvec(2*nevec+nsoln+1:2*nevec+2*nsoln)
+! TEMP I should do this with a single call also, but I don't have a vector
+!      form of phaml_global_max in the messpass module
+   do i=1,nsoln
+      normtinf(i) = phaml_global_max(procs,normtinf(i),1330+i)
+      normsinf(i) = phaml_global_max(procs,normsinf(i),1350+i)
    end do
 endif
 
@@ -554,8 +554,8 @@ if (who /= SLAVES) then
       old_Linf_error = maxval(iold_Linf_error,dim=1)
       new_Linf_errest = maxval(inew_Linf_errest,dim=1)
       old_Linf_errest = maxval(iold_Linf_errest,dim=1)
-      normtinf = maxval(inormtinf,dim=1)
-      normsinf = maxval(inormsinf,dim=1)
+      normtinf = inormtinf(1,:)
+      normsinf = inormsinf(1,:)
       if (still_sequential) then
          new_L2_error = inew_L2_error(1,:)
          old_L2_error = iold_L2_error(1,:)
@@ -574,20 +574,19 @@ if (who /= SLAVES) then
          old_L2_error = sqrt(sum(iold_L2_error**2,dim=1))
          new_L2_errest = sqrt(sum(inew_L2_errest**2,dim=1))
          old_L2_errest = sqrt(sum(iold_L2_errest**2,dim=1))
-         normt2 = sqrt(sum(inormt2**2,dim=1))
-         norms2 = sqrt(sum(inorms2**2,dim=1))
+         normt2 = inormt2(1,:)
+         norms2 = inorms2(1,:)
          new_energy_error = sqrt(sum(inew_energy_error**2,dim=1))
          old_energy_error = sqrt(sum(iold_energy_error**2,dim=1))
          new_energy_errest = sqrt(sum(inew_energy_errest**2,dim=1))
          old_energy_errest = sqrt(sum(iold_energy_errest**2,dim=1))
-         normte = sqrt(sum(inormte**2,dim=1))
-         normse = sqrt(sum(inormse**2,dim=1))
+         normte = inormte(1,:)
+         normse = inormse(1,:)
       endif
    endif
 endif
 
-! change to relative error if so requested.  Note that slaves divide their
-! part of the error by their part of the true solution, which is not right
+! change to relative error if so requested.
 
 if (grid%errtype == RELATIVE_ERROR) then
    where (normte /= 0.0_my_real) new_energy_error = new_energy_error/normte
@@ -676,10 +675,13 @@ if (printit .or. printall) then
 
    soln = 0
    do evec=1,nevec
-      if (associated(grid%eigenvalue)) then
+      if (associated(grid%eigen_results%eigenvalue)) then
          write(outunit,"(A,I11)") " Eigenvector ",evec
       endif
-      true_provided=(trues(0.5_my_real,0.5_my_real,1,evec)/=huge(0.0_my_real))
+      true_provided=(my_trues((grid%boundbox_max%x+grid%boundbox_min%x)/2, &
+                              (grid%boundbox_max%y+grid%boundbox_min%y)/2, &
+                     (zcoord(grid%boundbox_max)+zcoord(grid%boundbox_min))/2, &
+                               1, evec)/=huge(0.0_my_real))
       if (true_provided) then
         if (print_energy_error) then
          if (printit) then
@@ -734,7 +736,10 @@ if (printit .or. printall) then
          if (grid%system_size > 1) then
             write(outunit,"(A,I11)") "  Component ",comp
          endif
-         true_provided=(trues(0.5_my_real,0.5_my_real,comp,evec)/=huge(0.0_my_real))
+         true_provided=(my_trues((grid%boundbox_max%x+grid%boundbox_min%x)/2, &
+                                 (grid%boundbox_max%y+grid%boundbox_min%y)/2, &
+                     (zcoord(grid%boundbox_max)+zcoord(grid%boundbox_min))/2, &
+                                  comp, evec)/=huge(0.0_my_real))
          if (true_provided) then
            if (print_Linf_error) then
             if (printit) then
@@ -846,7 +851,7 @@ old_L2_errest = new_L2_errest
 
 deallocate(new_energy_error,new_energy_errest, new_Linf_error,new_Linf_errest, &
            new_L2_error,new_L2_errest,normte,normtinf,normt2,normse,normsinf, &
-           norms2,stat=allocstat)
+           norms2,tempvec,stat=allocstat)
 if (allocstat /= 0) then
    call warning("deallocation failed in print_error_info")
 endif
@@ -889,7 +894,7 @@ integer, intent(in) :: this_time(:),tag
 !----------------------------------------------------
 ! Local variables:
  
-integer :: i,proc,np,who,when,astat,lev,eq,col
+integer :: i,proc,np,who,when,astat,lev,eq,col,end_row_cond
 integer :: neq,neq_own,nonzero,nonzero_own,coarse_neq,coarse_bandwidth, &
            lapack_neq,lapack_bandwidth,neq_cond,neq_cond_own,nonzero_cond, &
            nonzero_cond_own
@@ -924,25 +929,31 @@ call pause_watch(all_watches)
 ! If I'm not the master, collect my linear system info
 
 if (my_proc(procs) /= MASTER) then
-   neq = linsys%neq_vert + linsys%neq_edge + linsys%neq_face
+   neq = linsys%neq_full
    neq_own = 0
    nonzero = 0
    nonzero_own = 0
-   neq_cond = linsys%neq_vert + linsys%neq_edge
+   neq_cond = linsys%neq_cond
    neq_cond_own = 0
    nonzero_cond = 0
    nonzero_cond_own = 0
-   do lev=1,linsys%nlev+2
+   do lev=1,linsys%bubble_level
       do eq=linsys%begin_level(lev),linsys%begin_level(lev+1)-1
+         select case (global_element_kind)
+         case (TRIANGULAR_ELEMENT)
+            end_row_cond = linsys%end_row_edge(eq)
+         case (TETRAHEDRAL_ELEMENT)
+            end_row_cond = linsys%end_row_face(eq)
+         end select
          if (linsys%iown(eq)) then
             neq_own = neq_own + 1
-            if (lev < linsys%nlev+2) neq_cond_own = neq_cond_own + 1
+            if (lev <= linsys%cond_level) neq_cond_own = neq_cond_own + 1
          endif
-         do col=linsys%begin_row(eq),linsys%end_row_face(eq)
+         do col=linsys%begin_row(eq),linsys%end_row_bubble(eq)
             if (linsys%column_index(col) == NO_ENTRY) cycle
             nonzero = nonzero + 1
             if (linsys%iown(eq)) nonzero_own = nonzero_own + 1
-            if (lev < linsys%nlev+2 .and. col <= linsys%end_row_edge(eq)) then
+            if (lev <= linsys%cond_level .and. col <= end_row_cond) then
                nonzero_cond = nonzero_cond + 1
                if (linsys%iown(eq)) nonzero_cond_own = nonzero_cond_own + 1
             endif
@@ -1092,8 +1103,8 @@ call end_pause_watch(all_watches)
 end subroutine print_linsys_info
 
 !          -----------------
-subroutine print_solver_info(linsys,procs,io_control,still_sequential, &
-                             this_time,tag)
+subroutine print_solver_info(linsys,procs,solver_control,io_control, &
+                             monitor,still_sequential,this_time)
 !          -----------------
 
 !----------------------------------------------------
@@ -1107,15 +1118,22 @@ implicit none
  
 type (linsys_type), intent(inout) :: linsys
 type (proc_info), intent(in) :: procs
+type (solver_options), intent(in) :: solver_control
 type (io_options), intent(in) :: io_control
+type (eigen_monitor), intent(in) :: monitor
 logical, intent(in) :: still_sequential
-integer, intent(in) :: this_time(:),tag
+integer, intent(in) :: this_time(:)
 !----------------------------------------------------
  
 !----------------------------------------------------
 ! Local variables:
  
-integer :: who,when
+integer :: who,when,i,astat,ni,nr
+integer, allocatable :: isend(:)
+real(my_real), allocatable :: rsend(:)
+integer, pointer :: irecv(:)
+real(my_real), pointer :: rrecv(:)
+type(eigen_monitor) :: master_monitor
  
 !----------------------------------------------------
  
@@ -1137,34 +1155,281 @@ if (my_proc(procs) == MASTER .and. who == SLAVES) return
 
 call pause_watch(all_watches)
 
+! different cases for different types of problems
+
+select case (solver_control%eq_type)
+
+! Elliptic boundary value problems
+
+case (ELLIPTIC)
+
 ! If the residual is not stored, compute it
 
-if (linsys%relresid == -huge(0.0_my_real)) then
-   call linsys_residual(linsys,procs,still_sequential,0,tag, &
-                        .false.,.false.,relresid=linsys%relresid)
-endif
+   if (linsys%relresid == -huge(0.0_my_real)) then
+      call linsys_residual(linsys,procs,still_sequential,0,1341, &
+                           .false.,.false.,relresid=linsys%relresid)
+   endif
+
+! send the solver information to the master
+
+   if (my_proc(procs) == 1) then
+      call phaml_send(procs,MASTER,(/linsys%solver_niter/),1, &
+                      (/linsys%relresid/),1,1342)
+   elseif (my_proc(procs) == MASTER) then
+      call phaml_recv(procs,i,irecv,ni,rrecv,nr,1342)
+      linsys%solver_niter = irecv(1)
+      linsys%relresid = rrecv(1)
+      deallocate(irecv,rrecv)
+   endif
 
 ! print the info, if requested
 
-if (my_proc(procs) /= MASTER) then
- if (who == SLAVES .or. who == EVERYONE) then
-   write(outunit,"(A)")
-   write(outunit,"(A)") 'Solver information:'
-   write(outunit,"(A,I11)") '   number of iterations = ',linsys%solver_niter
-   write(outunit,"(A,SS,1P,E18.10E2)") '   relative residual = ',linsys%relresid
- endif
-else
- if (who == MASTER .or. who == EVERYONE .or. who == MASTER_ALL) then
-   write(outunit,"(A)")
-   write(outunit,"(A)") 'Solver information:'
-   write(outunit,"(A,I11)") '   number of iterations = ',linsys%solver_niter
-   write(outunit,"(A,SS,1P,E18.10E2)") '   relative residual = ',linsys%relresid
- endif
-endif
+   if (my_proc(procs) /= MASTER) then
+      if (who == SLAVES .or. who == EVERYONE) then
+         write(outunit,"(A)")
+         write(outunit,"(A)") 'Solver information:'
+         write(outunit,"(A,I11)") '   number of iterations = ',linsys%solver_niter
+         write(outunit,"(A,SS,1P,E18.10E2)") '   relative residual = ',linsys%relresid
+      endif
+   else
+      if (who == MASTER .or. who == EVERYONE .or. who == MASTER_ALL) then
+         write(outunit,"(A)")
+         write(outunit,"(A)") 'Solver information:'
+         write(outunit,"(A,I11)") '   number of iterations = ',linsys%solver_niter
+         write(outunit,"(A,SS,1P,E18.10E2)") '   relative residual = ',linsys%relresid
+      endif
+   endif
+
+! Eigenvalue problems
+
+case (EIGENVALUE)
+
+! send monitor information to MASTER
+
+   if (my_proc(procs) == 1) then
+      ni = 4
+      nr = 2*monitor%nconv
+      allocate(isend(ni),rsend(nr),stat=astat)
+      if (astat /= 0) then
+         ierr = ALLOC_FAILED
+         call fatal("allocation failed in print_solver_info",procs=procs)
+         stop
+      endif
+      isend(1) = monitor%ncv
+      isend(2) = monitor%maxit
+      isend(3) = monitor%niter
+      isend(4) = monitor%nconv
+      do i=1,monitor%nconv
+         rsend(i) = monitor%eigensolver_l2_resid(i)
+      end do
+      do i=1,monitor%nconv
+         rsend(i+monitor%nconv) = monitor%eigensolver_errbound(i)
+      end do
+      call phaml_send(procs,MASTER,isend,ni,rsend,nr,1343)
+      deallocate(isend,rsend)
+   elseif (my_proc(procs) == MASTER) then
+      call phaml_recv(procs,i,irecv,ni,rrecv,nr,1343)
+      master_monitor%ncv = irecv(1)
+      master_monitor%maxit = irecv(2)
+      master_monitor%niter = irecv(3)
+      master_monitor%nconv = irecv(4)
+      allocate(master_monitor%eigensolver_l2_resid(master_monitor%nconv), &
+               master_monitor%eigensolver_errbound(master_monitor%nconv), stat=astat)
+      if (astat /= 0) then
+         ierr = ALLOC_FAILED
+         call fatal("allocation failed in print_solver_info",procs=procs)
+         stop
+      endif
+      do i=1,master_monitor%nconv
+         master_monitor%eigensolver_l2_resid(i) = rrecv(i)
+      end do
+      do i=1,master_monitor%nconv
+         master_monitor%eigensolver_errbound(i) = rrecv(i+master_monitor%nconv)
+      end do
+      deallocate(irecv)
+      if (associated(rrecv)) deallocate(rrecv)
+   endif
+
+! print the info, if requested
+
+   if (my_proc(procs) /= MASTER) then
+      if (who == SLAVES .or. who == EVERYONE) then
+         write(outunit,"(A)")
+         write(outunit,"(A)") 'Solver information:'
+         write(outunit,"(A,I11)") '   number of column vectors   = ',monitor%ncv
+         write(outunit,"(A,I11)") '   maximum iterations allowed = ',monitor%maxit
+         write(outunit,"(A,I11)") '   number of iterations used  = ',monitor%niter
+         write(outunit,"(A,I11)") '   number of converged eigens = ',monitor%nconv
+         if (monitor%nconv > 0) then
+            write(outunit,"(A,SS,1P,E18.10E2)") '   eigensolver L2 residual    = ',monitor%eigensolver_l2_resid(1)
+            do i=2,monitor%nconv
+               write(outunit,"(A,SS,1P,E18.10E2)") '                                ',monitor%eigensolver_l2_resid(i)
+            end do
+         endif
+         if (monitor%nconv > 0) then
+            write(outunit,"(A,SS,1P,E18.10E2)") '   eigensolver eval errest    = ',monitor%eigensolver_errbound(1)
+            do i=2,monitor%nconv
+               write(outunit,"(A,SS,1P,E18.10E2)") '                                ',monitor%eigensolver_errbound(i)
+            end do
+         endif
+      endif
+   else
+      if (who == MASTER .or. who == EVERYONE .or. who == MASTER_ALL) then
+         write(outunit,"(A)")
+         write(outunit,"(A)") 'Solver information:'
+         write(outunit,"(A,I11)") '   number of column vectors   = ',master_monitor%ncv
+         write(outunit,"(A,I11)") '   maximum iterations allowed = ',master_monitor%maxit
+         write(outunit,"(A,I11)") '   number of iterations used  = ',master_monitor%niter
+         write(outunit,"(A,I11)") '   number of converged eigens = ',master_monitor%nconv
+         if (master_monitor%nconv > 0) then
+            write(outunit,"(A,SS,1P,E18.10E2)") '   eigensolver L2 residual    = ',master_monitor%eigensolver_l2_resid(1)
+            do i=2,master_monitor%nconv
+               write(outunit,"(A,SS,1P,E18.10E2)") '                                ',master_monitor%eigensolver_l2_resid(i)
+            end do
+         endif
+         if (master_monitor%nconv > 0) then
+            write(outunit,"(A,SS,1P,E18.10E2)") '   eigensolver eval errest    = ',master_monitor%eigensolver_errbound(1)
+            do i=2,master_monitor%nconv
+               write(outunit,"(A,SS,1P,E18.10E2)") '                                ',master_monitor%eigensolver_errbound(i)
+            end do
+         endif
+      endif
+   endif
+   if (my_proc(procs) == MASTER) then
+      deallocate(master_monitor%eigensolver_l2_resid,master_monitor%eigensolver_errbound)
+   endif
+
+end select
 
 call end_pause_watch(all_watches)
 
 end subroutine print_solver_info
+
+!          -------------------
+subroutine print_eigenvalues(grid,procs,io_control,refine_control, &
+                             still_sequential,this_time,tag)
+!          -------------------
+
+!----------------------------------------------------
+! This routine prints the eigenvalues and eigenvalue error estimates
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+
+type(grid_type), intent(inout) :: grid
+type(proc_info), intent(in) :: procs
+type(io_options), intent(in) :: io_control
+type(refine_options), intent(in) :: refine_control
+logical, intent(in) :: still_sequential
+integer, intent(in) :: this_time(:), tag
+!----------------------------------------------------
+! Local variables:
+
+integer :: who, when, astat, i, proc, ni, nr
+real(my_real), allocatable :: send_real(:)
+integer, pointer :: recv_int(:)
+real(my_real), pointer :: recv_real(:)
+!----------------------------------------------------
+! Begin executable code
+
+! If this is not the right time to print, return
+
+who = io_control%print_eval_who
+when = io_control%print_eval_when
+
+if (.not. any(this_time == when) .or. who == NO_ONE) return
+
+! If I'm the master and only slaves print the grid, return
+
+if (my_proc(procs) == MASTER .and. who == SLAVES) return
+
+! stop the clocks
+
+call pause_watch(all_watches)
+
+! For slaves, send_real is sent to the master and used for printing.
+! For the master, send_real is a convenient place to put the values for printing
+
+nr = 2*grid%num_eval
+allocate(send_real(nr),stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("memory allocation failed in print_eigenvalues")
+   stop
+endif
+
+! MASTER
+
+if (my_proc(procs) == MASTER) then
+   if (who == MASTER .or. who == EVERYONE) then
+      send_real = 0.0_my_real
+
+! receive the eigenvalues from processor 1 and each processor's contribution
+! to the error estimate
+
+      do i=1,num_proc(procs)
+         call phaml_recv(procs,proc,recv_int,ni,recv_real,nr,tag)
+         if (proc==1) then
+            send_real(1:2*grid%num_eval:2)=recv_real(1:2*grid%num_eval:2)
+            send_real(2:2*grid%num_eval:2)=send_real(2:2*grid%num_eval:2) + &
+                                              recv_real(2:2*grid%num_eval:2)**2
+         elseif (.not. still_sequential) then
+            send_real(2:2*grid%num_eval:2)=send_real(2:2*grid%num_eval:2) + &
+                                              recv_real(2:2*grid%num_eval:2)**2
+         endif
+         if (associated(recv_real)) deallocate(recv_real)
+      end do
+      send_real(2:2*grid%num_eval:2)=sqrt(send_real(2:2*grid%num_eval:2))
+
+! master prints
+
+      write(outunit,"(A)")
+      write(outunit,"(A)") "Eigenvalues and error estimates:"
+      do i=1,size(send_real),2
+         write(outunit,"(SS,1P,A,2E18.10E2)") "   ",send_real(i),send_real(i+1)
+      end do
+   endif
+
+! SLAVES
+
+else
+
+! collect the eigenvalues and my contribution to the error estimate in send_real
+
+   if (who == MASTER .or. who == EVERYONE .or. who == SLAVES) then
+      do i=0,grid%num_eval-1
+         send_real(2*i+1) = grid%eigen_results%eigenvalue(i+1)
+         call error_estimate(grid,procs,refine_control%error_estimator, &
+                             i+1,errest_eigenvalue=send_real(2*i+2))
+      end do
+   endif
+
+! send information to master if it will print
+
+   if (who == MASTER .or. who == EVERYONE) then
+      call phaml_send(procs,MASTER,(/0/),0,send_real,nr,tag)
+   endif
+
+! slave prints
+
+   if (who == SLAVES .or. who == EVERYONE) then
+      write(outunit,"(A)")
+      write(outunit,"(A)") "Eigenvalues and error estimates:"
+      do i=1,nr,2
+         write(outunit,"(SS,1P,A,2E18.10E2)") "   ",send_real(i),send_real(i+1)
+      end do
+   endif
+
+endif
+
+! free memory
+
+deallocate(send_real)
+
+call end_pause_watch(all_watches)
+
+end subroutine print_eigenvalues
 
 !----------------------------------------------------------------
 ! CODE FOR COMPUTING ERRORS
@@ -1187,7 +1452,7 @@ subroutine norm_error(grid,procs,still_sequential,comp,eigen, &
 !----------------------------------------------------
 ! Dummy arguments
  
-type (grid_type), intent(in) :: grid
+type (grid_type), intent(inout) :: grid
 type (proc_info), intent(in) :: procs
 logical, intent(in) :: still_sequential
 integer, intent(in) :: comp,eigen
@@ -1198,18 +1463,26 @@ real (my_real), optional, intent(out) :: my_energy_norm, my_Linf_norm, &
 !----------------------------------------------------
 ! Local variables:
  
-real (my_real), pointer :: qw(:),xq(:),yq(:)
-real (my_real), allocatable :: u(:,:,:),ux(:,:,:),uy(:,:,:)
+real (my_real), pointer :: qw(:),xq(:),yq(:),zq(:)
+real (my_real), allocatable :: u(:,:,:),ux(:,:,:),uy(:,:,:),uz(:,:,:)
 real(my_real) :: cxx(grid%system_size,grid%system_size), &
-                 cxy(grid%system_size,grid%system_size), &
                  cyy(grid%system_size,grid%system_size), &
+                 czz(grid%system_size,grid%system_size), &
+                 cxy(grid%system_size,grid%system_size), &
+                 cxz(grid%system_size,grid%system_size), &
+                 cyz(grid%system_size,grid%system_size), &
                  cx(grid%system_size,grid%system_size),  &
                  cy(grid%system_size,grid%system_size),  &
+                 cz(grid%system_size,grid%system_size),  &
                  c(grid%system_size,grid%system_size),   &
                  rs(grid%system_size)
-integer :: lev,vert,elem,astat,i,j,k,nqp,ss
+integer :: lev,vert,elem,astat,i,j,k,nqp,ss,element_list(grid%biggest_elem), &
+           nelem,ielem,ivert
 real (my_real) :: loc_Linf_norm, loc_L2_norm, loc_energy_norm_squared, &
-                  t, xc(3), yc(3)
+                  t, xc(VERTICES_PER_ELEMENT), yc(VERTICES_PER_ELEMENT), &
+                  zc(VERTICES_PER_ELEMENT)
+logical :: list_made
+logical :: visited_vert(grid%biggest_vert)
 !----------------------------------------------------
 
 !----------------------------------------------------
@@ -1218,56 +1491,82 @@ real (my_real) :: loc_Linf_norm, loc_L2_norm, loc_energy_norm_squared, &
 if (my_proc(procs)==MASTER) return
 
 ss = grid%system_size
+list_made = .false.
 
 ! energy norm
 
 if (present(my_energy_norm) .or. present(energy_norm)) then
 
+   call list_elements(grid,element_list,nelem,own=.true.,leaf=.true.)
+   list_made = .true.
    loc_energy_norm_squared = 0.0_my_real
-   do lev=1,grid%nlev
-      elem = grid%head_level_elem(lev)
-      do while (elem /= END_OF_LIST)
-         if (.not.grid%element(elem)%isleaf .or. &
-             .not.grid%element(elem)%iown) then
-            elem = grid%element(elem)%next
-            cycle
-         endif
-         xc = grid%vertex(grid%element(elem)%vertex)%coord%x
-         yc = grid%vertex(grid%element(elem)%vertex)%coord%y
-         call quadrature_rule_tri(min(MAX_QUAD_ORDER_TRI,max(8,2*grid%element(elem)%degree)), &
+
+!$omp parallel do schedule(dynamic) &
+!$omp  default(shared) &
+!$omp  private(ielem,elem,xc,yc,zc,nqp,qw,xq,yq,zq,i,j,k,u,ux,uy,uz,astat, &
+!$omp          cxx,cyy,czz,cxy,cxz,cyz,cx,cy,cz,c,rs) &
+!$omp  reduction(+ : loc_energy_norm_squared)
+
+   do ielem=1,nelem
+      elem = element_list(ielem)
+      xc = grid%vertex(grid%element(elem)%vertex)%coord%x
+      yc = grid%vertex(grid%element(elem)%vertex)%coord%y
+      zc = zcoord(grid%vertex(grid%element(elem)%vertex)%coord)
+      select case (global_element_kind)
+      case (TRIANGULAR_ELEMENT)
+         call quadrature_rule_tri(min(MAX_QUAD_ORDER_TRI, &
+                                      max(8,2*grid%element(elem)%degree)), &
                                   xc,yc,nqp,qw,xq,yq,i,stay_in=.true.)
-         allocate(u(ss,1,nqp),ux(ss,1,nqp),uy(ss,1,nqp), &
-                  stat=astat)
-         if (astat /= 0) then
-            ierr = ALLOC_FAILED
-            call fatal("allocation failed in norm_error",procs=procs)
-            return
-         endif
+         allocate(zq(size(xq)))
+         zq=0
+      case (TETRAHEDRAL_ELEMENT)
+         call quadrature_rule_tet(min(MAX_QUAD_ORDER_TET, &
+                                      max(8,2*grid%element(elem)%degree)), &
+                                  xc,yc,zc,nqp,qw,xq,yq,zq,i,stay_in=.true.)
+      end select
+      allocate(u(ss,1,nqp),ux(ss,1,nqp),uy(ss,1,nqp),uz(ss,1,nqp), &
+               stat=astat)
+      if (astat /= 0) then
+         ierr = ALLOC_FAILED
+         call fatal("allocation failed in norm_error",procs=procs)
+         stop
+      endif
+      select case (global_element_kind)
+      case (TRIANGULAR_ELEMENT)
          call evaluate_soln_local(grid,xq,yq,elem,(/(j,j=1,ss)/),(/eigen/), &
                                   u,ux,uy)
-         do i=1,nqp
-            call pdecoefs(xq(i),yq(i),cxx,cxy,cyy,cx,cy,c,rs)
-            do j=1,ss
-               u(j,1,i) = trues(xq(i),yq(i),j,eigen) - u(j,1,i)
-               ux(j,1,i) = truexs(xq(i),yq(i),j,eigen) - ux(j,1,i)
-               uy(j,1,i) = trueys(xq(i),yq(i),j,eigen) - uy(j,1,i)
-            end do
-            do j=1,ss
-               do k=1,ss
-                  loc_energy_norm_squared = loc_energy_norm_squared + &
-                     qw(i)*(cxx(j,k)*ux(j,1,i)*ux(k,1,i) + &
-                            cyy(j,k)*uy(j,1,i)*uy(k,1,i) + &
-                            cxy(j,k)*ux(j,1,i)*uy(k,1,i) + &
-                             cx(j,k)*ux(j,1,i)*u(k,1,i) + &
-                             cy(j,k)*uy(j,1,i)*u(k,1,i) + &
-                              c(j,k)*u(j,1,i)*u(k,1,i))
-               end do
+         uz = 0.0_my_real
+      case (TETRAHEDRAL_ELEMENT)
+         call evaluate_soln_local(grid,xq,yq,elem,(/(j,j=1,ss)/),(/eigen/), &
+                                  u,ux,uy,z=zq,uz=uz)
+      end select
+      do i=1,nqp
+         call my_pdecoefs(elem,xq(i),yq(i),zq(i),cxx,cyy,czz,cxy,cxz,cyz,cx,cy,&
+                          cz,c,rs)
+         do j=1,ss
+            u(j,1,i) = my_trues(xq(i),yq(i),zq(i),j,eigen) - u(j,1,i)
+            ux(j,1,i) = my_truexs(xq(i),yq(i),zq(i),j,eigen) - ux(j,1,i)
+            uy(j,1,i) = my_trueys(xq(i),yq(i),zq(i),j,eigen) - uy(j,1,i)
+            uz(j,1,i) = my_truezs(xq(i),yq(i),zq(i),j,eigen) - uz(j,1,i)
+         end do
+         do j=1,ss
+            do k=1,ss
+               loc_energy_norm_squared = loc_energy_norm_squared + &
+                  qw(i)*(cxx(j,k)*ux(j,1,i)*ux(k,1,i) + &
+                         cyy(j,k)*uy(j,1,i)*uy(k,1,i) + &
+                         czz(j,k)*uz(j,1,i)*uz(k,1,i) + &
+                         cxy(j,k)*ux(j,1,i)*uy(k,1,i) + &
+                         cxz(j,k)*ux(j,1,i)*uz(k,1,i) + &
+                         cyz(j,k)*uy(j,1,i)*uz(k,1,i) + &
+                          cx(j,k)*ux(j,1,i)*u(k,1,i) + &
+                          cy(j,k)*uy(j,1,i)*u(k,1,i) + &
+                           c(j,k)*u(j,1,i)*u(k,1,i))
             end do
          end do
-         deallocate(qw,xq,yq,u,ux,uy)
-         elem = grid%element(elem)%next
       end do
+      deallocate(qw,xq,yq,zq,u,ux,uy,uz)
    end do
+!$omp end parallel do
 
    loc_energy_norm_squared = abs(loc_energy_norm_squared)
    if (present(my_energy_norm)) my_energy_norm = sqrt(loc_energy_norm_squared)
@@ -1290,15 +1589,21 @@ if (present(my_Linf_norm) .or. present(Linf_norm)) then
 
 ! go through the vertices of the grid
 
+   visited_vert = .false.
    do lev=1,grid%nlev
-      vert = grid%head_level_vert(lev)
-      do while (vert /= END_OF_LIST)
-         if (grid%element(grid%vertex(vert)%assoc_elem)%iown) then
-           loc_Linf_norm = max(loc_Linf_norm, &
-                               abs(grid%vertex_solution(vert,comp,eigen) - &
-                                   grid%vertex_exact(vert,comp,eigen)))
-         endif
-         vert = grid%vertex(vert)%next
+      elem = grid%head_level_elem(lev)
+      do while (elem /= END_OF_LIST)
+         do ivert=1,VERTICES_PER_ELEMENT
+            vert = grid%element(elem)%vertex(ivert)
+            if (visited_vert(vert)) cycle
+            visited_vert(vert) = .true.
+            if (grid%element(grid%vertex(vert)%assoc_elem)%iown) then
+              loc_Linf_norm = max(loc_Linf_norm, &
+                                  abs(grid%vertex_solution(vert,comp,eigen) - &
+                                      grid%vertex_exact(vert,comp,eigen)))
+            endif
+      end do
+      elem = grid%element(elem)%next
       end do
    end do
 
@@ -1309,39 +1614,61 @@ endif
 if (present(my_Linf_norm) .or. present(Linf_norm) .or. &
     present(my_L2_norm) .or. present(L2_norm)) then
 
+   if (.not. list_made) then
+      call list_elements(grid,element_list,nelem,own=.true.,leaf=.true.)
+   endif
    loc_L2_norm = 0.0_my_real
 
 ! go through the elements of the grid
 
-   do lev=1,grid%nlev
-      elem = grid%head_level_elem(lev)
-      do while (elem /= END_OF_LIST)
-         if (grid%element(elem)%isleaf .and. grid%element(elem)%iown) then
+!$omp parallel do &
+!$omp  default(shared) &
+!$omp  private(ielem,elem,xc,yc,zc,nqp,qw,xq,yq,zq,i,u,astat,t) &
+!$omp  reduction(+ : loc_L2_norm) &
+!$omp  reduction(max : loc_Linf_norm)
+
+   do ielem=1,nelem
+      elem = element_list(ielem)
 
 ! compute the quadrature points, evaluate the solution, and compute the
 ! integral and max over the quadrature points
 
-            xc = grid%vertex(grid%element(elem)%vertex)%coord%x
-            yc = grid%vertex(grid%element(elem)%vertex)%coord%y
-            call quadrature_rule_tri(6,xc,yc,nqp,qw,xq,yq,i,stay_in=.true.)
-            allocate(u(1,1,nqp),stat=astat)
-            if (astat /= 0) then
-               ierr = ALLOC_FAILED
-               call fatal("allocation failed in norm_error",procs=procs)
-               return
-            endif
-            call evaluate_soln_local(grid,xq,yq,elem,(/comp/),(/eigen/),u)
-            do i=1,nqp
-               t = trues(xq(i),yq(i),comp,eigen)
-               loc_Linf_norm = max(loc_Linf_norm,abs(u(1,1,i)-t))
-               loc_L2_norm = loc_L2_norm + qw(i)*(u(1,1,i)-t)**2
-            end do
-            deallocate(qw,xq,yq,u)
-
-         endif
-         elem = grid%element(elem)%next
+      xc = grid%vertex(grid%element(elem)%vertex)%coord%x
+      yc = grid%vertex(grid%element(elem)%vertex)%coord%y
+      zc = zcoord(grid%vertex(grid%element(elem)%vertex)%coord)
+      select case (global_element_kind)
+      case (TRIANGULAR_ELEMENT)
+         call quadrature_rule_tri(6,xc,yc,nqp,qw,xq,yq,i,stay_in=.true.)
+         allocate(zq(size(xq)))
+         zq=0
+      case (TETRAHEDRAL_ELEMENT)
+! TEMP 3D until quadrature rules are implemented
+!               call quadrature_rule_tet(6,xc,yc,zc,nqp,qw,xq,yq,zq,i, &
+!                                        stay_in=.true.)
+         call quadrature_rule_tet(1,xc,yc,zc,nqp,qw,xq,yq,zq,i, &
+                                  stay_in=.true.)
+      end select
+      allocate(u(1,1,nqp),stat=astat)
+      if (astat /= 0) then
+         ierr = ALLOC_FAILED
+         call fatal("allocation failed in norm_error",procs=procs)
+         stop
+      endif
+      select case (global_element_kind)
+      case (TRIANGULAR_ELEMENT)
+         call evaluate_soln_local(grid,xq,yq,elem,(/comp/),(/eigen/),u)
+      case (TETRAHEDRAL_ELEMENT)
+         call evaluate_soln_local(grid,xq,yq,elem,(/comp/),(/eigen/),u, &
+                                  z=zq)
+      end select
+      do i=1,nqp
+         t = my_trues(xq(i),yq(i),zq(i),comp,eigen)
+         loc_Linf_norm = max(loc_Linf_norm,abs(u(1,1,i)-t))
+         loc_L2_norm = loc_L2_norm + qw(i)*(u(1,1,i)-t)**2
       end do
+      deallocate(qw,xq,yq,zq,u)
    end do
+!$omp end parallel do
 
    if (present(my_Linf_norm)) my_Linf_norm = loc_Linf_norm
    if (present(Linf_norm)) then
@@ -1378,7 +1705,7 @@ subroutine norm_solution(grid,procs,still_sequential,comp,eigen, &
 !----------------------------------------------------
 ! Dummy arguments
  
-type (grid_type), intent(in) :: grid
+type (grid_type), intent(inout) :: grid
 type (proc_info), intent(in) :: procs
 logical, intent(in) :: still_sequential
 integer, intent(in) :: comp,eigen
@@ -1388,23 +1715,32 @@ real (my_real), optional, intent(out) :: discrete_energy, linf, l2, energy
 !----------------------------------------------------
 ! Local variables:
  
-real (my_real), pointer :: qw(:),xq(:),yq(:)
-real (my_real), allocatable :: u(:,:,:),ux(:,:,:),uy(:,:,:)
+real (my_real), pointer :: qw(:),xq(:),yq(:),zq(:)
+real (my_real), allocatable :: u(:,:,:),ux(:,:,:),uy(:,:,:),uz(:,:,:)
 real(my_real) :: cxx(grid%system_size,grid%system_size), &
-                 cxy(grid%system_size,grid%system_size), &
                  cyy(grid%system_size,grid%system_size), &
+                 czz(grid%system_size,grid%system_size), &
+                 cxy(grid%system_size,grid%system_size), &
+                 cxz(grid%system_size,grid%system_size), &
+                 cyz(grid%system_size,grid%system_size), &
                  cx(grid%system_size,grid%system_size),  &
                  cy(grid%system_size,grid%system_size),  &
+                 cz(grid%system_size,grid%system_size),  &
                  c(grid%system_size,grid%system_size),   &
                  rs(grid%system_size)
-integer :: lev,vert,elem,astat,i,j,k,nqp,ss
+integer :: lev,vert,elem,astat,i,j,k,nqp,ss,ielem,nelem, &
+           element_list(grid%biggest_elem),ivert
+logical :: list_made
 integer :: objtype,brank,srank,objlid
-real (my_real) :: xc(3), yc(3)
+real (my_real) :: xc(VERTICES_PER_ELEMENT), yc(VERTICES_PER_ELEMENT), &
+                  zc(VERTICES_PER_ELEMENT)
+real (my_real) :: loc_energy_norm, loc_Linf_norm, loc_L2_norm
 type(linsys_type) :: linear_system
 type(solver_options) :: solver_cntl
 type(io_options) :: io_cntl
 real(my_real), pointer :: x(:)
 real(my_real), allocatable :: y(:)
+logical :: visited_vert(grid%biggest_vert)
 !----------------------------------------------------
 
 !----------------------------------------------------
@@ -1413,6 +1749,7 @@ real(my_real), allocatable :: y(:)
 if (my_proc(procs)==MASTER) return
 
 ss = grid%system_size
+list_made = .false.
 
 if (present(discrete_energy)) then
 
@@ -1424,13 +1761,14 @@ if (present(discrete_energy)) then
    solver_cntl%lambda0 = -huge(0.0_my_real)
    solver_cntl%ignore_quad_err = .true.
    solver_cntl%inc_quad_order = 0
+! using print_error_when=TOO_MUCH keeps the uncondensed stiffness matrix
    io_cntl = io_options(NEVER,NO_ONE,NEVER,NO_ONE,NEVER,NO_ONE,TOO_MUCH, &
-                        NO_ONE,NEVER,NEVER,NEVER,NO_ONE,PHASES,.false.)
+                        NO_ONE,NEVER,NEVER,NEVER,NO_ONE,NEVER,NO_ONE,PHASES, &
+                        .false.)
    call create_linear_system(linear_system,grid,procs,solver_cntl,io_cntl, &
                              still_sequential,notime=.true.)
-   linear_system%end_row => linear_system%end_row_face
-   linear_system%neq = linear_system%neq_vert + linear_system%neq_edge + &
-                       linear_system%neq_face
+   linear_system%end_row => linear_system%end_row_bubble
+   linear_system%neq = linear_system%neq_full
    linear_system%matrix_val => linear_system%stiffness
    linear_system%rhs => linear_system%rhs_nocond
    if (eigen > 1) then
@@ -1442,6 +1780,8 @@ if (present(discrete_energy)) then
             linear_system%solution(i) = grid%vertex_solution(objlid,srank,eigen)
          case (EDGE_ID)
             linear_system%solution(i) = grid%edge(objlid)%solution(brank,srank,eigen)
+         case (FACE_ID)
+            linear_system%solution(i) = grid%face(objlid)%solution(brank,srank,eigen)
          case (ELEMENT_ID)
             linear_system%solution(i) = grid%element(objlid)%solution(brank,srank,eigen)
          end select
@@ -1452,7 +1792,7 @@ if (present(discrete_energy)) then
    if (astat /= 0) then
       ierr = ALLOC_FAILED
       call fatal("allocation failed in norm_solution",procs=procs)
-      return
+      stop
    endif
    call matrix_times_vector(x,y,linear_system,procs,still_sequential, &
                             1310,1311,1312,1313,1314,1315,natural=.true., &
@@ -1465,53 +1805,80 @@ if (present(discrete_energy)) then
    end do
    discrete_energy = sqrt(abs(discrete_energy))
 
+   call destroy_linear_system(linear_system)
+
 endif
 
 ! energy norm
 
 if (present(energy)) then
 
-   energy = 0.0_my_real
-   do lev=1,grid%nlev
-      elem = grid%head_level_elem(lev)
-      do while (elem /= END_OF_LIST)
-         if (.not.grid%element(elem)%isleaf .or. &
-             .not.grid%element(elem)%iown) then
-            elem = grid%element(elem)%next
-            cycle
-         endif
-         xc = grid%vertex(grid%element(elem)%vertex)%coord%x
-         yc = grid%vertex(grid%element(elem)%vertex)%coord%y
-         call quadrature_rule_tri(min(MAX_QUAD_ORDER_TRI,max(8,2*grid%element(elem)%degree)), &
+   call list_elements(grid,element_list,nelem,own=.true.,leaf=.true.)
+   list_made = .true.
+   loc_energy_norm = 0.0_my_real
+
+!$omp parallel do schedule(dynamic) &
+!$omp  default(shared) &
+!$omp  private(ielem,elem,xc,yc,zc,nqp,qw,xq,yq,zq,i,j,k,u,ux,uy,uz,astat, &
+!$omp          cxx,cyy,czz,cxy,cxz,cyz,cx,cy,cz,c,rs) &
+!$omp  reduction(+ : loc_energy_norm)
+
+   do ielem=1,nelem
+      elem = element_list(ielem)
+      xc = grid%vertex(grid%element(elem)%vertex)%coord%x
+      yc = grid%vertex(grid%element(elem)%vertex)%coord%y
+      zc = zcoord(grid%vertex(grid%element(elem)%vertex)%coord)
+      select case (global_element_kind)
+      case (TRIANGULAR_ELEMENT)
+         call quadrature_rule_tri(min(MAX_QUAD_ORDER_TRI, &
+                                  max(8,2*grid%element(elem)%degree)), &
                                   xc,yc,nqp,qw,xq,yq,i,stay_in=.true.)
-         allocate(u(ss,1,nqp),ux(ss,1,nqp),uy(ss,1,nqp), &
-                  stat=astat)
-         if (astat /= 0) then
-            ierr = ALLOC_FAILED
-            call fatal("allocation failed in norm_solution",procs=procs)
-            return
-         endif
+         allocate(zq(size(xq)))
+         zq=0
+      case (TETRAHEDRAL_ELEMENT)
+         call quadrature_rule_tet(min(MAX_QUAD_ORDER_TET, &
+                                  max(8,2*grid%element(elem)%degree)), &
+                                  xc,yc,zc,nqp,qw,xq,yq,zq,i,stay_in=.true.)
+      end select
+      allocate(u(ss,1,nqp),ux(ss,1,nqp),uy(ss,1,nqp),uz(ss,1,nqp), &
+               stat=astat)
+      if (astat /= 0) then
+         ierr = ALLOC_FAILED
+         call fatal("allocation failed in norm_solution",procs=procs)
+         stop
+      endif
+      select case (global_element_kind)
+      case (TRIANGULAR_ELEMENT)
          call evaluate_soln_local(grid,xq,yq,elem,(/(j,j=1,ss)/),(/eigen/), &
                                   u,ux,uy)
-         do i=1,nqp
-            call pdecoefs(xq(i),yq(i),cxx,cxy,cyy,cx,cy,c,rs)
-            do j=1,ss
-               do k=1,ss
-                  energy = energy + qw(i)*(cxx(j,k)*ux(j,1,i)*ux(k,1,i) + &
-                                           cyy(j,k)*uy(j,1,i)*uy(k,1,i) + &
-                                           cxy(j,k)*ux(j,1,i)*uy(k,1,i) + &
-                                            cx(j,k)*ux(j,1,i)*u(k,1,i) + &
-                                            cy(j,k)*uy(j,1,i)*u(k,1,i) + &
-                                             c(j,k)*u(j,1,i)*u(k,1,i))
-               end do
+         uz = 0.0_my_real
+      case (TETRAHEDRAL_ELEMENT)
+         call evaluate_soln_local(grid,xq,yq,elem,(/(j,j=1,ss)/),(/eigen/), &
+                                  u,ux,uy,z=zq,uz=uz)
+      end select
+      do i=1,nqp
+         call my_pdecoefs(elem,xq(i),yq(i),zq(i),cxx,cyy,czz,cxy,cxz,cyz,cx,cy,&
+                          cz,c,rs)
+         do j=1,ss
+            do k=1,ss
+               loc_energy_norm = loc_energy_norm + &
+                                 qw(i)*(cxx(j,k)*ux(j,1,i)*ux(k,1,i) + &
+                                        cyy(j,k)*uy(j,1,i)*uy(k,1,i) + &
+                                        czz(j,k)*uz(j,1,i)*uz(k,1,i) + &
+                                        cxy(j,k)*ux(j,1,i)*uy(k,1,i) + &
+                                        cxz(j,k)*ux(j,1,i)*uz(k,1,i) + &
+                                        cyz(j,k)*uy(j,1,i)*uz(k,1,i) + &
+                                         cx(j,k)*ux(j,1,i)*u(k,1,i) + &
+                                         cy(j,k)*uy(j,1,i)*u(k,1,i) + &
+                                          c(j,k)*u(j,1,i)*u(k,1,i))
             end do
          end do
-         deallocate(qw,xq,yq,u,ux,uy)
-         elem = grid%element(elem)%next
       end do
+      deallocate(qw,xq,yq,zq,u,ux,uy,uz)
    end do
+!$omp end parallel do
 
-   energy = sqrt(abs(energy))
+   energy = sqrt(abs(loc_energy_norm))
 
 endif
 
@@ -1519,17 +1886,24 @@ endif
 
 if (present(Linf)) then
 
-   Linf = 0.0_my_real
+   loc_Linf_norm = 0.0_my_real
 
 ! go through the vertices of the grid
 
+   visited_vert = .false.
    do lev=1,grid%nlev
-      vert = grid%head_level_vert(lev)
-      do while (vert /= END_OF_LIST)
-         if (grid%element(grid%vertex(vert)%assoc_elem)%iown) then
-           Linf = max(Linf,abs(grid%vertex_solution(vert,comp,eigen)))
-         endif
-         vert = grid%vertex(vert)%next
+      elem = grid%head_level_elem(lev)
+      do while (elem /= END_OF_LIST)
+         do ivert=1,VERTICES_PER_ELEMENT
+            vert = grid%element(elem)%vertex(ivert)
+            if (visited_vert(vert)) cycle
+            visited_vert(vert) = .true.
+            if (grid%element(grid%vertex(vert)%assoc_elem)%iown) then
+              loc_Linf_norm = max(loc_Linf_norm, &
+                                  abs(grid%vertex_solution(vert,comp,eigen)))
+            endif
+         end do
+         elem = grid%element(elem)%next
       end do
    end do
 
@@ -1539,40 +1913,64 @@ endif
 
 if (present(Linf) .or. present(L2)) then
 
-   if (present(L2)) L2 = 0.0_my_real
+   if (present(L2)) loc_L2_norm = 0.0_my_real
+
+   if (.not. list_made) then
+      call list_elements(grid,element_list,nelem,own=.true.,leaf=.true.)
+   endif
 
 ! go through the elements of the grid
 
-   do lev=1,grid%nlev
-      elem = grid%head_level_elem(lev)
-      do while (elem /= END_OF_LIST)
-         if (grid%element(elem)%isleaf .and. grid%element(elem)%iown) then
+!$omp parallel do &
+!$omp  default(shared) &
+!$omp  private(ielem,elem,xc,yc,zc,nqp,qw,xq,yq,zq,i,u,astat) &
+!$omp  reduction(+ : loc_L2_norm) &
+!$omp  reduction(max : loc_Linf_norm)
+
+   do ielem=1,nelem
+      elem = element_list(ielem)
 
 ! compute the quadrature points, evaluate the solution, and compute the
 ! integral and max over the quadrature points
 
-            xc = grid%vertex(grid%element(elem)%vertex)%coord%x
-            yc = grid%vertex(grid%element(elem)%vertex)%coord%y
-            call quadrature_rule_tri(6,xc,yc,nqp,qw,xq,yq,i,stay_in=.true.)
-            allocate(u(1,1,nqp),stat=astat)
-            if (astat /= 0) then
-               ierr = ALLOC_FAILED
-               call fatal("allocation failed in norm_solution",procs=procs)
-               return
-            endif
-            call evaluate_soln_local(grid,xq,yq,elem,(/comp/),(/eigen/),u)
-            do i=1,nqp
-               if (present(Linf)) Linf = max(Linf,abs(u(1,1,i)))
-               if (present(L2)) L2 = L2 + qw(i)*u(1,1,i)**2
-            end do
-            deallocate(qw,xq,yq,u)
-
-         endif
-         elem = grid%element(elem)%next
+      xc = grid%vertex(grid%element(elem)%vertex)%coord%x
+      yc = grid%vertex(grid%element(elem)%vertex)%coord%y
+      zc = zcoord(grid%vertex(grid%element(elem)%vertex)%coord)
+      select case (global_element_kind)
+      case (TRIANGULAR_ELEMENT)
+         call quadrature_rule_tri(6,xc,yc,nqp,qw,xq,yq,i,stay_in=.true.)
+         allocate(zq(size(xq)))
+         zq=0
+      case (TETRAHEDRAL_ELEMENT)
+! TEMP 3D until quad rules are available
+!               call quadrature_rule_tet(6,xc,yc,zc,nqp,qw,xq,yq,zq,i, &
+!                                        stay_in=.true.)
+         call quadrature_rule_tet(1,xc,yc,zc,nqp,qw,xq,yq,zq,i, &
+                                  stay_in=.true.)
+      end select
+      allocate(u(1,1,nqp),stat=astat)
+      if (astat /= 0) then
+         ierr = ALLOC_FAILED
+         call fatal("allocation failed in norm_solution",procs=procs)
+         stop
+      endif
+      select case (global_element_kind)
+      case (TRIANGULAR_ELEMENT)
+         call evaluate_soln_local(grid,xq,yq,elem,(/comp/),(/eigen/),u)
+      case (TETRAHEDRAL_ELEMENT)
+         call evaluate_soln_local(grid,xq,yq,elem,(/comp/),(/eigen/),u, &
+                                  z=zq)
+      end select
+      do i=1,nqp
+         if (present(Linf)) loc_Linf_norm = max(loc_Linf_norm,abs(u(1,1,i)))
+         if (present(L2)) loc_L2_norm = loc_L2_norm + qw(i)*u(1,1,i)**2
       end do
+      deallocate(qw,xq,yq,zq,u)
    end do
+!$omp end parallel do
 
-   if (present(L2)) L2 = sqrt(abs(L2))
+   if (present(Linf)) Linf = loc_Linf_norm
+   if (present(L2)) L2 = sqrt(abs(loc_L2_norm))
 
 endif
 
@@ -1590,7 +1988,7 @@ subroutine norm_true(grid,procs,still_sequential,comp,eigen,linf,l2,energy)
 !----------------------------------------------------
 ! Dummy arguments
  
-type (grid_type), intent(in) :: grid
+type (grid_type), intent(inout) :: grid
 type (proc_info), intent(in) :: procs
 logical, intent(in) :: still_sequential
 integer, intent(in) :: comp,eigen
@@ -1600,17 +1998,26 @@ real (my_real), optional, intent(out) :: linf, l2, energy
 !----------------------------------------------------
 ! Local variables:
  
-real (my_real), pointer :: qw(:),xq(:),yq(:)
-real (my_real), allocatable :: u(:,:,:),ux(:,:,:),uy(:,:,:)
+real (my_real), pointer :: qw(:),xq(:),yq(:),zq(:)
+real (my_real), allocatable :: u(:,:,:),ux(:,:,:),uy(:,:,:),uz(:,:,:)
 real(my_real) :: cxx(grid%system_size,grid%system_size), &
-                 cxy(grid%system_size,grid%system_size), &
                  cyy(grid%system_size,grid%system_size), &
+                 czz(grid%system_size,grid%system_size), &
+                 cxy(grid%system_size,grid%system_size), &
+                 cxz(grid%system_size,grid%system_size), &
+                 cyz(grid%system_size,grid%system_size), &
                  cx(grid%system_size,grid%system_size),  &
                  cy(grid%system_size,grid%system_size),  &
+                 cz(grid%system_size,grid%system_size),  &
                  c(grid%system_size,grid%system_size),   &
                  rs(grid%system_size)
-integer :: lev,vert,elem,astat,i,j,k,nqp,ss
-real (my_real) :: xc(3), yc(3)
+integer :: lev,vert,elem,astat,i,j,k,nqp,ss,ielem,nelem, &
+           element_list(grid%biggest_elem),ivert
+logical :: list_made
+real (my_real) :: xc(VERTICES_PER_ELEMENT), yc(VERTICES_PER_ELEMENT), &
+                  zc(VERTICES_PER_ELEMENT)
+real (my_real) :: loc_energy_norm, loc_Linf_norm, loc_L2_norm
+logical :: visited_vert(grid%biggest_vert)
 !----------------------------------------------------
 
 !----------------------------------------------------
@@ -1619,54 +2026,74 @@ real (my_real) :: xc(3), yc(3)
 if (my_proc(procs)==MASTER) return
 
 ss = grid%system_size
+list_made = .false.
 
 ! energy norm
 
 if (present(energy)) then
 
-   energy = 0.0_my_real
-   do lev=1,grid%nlev
-      elem = grid%head_level_elem(lev)
-      do while (elem /= END_OF_LIST)
-         if (.not.grid%element(elem)%isleaf .or. &
-             .not.grid%element(elem)%iown) then
-            elem = grid%element(elem)%next
-            cycle
-         endif
-         xc = grid%vertex(grid%element(elem)%vertex)%coord%x
-         yc = grid%vertex(grid%element(elem)%vertex)%coord%y
-         call quadrature_rule_tri(min(MAX_QUAD_ORDER_TRI,max(8,2*grid%element(elem)%degree)), &
+   call list_elements(grid,element_list,nelem,own=.true.,leaf=.true.)
+   list_made = .true.
+   loc_energy_norm = 0.0_my_real
+
+!$omp parallel do schedule(dynamic) &
+!$omp  default(shared) &
+!$omp  private(ielem,elem,xc,yc,zc,nqp,qw,xq,yq,zq,i,j,k,u,ux,uy,uz,astat, &
+!$omp          cxx,cyy,czz,cxy,cxz,cyz,cx,cy,cz,c,rs) &
+!$omp  reduction(+ : loc_energy_norm)
+
+   do ielem=1,nelem
+      elem = element_list(ielem)
+      xc = grid%vertex(grid%element(elem)%vertex)%coord%x
+      yc = grid%vertex(grid%element(elem)%vertex)%coord%y
+      zc = zcoord(grid%vertex(grid%element(elem)%vertex)%coord)
+      select case (global_element_kind)
+      case (TRIANGULAR_ELEMENT)
+         call quadrature_rule_tri(min(MAX_QUAD_ORDER_TRI, &
+                                  max(8,2*grid%element(elem)%degree)), &
                                   xc,yc,nqp,qw,xq,yq,i,stay_in=.true.)
-         allocate(u(ss,1,nqp),ux(ss,1,nqp),uy(ss,1,nqp),stat=astat)
-         if (astat /= 0) then
-            ierr = ALLOC_FAILED
-            call fatal("allocation failed in norm_true",procs=procs)
-            return
-         endif
-         do i=1,nqp
-            call pdecoefs(xq(i),yq(i),cxx,cxy,cyy,cx,cy,c,rs)
-            do j=1,ss
-               u(j,1,i) = trues(xq(i),yq(i),j,eigen)
-               ux(j,1,i) = truexs(xq(i),yq(i),j,eigen)
-               uy(j,1,i) = trueys(xq(i),yq(i),j,eigen)
-            end do
-            do j=1,ss
-               do k=1,ss
-                  energy = energy + qw(i)*(cxx(j,k)*ux(j,1,i)*ux(k,1,i) + &
-                                           cyy(j,k)*uy(j,1,i)*uy(k,1,i) + &
-                                           cxy(j,k)*ux(j,1,i)*uy(k,1,i) + &
-                                            cx(j,k)*ux(j,1,i)*u(k,1,i) + &
-                                            cy(j,k)*uy(j,1,i)*u(k,1,i) + &
-                                             c(j,k)*u(j,1,i)*u(k,1,i))
-               end do
+         allocate(zq(size(xq)))
+         zq=0
+      case (TETRAHEDRAL_ELEMENT)
+         call quadrature_rule_tet(min(MAX_QUAD_ORDER_TET, &
+                                  max(8,2*grid%element(elem)%degree)), &
+                                  xc,yc,zc,nqp,qw,xq,yq,zq,i,stay_in=.true.)
+      end select
+      allocate(u(ss,1,nqp),ux(ss,1,nqp),uy(ss,1,nqp),uz(ss,1,nqp),stat=astat)
+      if (astat /= 0) then
+         ierr = ALLOC_FAILED
+         call fatal("allocation failed in norm_true",procs=procs)
+         stop
+      endif
+      do i=1,nqp
+         call my_pdecoefs(elem,xq(i),yq(i),zq(i),cxx,cyy,czz,cxy,cxz,cyz,cx,cy,&
+                          cz,c,rs)
+         do j=1,ss
+            u(j,1,i) = my_trues(xq(i),yq(i),zq(i),j,eigen)
+            ux(j,1,i) = my_truexs(xq(i),yq(i),zq(i),j,eigen)
+            uy(j,1,i) = my_trueys(xq(i),yq(i),zq(i),j,eigen)
+            uz(j,1,i) = my_truezs(xq(i),yq(i),zq(i),j,eigen)
+         end do
+         do j=1,ss
+            do k=1,ss
+               loc_energy_norm = loc_energy_norm + &
+                                 qw(i)*(cxx(j,k)*ux(j,1,i)*ux(k,1,i) + &
+                                        cyy(j,k)*uy(j,1,i)*uy(k,1,i) + &
+                                        czz(j,k)*uz(j,1,i)*uz(k,1,i) + &
+                                        cxy(j,k)*ux(j,1,i)*uy(k,1,i) + &
+                                        cxz(j,k)*ux(j,1,i)*uz(k,1,i) + &
+                                        cyz(j,k)*uy(j,1,i)*uz(k,1,i) + &
+                                         cx(j,k)*ux(j,1,i)*u(k,1,i) + &
+                                         cy(j,k)*uy(j,1,i)*u(k,1,i) + &
+                                          c(j,k)*u(j,1,i)*u(k,1,i))
             end do
          end do
-         deallocate(qw,xq,yq,u,ux,uy)
-         elem = grid%element(elem)%next
       end do
+      deallocate(qw,xq,yq,zq,u,ux,uy,uz)
    end do
+!$omp end parallel do
 
-   energy = sqrt(abs(energy))
+   energy = sqrt(abs(loc_energy_norm))
 
 endif
 
@@ -1674,19 +2101,25 @@ endif
 
 if (present(Linf)) then
 
-   Linf = 0.0_my_real
+   loc_Linf_norm = 0.0_my_real
 
 ! go through the vertices of the grid
 
+   visited_vert = .false.
    do lev=1,grid%nlev
-      vert = grid%head_level_vert(lev)
-      do while (vert /= END_OF_LIST)
-         if (grid%element(grid%vertex(vert)%assoc_elem)%iown) then
-           Linf = max(Linf, &
-                    trues(grid%vertex(vert)%coord%x,grid%vertex(vert)%coord%y, &
-                          comp,eigen))
-         endif
-         vert = grid%vertex(vert)%next
+      elem = grid%head_level_elem(lev)
+      do while (elem /= END_OF_LIST)
+         do ivert=1,VERTICES_PER_ELEMENT
+            vert = grid%element(elem)%vertex(ivert)
+            if (visited_vert(vert)) cycle
+            visited_vert(vert) = .true.
+            if (grid%element(grid%vertex(vert)%assoc_elem)%iown) then
+              loc_Linf_norm = max(loc_Linf_norm, &
+                 my_trues(grid%vertex(vert)%coord%x,grid%vertex(vert)%coord%y, &
+                          zcoord(grid%vertex(vert)%coord),comp,eigen))
+            endif
+      end do
+      elem = grid%element(elem)%next
       end do
    end do
 
@@ -1696,40 +2129,58 @@ endif
 
 if (present(Linf) .or. present(L2)) then
 
-   if (present(L2)) L2 = 0.0_my_real
+   if (present(L2)) loc_L2_norm = 0.0_my_real
+
+   if (.not. list_made) then
+      call list_elements(grid,element_list,nelem,own=.true.,leaf=.true.)
+   endif
 
 ! go through the elements of the grid
 
-   do lev=1,grid%nlev
-      elem = grid%head_level_elem(lev)
-      do while (elem /= END_OF_LIST)
-         if (grid%element(elem)%isleaf .and. grid%element(elem)%iown) then
+!$omp parallel do &
+!$omp  default(shared) &
+!$omp  private(ielem,elem,xc,yc,zc,nqp,qw,xq,yq,zq,i,u,astat) &
+!$omp  reduction(+ : loc_L2_norm) &
+!$omp  reduction(max : loc_Linf_norm)
+
+   do ielem=1,nelem
+      elem = element_list(ielem)
 
 ! compute the quadrature points, evaluate the solution, and compute the
 ! integral and max over the quadrature points
 
-            xc = grid%vertex(grid%element(elem)%vertex)%coord%x
-            yc = grid%vertex(grid%element(elem)%vertex)%coord%y
-            call quadrature_rule_tri(6,xc,yc,nqp,qw,xq,yq,i,stay_in=.true.)
-            allocate(u(1,1,nqp),stat=astat)
-            if (astat /= 0) then
-               ierr = ALLOC_FAILED
-               call fatal("allocation failed in norm_true",procs=procs)
-               return
-            endif
-            do i=1,nqp
-               u(1,1,i) = trues(xq(i),yq(i),comp,eigen)
-               if (present(Linf)) Linf = max(Linf,abs(u(1,1,i)))
-               if (present(L2)) L2 = L2 + qw(i)*u(1,1,i)**2
-            end do
-            deallocate(qw,xq,yq,u)
-
-         endif
-         elem = grid%element(elem)%next
+      xc = grid%vertex(grid%element(elem)%vertex)%coord%x
+      yc = grid%vertex(grid%element(elem)%vertex)%coord%y
+      zc = zcoord(grid%vertex(grid%element(elem)%vertex)%coord)
+      select case (global_element_kind)
+      case (TRIANGULAR_ELEMENT)
+         call quadrature_rule_tri(6,xc,yc,nqp,qw,xq,yq,i,stay_in=.true.)
+         allocate(zq(size(xq)))
+         zq=0
+      case (TETRAHEDRAL_ELEMENT)
+! TEMP 3D until quad rules are available
+!               call quadrature_rule_tet(6,xc,yc,zc,nqp,qw,xq,yq,zq,i, &
+!                                        stay_in=.true.)
+         call quadrature_rule_tet(1,xc,yc,zc,nqp,qw,xq,yq,zq,i, &
+                                  stay_in=.true.)
+      end select
+      allocate(u(1,1,nqp),stat=astat)
+      if (astat /= 0) then
+         ierr = ALLOC_FAILED
+         call fatal("allocation failed in norm_true",procs=procs)
+         stop
+      endif
+      do i=1,nqp
+         u(1,1,i) = my_trues(xq(i),yq(i),zq(i),comp,eigen)
+         if (present(Linf)) loc_Linf_norm = max(loc_Linf_norm,abs(u(1,1,i)))
+         if (present(L2)) loc_L2_norm = loc_L2_norm + qw(i)*u(1,1,i)**2
       end do
+      deallocate(qw,xq,yq,zq,u)
    end do
+!$omp end parallel do
 
-   if (present(L2)) L2 = sqrt(abs(L2))
+   if (present(Linf)) Linf = loc_Linf_norm
+   if (present(L2)) L2 = sqrt(abs(loc_L2_norm))
 
 endif
 
@@ -1756,7 +2207,7 @@ subroutine store_matrix(grid,procs,still_sequential,system_size,eq_type, &
 !----------------------------------------------------
 ! Dummy arguments
 
-type(grid_type), intent(in) :: grid
+type(grid_type), intent(inout) :: grid
 type(proc_info), intent(in) :: procs
 logical, intent(in) :: still_sequential
 integer, intent(in) :: system_size, eq_type, inc_quad_order
@@ -1801,9 +2252,8 @@ if (PARALLEL == SEQUENTIAL) then
 
 ! remove static condensation
 
-   linsys%neq = linsys%neq_vert + linsys%neq_edge + &
-                linsys%neq_face
-   linsys%end_row => linsys%end_row_face
+   linsys%neq = linsys%neq_full
+   linsys%end_row => linsys%end_row_bubble
    linsys%matrix_val => linsys%stiffness
    linsys%rhs => linsys%rhs_nocond
 
@@ -1925,7 +2375,7 @@ if (my_processor == MASTER) then
 
 ! receive from each processor the number of owned equations on each level
 
-   allocate(nown(nproc,nlev+2),start_row(nproc,nlev+2),stat=astat)
+   allocate(nown(nproc,nlev+3),start_row(nproc,nlev+3),stat=astat)
    if (astat /= 0) then
       ierr = ALLOC_FAILED
       call fatal("allocation failed in store_matrix",procs=procs)
@@ -1945,14 +2395,14 @@ if (my_processor == MASTER) then
    do proc=2,nproc
       start_row(proc,1) = start_row(proc-1,1) + nown(proc-1,1)
    end do
-   do lev=2,nlev+2
+   do lev=2,nlev+3
       start_row(1,lev) = start_row(nproc,lev-1) + nown(nproc,lev-1)
       do proc=2,nproc
          start_row(proc,lev) = start_row(proc-1,lev) + nown(proc-1,lev)
       end do
    end do
 
-   neq = start_row(nproc,nlev+2) + nown(nproc,nlev+2) - 1
+   neq = start_row(nproc,nlev+3) + nown(nproc,nlev+3) - 1
 
 ! receive the number of nonzeroes
 
@@ -1966,7 +2416,7 @@ if (my_processor == MASTER) then
 ! send each processor it's global matrix numbering at the start of each level
 
    do proc=1,nproc
-      call phaml_send(procs,proc,start_row(proc,:),nlev+2,(/0.0_my_real/),0, &
+      call phaml_send(procs,proc,start_row(proc,:),nlev+3,(/0.0_my_real/),0, &
                       1324)
    end do
 
@@ -1999,7 +2449,7 @@ if (my_processor == MASTER) then
 
 ! for each level ...
 
-      do lev=1,nlev+2
+      do lev=1,nlev+3
 
 ! request the equations of this level from the slaves
 
@@ -2063,27 +2513,26 @@ else ! slave
 
 ! remove static condensation
 
-   linsys%neq = linsys%neq_vert + linsys%neq_edge + &
-                linsys%neq_face
-   linsys%end_row => linsys%end_row_face
+   linsys%neq = linsys%neq_full
+   linsys%end_row => linsys%end_row_bubble
    linsys%matrix_val => linsys%stiffness
    linsys%rhs => linsys%rhs_nocond
 
 ! send the number of levels to the master
 
    if (still_sequential) then
-      nlev = linsys%nlev
+      nlev = linsys%nlev_vert
    else
-      nlev = phaml_global_max(procs,linsys%nlev,1320)
+      nlev = phaml_global_max(procs,linsys%nlev_vert,1320)
    endif
    if (my_processor == 1) call phaml_send(procs,MASTER,(/nlev/),1, &
                                           (/0.0_my_real/),0,1321)
 
 ! change the beginning of the levels so that every processor uses the
-! same value for nlev=1 and nlev+2
+! same value for special levels
 
-   if (linsys%nlev /= nlev) then
-      allocate(hold_begin(linsys%nlev+3),stat=astat)
+   if (linsys%nlev_vert /= nlev) then
+      allocate(hold_begin(linsys%beyond_last_level),stat=astat)
       if (astat /= 0) then
          ierr = ALLOC_FAILED
          call fatal("allocation failed in store_matrix",procs=procs)
@@ -2091,26 +2540,35 @@ else ! slave
       endif
       hold_begin = linsys%begin_level
       deallocate(linsys%begin_level)
-      allocate(linsys%begin_level(nlev+3),stat=astat)
+      allocate(linsys%begin_level(nlev+4),stat=astat)
       if (astat /= 0) then
          ierr = ALLOC_FAILED
          call fatal("allocation failed in store_matrix",procs=procs)
          return
       endif
-      linsys%begin_level(1:linsys%nlev+3) = hold_begin
+      linsys%begin_level(1:linsys%beyond_last_level) = hold_begin
       deallocate(hold_begin)
-      linsys%begin_level(nlev+3) = linsys%begin_level(linsys%nlev+3)
-      linsys%begin_level(nlev+2) = linsys%begin_level(linsys%nlev+2)
-      linsys%begin_level(nlev+1) = linsys%begin_level(linsys%nlev+1)
-      do lev=linsys%nlev+1,nlev
+      linsys%edge_level = nlev+1
+      linsys%face_level = nlev+2
+      linsys%bubble_level = nlev+3
+      linsys%beyond_last_level = nlev+4
+      linsys%begin_level(linsys%edge_level) = &
+         linsys%begin_level(linsys%nlev_vert+1)
+      linsys%begin_level(linsys%face_level) = &
+         linsys%begin_level(linsys%nlev_vert+2)
+      linsys%begin_level(linsys%bubble_level) = &
+         linsys%begin_level(linsys%nlev_vert+3)
+      linsys%begin_level(linsys%beyond_last_level) = &
+         linsys%begin_level(linsys%nlev_vert+4)
+      do lev=linsys%nlev_vert+1,nlev
          linsys%begin_level(lev) = linsys%begin_level(nlev+1)
       end do
-      linsys%nlev = nlev
+      linsys%nlev_vert = nlev
    endif
 
 ! count the number of owned equations on each level and number of nonzeros
 
-   allocate(nown(linsys%nlev+2,1),stat=astat)
+   allocate(nown(linsys%bubble_level,1),stat=astat)
    if (astat /= 0) then
       ierr = ALLOC_FAILED
       call fatal("allocation failed in store_matrix",procs=procs)
@@ -2138,7 +2596,8 @@ else ! slave
 
 ! send the number of owned equations on each level to the master
 
-   call phaml_send(procs,MASTER,nown(:,1),linsys%nlev+2,(/0.0_my_real/),0,1322)
+   call phaml_send(procs,MASTER,nown(:,1),linsys%bubble_level,(/0.0_my_real/), &
+                   0,1322)
 
    deallocate(nown,stat=astat)
 

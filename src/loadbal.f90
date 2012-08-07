@@ -33,6 +33,7 @@ use global
 use message_passing
 use hash_mod
 use gridtype_mod
+use linsystype_mod
 use grid_util
 use zoltan_interf
 use stopwatch
@@ -163,24 +164,31 @@ type(proc_info), intent(in) :: procs
 !----------------------------------------------------
 ! Local variables:
 
-integer :: assoc_verts(size(grid%element))
-integer :: lev, vert, elem, elem_deg, side, edge, total
+integer :: assoc_verts(grid%biggest_elem)
+integer :: lev, vert, elem, elem_deg, side, edge, total, ivert
 real(my_real) :: global_max_errind, reftol, normsoln, eta, eta_max, R, &
                  two_div_log2, loggamma
-character(len=1) :: reftype(size(grid%element))
+character(len=1) :: reftype(grid%biggest_elem)
 integer :: new_p(2)
+logical :: visited_vert(grid%biggest_vert)
 !----------------------------------------------------
 ! Begin executable code
 
 ! count the number of associated vertices for each element
 
 assoc_verts = 0
+visited_vert = .false.
 do lev=1,grid%nlev
-   vert = grid%head_level_vert(lev)
-   do while (vert /= END_OF_LIST)
-      assoc_verts(grid%vertex(vert)%assoc_elem) = &
-         assoc_verts(grid%vertex(vert)%assoc_elem) + 1
-      vert = grid%vertex(vert)%next
+   elem = grid%head_level_elem(lev)
+   do while (elem /= END_OF_LIST)
+      do ivert=1,VERTICES_PER_ELEMENT
+         vert = grid%element(elem)%vertex(ivert)
+         if (visited_vert(vert)) cycle
+         visited_vert(vert) = .true.
+         assoc_verts(grid%vertex(vert)%assoc_elem) = &
+            assoc_verts(grid%vertex(vert)%assoc_elem) + 1
+      end do
+      elem = grid%element(elem)%next
    end do
 end do
 
@@ -269,8 +277,8 @@ do lev=1,grid%nlev
 
                case (BALANCE_EQUATIONS)
                   grid%element(elem)%weight = assoc_verts(elem) + &
-                                       ((elem_deg-1)*(elem_deg-2))/2.0_my_real
-                  do side=1,3
+                                              element_dof(elem_deg)
+                  do side=1,EDGES_PER_ELEMENT
                      edge = grid%element(elem)%edge(side)
                      if (grid%edge(edge)%assoc_elem == elem) then
                         grid%element(elem)%weight = grid%element(elem)%weight +&
@@ -303,13 +311,13 @@ do lev=1,grid%nlev
 
                case (BALANCE_EQUATIONS)
 ! the equations are: the associated vertices, the new vertex (guess that it
-! will be associated, could be wrong), the face equations, the equations on
+! will be associated, could be wrong), the bubble equations, the equations on
 ! the new edge, and the edge equations for associated edges (note the base
 ! will be refined and has twice as many, and guess they will be associated)
                   grid%element(elem)%weight = assoc_verts(elem)+1 + &
-                                              (elem_deg-1)*(elem_deg-2) + &
+                                              element_dof(elem_deg) + &
                                               elem_deg-1
-                  do side=1,3
+                  do side=1,EDGES_PER_ELEMENT
                      edge = grid%element(elem)%edge(side)
                      if (grid%edge(edge)%assoc_elem == elem) then
                         if (side == 3) then
@@ -351,7 +359,7 @@ do lev=1,grid%nlev
 ! for associated edges, guess the edge degree is the same as this element
                   grid%element(elem)%weight = assoc_verts(elem) + &
                                               (elem_deg*(elem_deg-1))/2
-                  do side=1,3
+                  do side=1,EDGES_PER_ELEMENT
                      edge = grid%element(elem)%edge(side)
                      if (grid%edge(edge)%assoc_elem == elem) then
                         grid%element(elem)%weight = grid%element(elem)%weight +&
@@ -421,8 +429,8 @@ do lev=1,grid%nlev
 
             case (BALANCE_EQUATIONS)
                grid%element(elem)%weight = assoc_verts(elem) + &
-                                       ((elem_deg-1)*(elem_deg-2))/2.0_my_real
-               do side=1,3
+                                           element_dof(elem_deg)
+               do side=1,EDGES_PER_ELEMENT
                   edge = grid%element(elem)%edge(side)
                   if (grid%edge(edge)%assoc_elem == elem) then
                      grid%element(elem)%weight = grid%element(elem)%weight + &
@@ -470,20 +478,27 @@ integer, intent(in) :: new_level(:), new_p(:)
 !----------------------------------------------------
 ! Local variables:
 
-integer :: assoc_verts(size(grid%element))
-integer :: lev, vert, elem, side, edge, delta, p
+integer :: assoc_verts(grid%biggest_elem)
+integer :: lev, vert, elem, side, edge, delta, p, ivert
+logical :: visited_vert(grid%biggest_vert)
 !----------------------------------------------------
 ! Begin executable code
 
 ! count the number of associated vertices for each element
 
 assoc_verts = 0
+visited_vert = .false.
 do lev=1,grid%nlev
-   vert = grid%head_level_vert(lev)
-   do while (vert /= END_OF_LIST)
-      assoc_verts(grid%vertex(vert)%assoc_elem) = &
-         assoc_verts(grid%vertex(vert)%assoc_elem) + 1
-      vert = grid%vertex(vert)%next
+   elem = grid%head_level_elem(lev)
+   do while (elem /= END_OF_LIST)
+      do ivert=1,VERTICES_PER_ELEMENT
+         vert = grid%element(elem)%vertex(ivert)
+         if (visited_vert(vert)) cycle
+         visited_vert(vert) = .true.
+         assoc_verts(grid%vertex(vert)%assoc_elem) = &
+            assoc_verts(grid%vertex(vert)%assoc_elem) + 1
+      end do
+      elem = grid%element(elem)%next
    end do
 end do
 
@@ -543,10 +558,10 @@ do lev=1,grid%nlev
 
          case (BALANCE_EQUATIONS)
             grid%element(elem)%weight = assoc_verts(elem) + &
-                                        2**delta*((p-1)*(p-2))/2.0_my_real
+                                        2**delta*element_dof(p)
             if (p > 1) then
                if (2*(delta/2) == delta) then
-                  do side=1,3
+                  do side=1,EDGES_PER_ELEMENT
                      edge = grid%element(elem)%edge(side)
                      if (grid%edge(edge)%assoc_elem == elem) then
                         grid%element(elem)%weight = grid%element(elem)%weight +&
@@ -554,10 +569,10 @@ do lev=1,grid%nlev
                      endif
                   end do
                   grid%element(elem)%weight = grid%element(elem)%weight + &
-                      max(0.0_my_real, &
-                      (3*2**(delta-1)-3*2**(delta/2-1))*(p-1)*(p-2)/2.0_my_real)
+                     max(0.0_my_real, &
+                     (3.0_my_real*2**(delta-1)-3*2**(delta/2-1))*element_dof(p))
                else
-                  do side=1,3
+                  do side=1,EDGES_PER_ELEMENT
                      edge = grid%element(elem)%edge(side)
                      if (grid%edge(edge)%assoc_elem == elem) then
                         grid%element(elem)%weight = grid%element(elem)%weight +&
@@ -569,8 +584,8 @@ do lev=1,grid%nlev
                      endif
                   end do
                   grid%element(elem)%weight = grid%element(elem)%weight + &
-                      max(0.0_my_real, &
-                      (3*2**(delta-1)-2**((delta+1)/2))*(p-1)*(p-2)/2.0_my_real)
+                     max(0.0_my_real, &
+                     (3.0_my_real*2**(delta-1)-2**((delta+1)/2))*element_dof(p))
                endif
             endif
 
@@ -645,7 +660,7 @@ if (allocstat /= 0) then
    return
 endif
 
-allocate(mine(size(grid%element)),weight(size(grid%element)),stat=allocstat)
+allocate(mine(grid%biggest_elem),weight(grid%biggest_elem),stat=allocstat)
 if (allocstat /= 0) then
    ierr = ALLOC_FAILED
    call fatal("allocation failed in reftree_kway",procs=procs)
@@ -828,7 +843,7 @@ end do
 
 part_size = root_weight/new_num_part
 
-allocate(new_partition(size(grid%element)),stat=allocstat)
+allocate(new_partition(grid%biggest_elem),stat=allocstat)
 if (allocstat /= 0) then
    ierr = ALLOC_FAILED
    call fatal("allocation failed in reftree_kway",procs=procs)
@@ -1234,8 +1249,8 @@ endif
 end subroutine make_export_lists
 
 !          ------------
-subroutine redistribute(grid,procs,refine_control,export_gid,export_part, &
-                        first_call)
+subroutine redistribute(grid,procs,refine_control,solver_control,export_gid, &
+                        export_part,first_call)
 !          ------------
 
 !----------------------------------------------------
@@ -1249,6 +1264,7 @@ subroutine redistribute(grid,procs,refine_control,export_gid,export_part, &
 type (grid_type), intent(inout) :: grid
 type (proc_info), intent(in) :: procs
 type(refine_options), intent(in) :: refine_control
+type(solver_options), intent(in) :: solver_control
 type(hash_key), pointer :: export_gid(:)
 integer, pointer :: export_part(:)
 logical, intent(in), optional :: first_call
@@ -1308,7 +1324,7 @@ do i=1,size(export_gid)
       call disown_parent(grid,export_gid(i))
       if (grid%element(elemlid)%degree >= 3) then
          grid%dof_own = grid%dof_own - grid%system_size * &
-              ((grid%element(elemlid)%degree-2)*(grid%element(elemlid)%degree-1))/2
+              element_dof(grid%element(elemlid)%degree)
       endif
       do j=1,VERTICES_PER_ELEMENT
          if (grid%vertex(grid%element(elemlid)%vertex(j))%assoc_elem == elemlid) then
@@ -1371,7 +1387,7 @@ if (.not. skip_comm) then
          if (d > 1) nrsend(to) = nrsend(to) + grid%nsoln*(d-1)
       end do
       d = grid%element(elemlid)%degree
-      if (d > 2) nrsend(to) = nrsend(to) + grid%nsoln*((d-1)*(d-2))/2
+      if (d > 2) nrsend(to) = nrsend(to) + grid%nsoln*element_dof(d)
       if (grid%oldsoln_exists) then
          gid = elemgid
          do
@@ -1382,7 +1398,7 @@ if (.not. skip_comm) then
                call fatal("failed to find element with old solution")
                stop
             endif
-            gid = gid/2
+            gid = gid/MAX_CHILD
          end do
          nisend(to) = nisend(to) + KEY_SIZE
          nisend(to) = nisend(to) + 3
@@ -1478,9 +1494,9 @@ if (.not. skip_comm) then
       if (d > 2) then
          do j=1,grid%system_size
             do k=1,max(1,grid%num_eval)
-               rsend(rind(to):rind(to)+((d-1)*(d-2))/2-1) = &
-                   grid%element(elemlid)%solution(1:((d-1)*(d-2))/2,j,k)
-               rind(to) = rind(to) + ((d-1)*(d-2))/2
+               rsend(rind(to):rind(to)+element_dof(d)-1) = &
+                   grid%element(elemlid)%solution(1:element_dof(d),j,k)
+               rind(to) = rind(to) + element_dof(d)
             end do
          end do
       endif
@@ -1499,7 +1515,7 @@ if (.not. skip_comm) then
                call fatal("failed to find element with old solution")
                stop
             endif
-            gid = gid/2
+            gid = gid/MAX_CHILD
          end do
 
 ! pack the gid of the element that has the old solution
@@ -1605,7 +1621,7 @@ if (.not. skip_comm) then
 
 ! create the element, and any ancestors required by it
 
-         call create_element(grid,elemgid,refine_control,errcode)
+         call create_element(grid,elemgid,refine_control,solver_control,errcode)
          if (errcode /= 0) then
             call fatal("grid full during redistribution",procs=procs)
             stop
@@ -1626,7 +1642,7 @@ if (.not. skip_comm) then
             grid%nelem_leaf_own = grid%nelem_leaf_own + 1
             if (grid%element(elemlid)%degree >= 3) then
                grid%dof_own = grid%dof_own + grid%system_size * &
-                  ((grid%element(elemlid)%degree-2)*(grid%element(elemlid)%degree-1))/2
+                  element_dof(grid%element(elemlid)%degree)
             endif
             do j=1,VERTICES_PER_ELEMENT
                if (grid%vertex(grid%element(elemlid)%vertex(j))%assoc_elem == elemlid) then
@@ -1698,9 +1714,9 @@ if (.not. skip_comm) then
          if (d > 2) then
             do j=1,grid%system_size
                do k=1,max(1,grid%num_eval)
-                  grid%element(elemlid)%solution(1:((d-1)*(d-2))/2,j,k) = &
-                          rrecv(rindex:rindex+((d-1)*(d-2))/2-1)
-                  rindex = rindex + ((irecv(iindex+3)-1)*(irecv(iindex+3)-2))/2
+                  grid%element(elemlid)%solution(1:element_dof(d),j,k) = &
+                          rrecv(rindex:rindex+element_dof(d)-1)
+                  rindex = rindex + element_dof(irecv(iindex+3))
                end do
             end do
          endif
@@ -1891,6 +1907,7 @@ type(refine_options), intent(in) :: refcont
 
 integer :: child(MAX_CHILD), i, mate, errcode, allc(MAX_CHILD)
 logical :: this_owned_child
+type(hash_key) :: mate_gid
 !----------------------------------------------------
 ! Begin executable code
 
@@ -1916,11 +1933,16 @@ else
 ! also check the descendents of the mate
 
    if (.not. owned_child) then
-      if (.not. (grid%element(elem)%mate == BOUNDARY)) then
-         mate = hash_decode_key(grid%element(elem)%mate,grid%elem_hash)
+      if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+         ierr = PHAML_INTERNAL_ERROR
+         call fatal("delete_unowned_elements_recur: how to get all mates?")
+         stop
+      end if
+      mate_gid = grid%element(elem)%mate
+      if (.not. (mate_gid == BOUNDARY)) then
+         mate = hash_decode_key(mate_gid,grid%elem_hash)
          if (mate /= HASH_NOT_FOUND) then
-            child = get_child_lid(grid%element(mate)%gid,allc, &
-                                        grid%elem_hash)
+            child = get_child_lid(grid%element(mate)%gid,allc,grid%elem_hash)
             do i=1,MAX_CHILD
               if (child(i) == NO_CHILD) cycle
               call delete_unowned_elements_recur(grid,child(i), &
@@ -1934,7 +1956,7 @@ else
 ! if not, derefine this element
 
    if (.not. owned_child) then
-      call unbisect_triangle_pair(grid,elem,errcode,refcont)
+      call h_coarsen_element(grid,elem,errcode,refcont)
    endif
 
 endif

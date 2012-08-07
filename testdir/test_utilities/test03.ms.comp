@@ -1,9 +1,10 @@
 ---------------------------------------------------------
-           PHAML   Version 1.9.1
+           PHAML   Version 1.11.0
 
 Output from the master process
   PDE id is     0
   Number of slave processors is     4
+  Number of OpenMP threads is       1
 
 Subroutine phaml_solve_pde parameters:
   max_elem           infinity
@@ -17,6 +18,10 @@ Subroutine phaml_solve_pde parameters:
   task               BALANCE_REFINE_SOLVE
   solve_init         true
   system_size                 1
+  pde_has_first_order_terms  false
+  pde_has_cross_derivative   false
+  laplacian_operator         true
+  isosceles_right_triangles  true
   print_grid_when    FINAL
   print_grid_who     MASTER
   print_linsys_when  NEVER
@@ -34,7 +39,7 @@ Subroutine phaml_solve_pde parameters:
   errtype            ABSOLUTE_ERROR
   reftype            H_ADAPTIVE
   edge_rule          MINIMUM_RULE
-  refterm            DOUBLE_NEQ_SMOOTH
+  refterm            DOUBLE_NEQ
   derefine           true
   partition_method   RTK
   prebalance         BALANCE_ELEMENTS
@@ -75,19 +80,19 @@ neq_own         150        123        150        122
 nlev           8
 min_degree           1
 max_degree           1
-linf_error  1.057476320720E-03
-energy_error  2.946278254944E-02
-l2_error  8.894911956313E-04
-max_error_indicator  4.117549062507E-04
-linf_error_estimate  1.822916683003E-04
-energy_error_estimate  1.313491686747E-02
-l2_error_estimate  1.641864608434E-04
+linf_error  1.057475910993E-03
+energy_error  2.946278254953E-02
+l2_error  8.894823291619E-04
+max_error_indicator  2.006645256012E-03
+linf_error_estimate  8.463542115152E-04
+energy_error_estimate  6.410694544618E-02
+l2_error_estimate  8.013368180773E-04
 linf_solution  2.000000000000E+00
-l2_solution  1.881153168614E+01
-energy_solution  1.967840400054E+00
+l2_solution  1.881153153785E+01
+energy_solution  1.967840414747E+00
 linf_u  2.000000000000E+00
-l2_u  7.895443663926E-01
-energy_u  1.632727356231E+00
+l2_u  7.895443595084E-01
+energy_u  1.632727378481E+00
 linf_true  2.000000000000E+00
 l2_true  7.888106377466E-01
 energy_true  1.632993161855E+00

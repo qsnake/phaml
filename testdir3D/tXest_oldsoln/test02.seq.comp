@@ -1,0 +1,80 @@
+
+My Grid:
+   number of vertices       =         176
+   number of vertices I own =         176
+   number of elements       =         638
+   number of leaf elements  =         323
+   leaf elements I own      =         323
+   number of levels         =          10
+   degrees of freedom       =        2639
+   degrees of freedom I own =        2639
+   min and max degree       =           4          4
+
+Norms of error:
+   energy error estimate      3.2563369632E-04
+   Linf error estimate        2.2635754827E-04
+time =  1.000000000000E-02
+
+My Grid:
+   number of vertices       =         176
+   number of vertices I own =         176
+   number of elements       =         638
+   number of leaf elements  =         323
+   leaf elements I own      =         323
+   number of levels         =          10
+   degrees of freedom       =        2639
+   degrees of freedom I own =        2639
+   min and max degree       =           4          4
+
+Norms of error:
+   energy error estimate      3.7481689457E-04
+   Linf error estimate        1.7596076781E-04
+time =  2.000000000000E-02
+
+My Grid:
+   number of vertices       =         176
+   number of vertices I own =         176
+   number of elements       =         638
+   number of leaf elements  =         323
+   leaf elements I own      =         323
+   number of levels         =          10
+   degrees of freedom       =        2639
+   degrees of freedom I own =        2639
+   min and max degree       =           4          4
+
+Norms of error:
+   energy error estimate      4.2190779803E-04
+   Linf error estimate        2.0460226814E-04
+time =  3.000000000000E-02
+
+My Grid:
+   number of vertices       =         176
+   number of vertices I own =         176
+   number of elements       =         638
+   number of leaf elements  =         323
+   leaf elements I own      =         323
+   number of levels         =          10
+   degrees of freedom       =        2639
+   degrees of freedom I own =        2639
+   min and max degree       =           4          4
+
+Norms of error:
+   energy error estimate      4.8759700989E-04
+   Linf error estimate        2.8199412309E-04
+time =  4.000000000000E-02
+
+My Grid:
+   number of vertices       =         176
+   number of vertices I own =         176
+   number of elements       =         638
+   number of leaf elements  =         323
+   leaf elements I own      =         323
+   number of levels         =          10
+   degrees of freedom       =        2639
+   degrees of freedom I own =        2639
+   min and max degree       =           4          4
+
+Norms of error:
+   energy error estimate      5.4940921532E-04
+   Linf error estimate        2.8401624311E-04
+time =  5.000000000000E-02

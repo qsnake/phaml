@@ -34,20 +34,49 @@ use message_passing
 
 implicit none
 private
-public VERTICES_PER_ELEMENT, EDGES_PER_ELEMENT, MAX_CHILD, ALL_CHILDREN, &
-       END_OF_LIST, NOT_ON_LIST, NO_CHILD, BOUNDARY, point, element_t, &
-       edge_t, vertex_t, grid_type, refine_options, errind_list, &
-       triangle_data, binw
+public VERTICES_PER_ELEMENT, EDGES_PER_ELEMENT, FACES_PER_ELEMENT, &
+       NEIGHBORS_PER_ELEMENT, VERTICES_PER_FACE, EDGES_PER_FACE, &
+       MAX_CHILD, ALL_CHILDREN, END_OF_LIST, NOT_ON_LIST, NO_CHILD, BOUNDARY, &
+       point, element_t, face_t, edge_t, vertex_t, grid_type, refine_options, &
+       eigen_monitor, errind_list, triangle_data, binw, element_kind, MAX_TAG, &
+       operator(+), operator(-), operator(*), operator(/), dot_point, &
+       operator(.eq.)
+
+!----------------------------------------------------
+! The following interface operators are defined:
+
+interface operator(+)
+   module procedure point_plus_point
+end interface
+
+interface operator(-)
+   module procedure point_minus_point
+end interface
+
+interface operator(*)
+   module procedure scalar_times_point
+end interface
+
+interface operator(/)
+   module procedure point_div_scalar
+end interface
+
+interface operator(.eq.)
+   module procedure point_equals_point
+end interface
 
 !----------------------------------------------------
 ! The following parameters are defined:
 
 ! values that depend on the kind of elements, polynomial degree, etc.
-! RESTRICTION This version for bisected triangles.
 
-integer, parameter :: VERTICES_PER_ELEMENT = 3, &
-                      EDGES_PER_ELEMENT    = 3, &
-                      MAX_CHILD            = 2
+integer, parameter :: VERTICES_PER_ELEMENT  = 3, &
+                      EDGES_PER_ELEMENT     = 3, &
+                      FACES_PER_ELEMENT     = 0, &
+                      NEIGHBORS_PER_ELEMENT = 3, &
+                      VERTICES_PER_FACE     = 0, &
+                      EDGES_PER_FACE        = 0, &
+                      MAX_CHILD             = 2
 
 ! argument for get_child when all children are wanted
 
@@ -64,45 +93,86 @@ integer, parameter :: END_OF_LIST = -10, & ! end of linked list
 
 integer, parameter :: BOUNDARY = -6
 
+! elements are triangles
+
+integer, parameter :: element_kind = TRIANGULAR_ELEMENT
+
+! maximum number of tags for grid entities
+
+integer, parameter :: MAX_TAG = 0
+
 !----------------------------------------------------
 ! The following types are defined:
 
+type eigen_monitor
+   real(my_real), pointer :: eigenvalue(:)
+   real(my_real), pointer :: eigensolver_l2_resid(:), eigensolver_errbound(:)
+   integer :: ncv, maxit, niter, nconv
+end type eigen_monitor
+
 type point
-   real(my_real) :: x,y ! RESTRICTION 2D, add z for 3D
+   real(my_real) :: x,y
 end type point
 
 type element_t
    type(hash_key) :: gid
-   type(hash_key) :: mate ! RESTRICTION 2D, multiple mates in 3D
+   type(hash_key) :: mate
+   type(hash_key) :: neighbor_hint(0)
    real(my_real) :: weight
 ! subscripts are basis rank, system rank, eigenvalue
-   real(my_real), pointer :: solution(:,:,:), exact(:,:,:), oldsoln(:,:,:)
+   real(my_real), pointer :: solution(:,:,:),exact(:,:,:),oldsoln(:,:,:)
    real(my_real) :: work
    real(my_real) :: sp_eta_pred
    integer :: vertex(VERTICES_PER_ELEMENT)
    integer :: edge(EDGES_PER_ELEMENT)
+   integer :: face(FACES_PER_ELEMENT)
    integer :: degree
    integer :: level
    integer :: in, out
    integer :: order(MAX_CHILD)
+   integer :: tags(MAX_TAG)
    integer :: next, previous ! links for available memory list when not in use
                              ! and elements of one level when in use
+   integer :: refinement_edge
    logical(small_logical) :: isleaf, oldleaf
    logical(small_logical) :: iown ! true if I own all leaves below this element
    logical(small_logical) :: hrefined_unowned, prefined_unowned
+   character(len=0) :: type
 end type element_t
 
-! edge owner is the same as it's vertex 2
-! there is no linked list of edges in use.  next is used for linked list of
-! free memory and bidirectional pointers between PERIODIC_SLAVEs and
-! PERIODIC_MASTERs
+! in 2D there are no faces, but I need the components there to compile
+
+type face_t
+   type(hash_key) :: gid
+   integer :: edge(EDGES_PER_FACE)
+   integer :: vertex(VERTICES_PER_FACE)
+   integer :: bmark, degree, assoc_elem, marked_edge, tags(MAX_TAG)
+   real(my_real), pointer :: solution(:,:,:),exact(:,:,:),oldsoln(:,:,:)
+   integer :: next
+end type face_t
+
+! Here is how "next" and friends are used for managing the free space and lists.
+! Initially next is undefined.
+! For elements, next in elements in use forms a linked list of elements on each
+! h-refinement level.
+! For vertices, edges and faces (in 3D) next in entities in use is used to
+! indicate matching entities in periodic boundary conditions.  For entities
+! in use that are not periodic, next is, for all practical purposes, undefined.
+! next_free_vert (edge, face, elem apply everywhere vert is used after here)
+! is the beginning of a linked list of recycled vertices, i.e. vertices
+! removed by derefinement, connected by next.  The last entry in the list, which
+! could be next_free_vert, has next equal to the first ID never used.
+! biggest_vert is the largest ID ever used; if next_free_vert > biggest_vert
+! the next ID is from unused space, otherwise it is from recycled space.  If
+! next_free_vert is bigger than size(vertex), it is time to increase allocation.
 
 type edge_t
    type(hash_key) :: gid
    integer :: vertex(2)
-   integer :: bmark, degree, assoc_elem
+   integer :: child(0)
+   integer :: bmark, degree, assoc_elem, tags(MAX_TAG)
 ! subscripts are basis rank, system rank, eigenvalue
-   real(my_real), pointer :: solution(:,:,:), exact(:,:,:), oldsoln(:,:,:)
+   real(my_real), pointer :: solution(:,:,:),exact(:,:,:),oldsoln(:,:,:)
    integer :: next
 end type edge_t
 
@@ -110,45 +180,42 @@ type vertex_t
    type(hash_key) :: gid
    type(point) :: coord
    real(my_real) :: bparam
-   integer :: bmark
-   integer :: assoc_elem
-   integer :: next, previous
+   integer :: bmark, assoc_elem, tags(MAX_TAG)
+   integer :: next
 end type vertex_t
 
 ! if not solving an eigenproblem, num_eval is 0 and nsoln is system_size.
 
 type grid_type
-   type(element_t), pointer :: element(:)
-   type(edge_t), pointer :: edge(:)
-   type(vertex_t), pointer :: vertex(:)
-   type(hash_table) :: elem_hash, edge_hash, vert_hash
+   type(element_t), pointer :: element(:) => NULL()
+   type(face_t), pointer :: face(:) => NULL()
+   type(edge_t), pointer :: edge(:) => NULL()
+   type(vertex_t), pointer :: vertex(:) => NULL()
+   type(hash_table) :: elem_hash, face_hash, edge_hash, vert_hash
    type(point) :: boundbox_min, boundbox_max
 ! subscripts are lid, system rank, eigenvalue
    real(my_real), pointer :: vertex_solution(:,:,:), vertex_exact(:,:,:), &
                              vertex_oldsoln(:,:,:)
 ! subscripts are element, eigenvalue
    real(my_real), pointer :: element_errind(:,:)
-   real(my_real), pointer :: eigenvalue(:)
-   real(my_real) :: eigen_linsys_max_l2_resid, eigen_linsys_ave_l2_resid
-   real(my_real), pointer :: eigenprob_l2_resid(:), eigenprob_variance(:)
    real(my_real), pointer :: errest_energy(:), errest_Linf(:), errest_L2(:), &
                              errest_eigenvalue(:)
    real(my_real) :: max_blen
    real(my_real), pointer :: bp_start(:), bp_finish(:)
-   integer, pointer :: edge_type(:,:), vertex_type(:,:)
-   integer, pointer :: initial_neighbor(:,:) ! (EDGES_PER_ELEMENT,nelem_init)
+   integer, pointer :: face_type(:,:), edge_type(:,:), vertex_type(:,:)
+   integer, pointer :: initial_neighbor(:,:) ! (NEIGHBORS_PER_ELEMENT,nelem_init)
    integer, pointer :: head_level_elem(:), head_level_vert(:)
-   integer :: next_free_elem, next_free_edge, next_free_vert
+   integer :: next_free_elem, next_free_face, next_free_edge, next_free_vert
    integer :: partition
    integer :: system_size, num_eval, nsoln
-   integer :: nelem, nelem_leaf, nelem_leaf_own, nedge, nedge_own, &
-              nvert, nvert_own, nlev, dof, dof_own
-   integer :: arpack_iter, arpack_nconv, arpack_numop, arpack_numopb, &
-              arpack_numreo, arpack_info
+   integer :: nelem, nelem_leaf, nelem_leaf_own, nface, nface_own, nedge, &
+              nedge_own, nvert, nvert_own, nlev, dof, dof_own
+   integer :: biggest_vert, biggest_edge, biggest_face, biggest_elem
    integer :: errtype ! really belongs in io_options but that doesn't get
                       ! passed where it is needed
-   logical :: errind_up2date, oldsoln_exists, have_true
+   logical :: errind_up2date, oldsoln_exists, have_true, any_periodic
    character(len=FN_LEN) :: triangle_files
+   type(eigen_monitor) :: eigen_results
 end type grid_type
 
 ! data structure for data from triangle files, read and derived
@@ -191,5 +258,53 @@ end type
 
 !real(my_real), parameter :: binw = sqrt(sqrt(2.0_my_real))
 real(my_real), parameter :: binw = 1.1892071150027_my_real
+
+contains
+
+! some operators on points
+
+function point_plus_point(p1,p2)
+type(point), intent(in) :: p1, p2
+type(point) :: point_plus_point
+point_plus_point%x = p1%x + p2%x
+point_plus_point%y = p1%y + p2%y
+end function point_plus_point
+
+function point_minus_point(p1,p2)
+type(point), intent(in) :: p1, p2
+type(point) :: point_minus_point
+point_minus_point%x = p1%x - p2%x
+point_minus_point%y = p1%y - p2%y
+end function point_minus_point
+
+function scalar_times_point(a,p1)
+real(my_real), intent(in) :: a
+type(point), intent(in) :: p1
+type(point) :: scalar_times_point
+scalar_times_point%x = a*p1%x
+scalar_times_point%y = a*p1%y
+end function scalar_times_point
+
+function point_div_scalar(p1,a)
+type(point), intent(in) :: p1
+real(my_real), intent(in) :: a
+type(point) :: point_div_scalar
+point_div_scalar%x = p1%x/a
+point_div_scalar%y = p1%y/a
+end function point_div_scalar
+
+function point_equals_point(p1,p2)
+type(point), intent(in) :: p1, p2
+logical :: point_equals_point
+point_equals_point = p1%x == p2%x .and. p1%y == p2%y
+end function point_equals_point
+
+function dot_point(p1,p2)
+! This routine computes the dot product of two points (meaning the dot
+! product of the vectors from the origin to the points)
+type(point), intent(in) :: p1, p2
+real(my_real) :: dot_point
+dot_point = p1%x*p2%x + p1%y*p2%y
+end function dot_point
 
 end module gridtype_mod

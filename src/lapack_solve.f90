@@ -732,11 +732,11 @@ real(my_real) :: resid(matrix%neq),hold_rhs(matrix%neq),hold_soln(matrix%neq)
 ! set the top level of the hierarchy based on the number of equations
 
 if (matrix%neq == matrix%neq_vert) then
-   toplev = matrix%nlev
-elseif (matrix%neq == matrix%neq_vert+matrix%neq_edge) then
-   toplev = matrix%nlev+1
+   toplev = matrix%nlev_vert
+elseif (matrix%neq == matrix%neq_cond) then
+   toplev = matrix%cond_level
 else
-   toplev = matrix%nlev+2
+   toplev = matrix%bubble_level
 endif
 
 ! make a LAPACK general band matrix if it doesn't already exist
@@ -781,7 +781,7 @@ do ddit = 1,solver_cntl%dd_iterations
 ! convert to hierarchical basis, exchange rhs with other processors, and
 ! convert back to nodal basis
 
-   if (.not. still_sequential) then
+   if (.not. still_sequential .and. num_proc(procs) > 1) then
       call basis_change(toplev,TO_HIER,matrix)
       call exchange_fudop_vect(matrix%rhs,procs,matrix,1701,1702,1703)
       call basis_change(toplev,TO_NODAL,matrix)
@@ -835,11 +835,11 @@ logical :: i_made_gen_band
 ! set the top level of the hierarchy based on the number of equations
 
 if (matrix%neq == matrix%neq_vert) then
-   toplev = matrix%nlev
-elseif (matrix%neq == matrix%neq_vert+matrix%neq_edge) then
-   toplev = matrix%nlev+1
+   toplev = matrix%nlev_vert
+elseif (matrix%neq == matrix%neq_cond) then
+   toplev = matrix%cond_level
 else
-   toplev = matrix%nlev+2
+   toplev = matrix%bubble_level
 endif
 
 ! determine how many levels make up a small enough grid

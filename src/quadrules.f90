@@ -66,7 +66,7 @@ module quadrature_rules
 !
 !---
 !  subroutine quadrature_rule_tri(order,xvert,yvert,nqpoints,qweights, &
-!                                 xquad,yquad,ierr,stay_in)
+!                                 xquad,yquad,ierr,stay_in,zvert,zquad)
 !  integer, intent(in) :: order
 !  real(RKIND), intent(in) :: xvert(3),yvert(3)
 !  integer, intent(out) :: nqpoints
@@ -74,7 +74,21 @@ module quadrature_rules
 !  real(RKIND), pointer :: xquad(:),yquad(:)
 !  integer, intent(out) :: ierr
 !  logical, intent(in), optional :: stay_in
+!  real(RKIND), intent(in), optional :: zvert(3)
+!  real(RKIND), pointer, optional :: zquad(:)
 !  end subroutine quadrature_rule_tri
+!
+!---
+!  subroutine quadrature_rule_tet(order,xvert,yvert,zvert,nqpoints,qweights, &
+!                                 xquad,yquad,zquad,ierr,stay_in)
+!  integer, intent(in) :: order
+!  real(RKIND), intent(in) :: xvert(4),yvert(4),zvert(4)
+!  integer, intent(out) :: nqpoints
+!  real(RKIND), pointer :: qweights(:)
+!  real(RKIND), pointer :: xquad(:),yquad(:),zquad(:)
+!  integer, intent(out) :: ierr
+!  logical, intent(in), optional :: stay_in
+!  end subroutine quadrature_rule_tet
 !
 !----------------------------------------------------
 ! Other modules used are:
@@ -85,7 +99,8 @@ use global, only: my_real
 implicit none
 private
 public RKIND, MAX_QUAD_ORDER_LINE, MAX_QUAD_ORDER_TRI, &
-       quadrature_rule_line, quadrature_rule_tri
+       MAX_QUAD_ORDER_TET,quadrature_rule_line, quadrature_rule_tri, &
+       quadrature_rule_tet
 
 !----------------------------------------------------
 ! The following parameters are defined:
@@ -98,7 +113,8 @@ integer, parameter :: RKIND = my_real
 
 integer, parameter :: MAX_QUAD_ORDER_LINE = 24, &
                       MAX_QUAD_ORDER_TRI  = 45, &
-                      MAX_DUNAVANT_ORDER  = 20
+                      MAX_DUNAVANT_ORDER  = 20, &
+                      MAX_QUAD_ORDER_TET  = 1
 !----------------------------------------------------
 
 !----------------------------------------------------
@@ -175,16 +191,12 @@ if (order < 1 .or. order > MAX_QUAD_ORDER_LINE) then
    return
 endif
 
-! On first call, set up the quadrature rule data base.  For OpenMP, make
-! this critical so only one thread does the initialization, and the others
-! wait until it is done.
+! On first call, set up the quadrature rule data base.
 
-!$omp critical (quad_rule_line_init_critical)
 if (first_call) then
    call setup_line(ierr)
    first_call = .false.
 endif
-!$omp end critical (quad_rule_line_init_critical)
 
 ! some rules are missing; use the first available rule that is larger
 
@@ -223,14 +235,14 @@ end subroutine quadrature_rule_line
 
 !          -------------------
 subroutine quadrature_rule_tri(order,xvert,yvert,nqpoints,qweights, &
-                               xquad,yquad,ierr,stay_in)
+                               xquad,yquad,ierr,stay_in,zvert,zquad)
 !          -------------------
 
 !----------------------------------------------------
 ! This routine returns quadrature points and weights for a quadrature rule
-! of order order over the triangle defined by (xvert,yvert). The integral is
-! given by the sum of the weights times the function at the quadrature points
-! (the weights include the domain size).
+! of order order over the triangle defined by (xvert,yvert) or 
+! (xvert,yvert,zvert). The integral is given by the sum of the weights times
+! the function at the quadrature points (the weights include the domain size).
 !
 ! Some of the quadrature rules contain quadrature points that are outside
 ! the triangle.  If stay_in is present and true, a quadrature rule that
@@ -245,20 +257,22 @@ subroutine quadrature_rule_tri(order,xvert,yvert,nqpoints,qweights, &
 !   1 - no rule for quadrature of the requested order
 !   2 - memory allocation failed
 !
-! This routine allocates qweights, xquad and yquad; they should be deallocated
-! by the caller.
+! This routine allocates qweights, xquad, yquad and optionally zquad; they
+! should be deallocated by the caller.
 !----------------------------------------------------
 
 !----------------------------------------------------
 ! Dummy arguments
 
 integer, intent(in) :: order
-real(RKIND), intent(in) :: xvert(3),yvert(3)
+real(RKIND), intent(in) :: xvert(:),yvert(:)
 integer, intent(out) :: nqpoints
 real(RKIND), pointer :: qweights(:)
 real(RKIND), pointer :: xquad(:),yquad(:)
 integer, intent(inout) :: ierr
 logical, intent(in), optional :: stay_in
+real(RKIND), intent(in), optional :: zvert(3)
+real(RKIND), pointer, optional :: zquad(:)
 !----------------------------------------------------
 ! Local variables:
 
@@ -267,6 +281,13 @@ logical :: loc_stay_in
 ! Begin executable code
 
 ierr = 0
+
+! both or neither of zvert, zquad should be present
+
+if (present(zvert) .neqv. present(zquad)) then
+   print *, "quadrature_rule_tri: both or neither of zvert, zquad should be present"
+   stop
+endif
 
 ! check for valid order
 
@@ -285,20 +306,20 @@ else
 endif
 if (order == 20 .and. loc_stay_in) then
    call quadrature_rule_tri_product(order,xvert,yvert,nqpoints,qweights, &
-                                    xquad,yquad,ierr,stay_in)
+                                    xquad,yquad,ierr,stay_in,zvert,zquad)
 elseif (order > MAX_DUNAVANT_ORDER) then
    call quadrature_rule_tri_product(order,xvert,yvert,nqpoints,qweights, &
-                                    xquad,yquad,ierr,stay_in)
+                                    xquad,yquad,ierr,stay_in,zvert,zquad)
 else
    call quadrature_rule_tri_dunavant(order,xvert,yvert,nqpoints,qweights, &
-                                     xquad,yquad,ierr,stay_in)
+                                     xquad,yquad,ierr,stay_in,zvert,zquad)
 endif
 
 end subroutine quadrature_rule_tri
 
 !          ----------------------------
 subroutine quadrature_rule_tri_dunavant(order,xvert,yvert,nqpoints,qweights, &
-                                        xquad,yquad,ierr,stay_in)
+                                        xquad,yquad,ierr,stay_in,zvert,zquad)
 !          ----------------------------
 
 !----------------------------------------------------
@@ -316,6 +337,8 @@ real(RKIND), pointer :: qweights(:)
 real(RKIND), pointer :: xquad(:),yquad(:)
 integer, intent(inout) :: ierr
 logical, intent(in), optional :: stay_in
+real(RKIND), intent(in), optional :: zvert(3)
+real(RKIND), pointer, optional :: zquad(:)
 !----------------------------------------------------
 ! Local variables:
 
@@ -346,27 +369,30 @@ else
    loc_order = order
 endif
 
-! On first call, set up the quadrature rule data base.  For OpenMP, make
-! this critical so only one thread does the initialization, and the others
-! wait until it is done.
+! On first call, set up the quadrature rule data base.
 
-!$omp critical (quad_rule_tri_init_critical)
 if (first_call) then
    call setup_tri(ierr)
    first_call = .false.
 endif
-!$omp end critical (quad_rule_tri_init_critical)
 
 ! area of the triangle
 
-area = abs(xvert(1)*(yvert(2)-yvert(3)) + &
-           xvert(2)*(yvert(3)-yvert(1)) + &
-           xvert(3)*(yvert(1)-yvert(2))) / 2
+if (present(zvert)) then
+   area = triangle_area(xvert,yvert,zvert)
+else
+   area = triangle_area(xvert,yvert,(/0.0_RKIND,0.0_RKIND,0.0_RKIND/))
+endif
 
 ! copy quadrature rule
 
 nqpoints = ng_tri(loc_order)
-allocate(qweights(nqpoints),xquad(nqpoints),yquad(nqpoints),stat=astat)
+if (present(zquad)) then
+   allocate(qweights(nqpoints),xquad(nqpoints),yquad(nqpoints), &
+            zquad(nqpoints),stat=astat)
+else
+   allocate(qweights(nqpoints),xquad(nqpoints),yquad(nqpoints),stat=astat)
+endif
 if (astat /= 0) then
    ierr = 2
    return
@@ -378,12 +404,17 @@ xquad = xvert(1)*alpha_tri(loc_order)%val + &
 yquad = yvert(1)*alpha_tri(loc_order)%val + &
         yvert(2)*beta_tri(loc_order)%val  + &
         yvert(3)*gamma_tri(loc_order)%val
+if (present(zquad)) then
+   zquad = zvert(1)*alpha_tri(loc_order)%val + &
+           zvert(2)*beta_tri(loc_order)%val  + &
+           zvert(3)*gamma_tri(loc_order)%val
+endif
 
 end subroutine quadrature_rule_tri_dunavant
 
 !          ---------------------------
 subroutine quadrature_rule_tri_product(order,xvert,yvert,nqpoints,qweights, &
-                                       xquad,yquad,ierr,stay_in)
+                                       xquad,yquad,ierr,stay_in,zvert,zquad)
 !          ---------------------------
 
 !----------------------------------------------------
@@ -401,6 +432,8 @@ real(RKIND), pointer :: qweights(:)
 real(RKIND), pointer :: xquad(:),yquad(:)
 integer, intent(inout) :: ierr
 logical, intent(in), optional :: stay_in
+real(RKIND), intent(in), optional :: zvert(3)
+real(RKIND), pointer, optional :: zquad(:)
 !----------------------------------------------------
 ! Local variables:
 
@@ -421,7 +454,12 @@ if (ierr /= 0) return
 ! allocate memory for the rules
 
 nqpoints = nqpoints_1D**2
-allocate(qweights(nqpoints),xquad(nqpoints),yquad(nqpoints),stat=astat)
+if (present(zquad)) then
+   allocate(qweights(nqpoints),xquad(nqpoints),yquad(nqpoints), &
+            zquad(nqpoints),stat=astat)
+else
+   allocate(qweights(nqpoints),xquad(nqpoints),yquad(nqpoints),stat=astat)
+endif
 if (astat /= 0) then
    ierr = 2
    return
@@ -441,22 +479,33 @@ endif
 
 ! area of the triangle
 
-area = abs(xvert(1)*(yvert(2)-yvert(3)) + &
-           xvert(2)*(yvert(3)-yvert(1)) + &
-           xvert(3)*(yvert(1)-yvert(2)))
+if (present(zvert)) then
+   area = triangle_area(xvert,yvert,zvert)
+else
+   area = triangle_area(xvert,yvert,(/0.0_RKIND,0.0_RKIND,0.0_RKIND/))
+endif
+
+! I'm not sure why, but I have to multiply the area by 2.  Perhaps it is
+! because the rules come from a reference square that has twice the area
+! of the reference triangle.
+
+area = 2*area
 
 p = 0
 do i=1,nqpoints_1D
    do j=1,nqpoints_1D
       p = p+1
       xquad(p) = xquad_1D(i)
-      yquad(p) = xquad_1d(j)*xquad_1D(i)
+      yquad(p) = xquad_1D(j)*xquad_1D(i)
       qweights(p) = qweights_1D(i)*qweights_1D(j)*xquad_1D(i)*area
       zeta1 = 1-xquad(p)
       zeta2 = yquad(p)
       zeta3 = xquad(p) - yquad(p)
       xquad(p) = zeta1*xvert(1) + zeta2*xvert(2) + zeta3*xvert(3)
       yquad(p) = zeta1*yvert(1) + zeta2*yvert(2) + zeta3*yvert(3)
+      if (present(zquad)) then
+         zquad(p) = zeta1*zvert(1) + zeta2*zvert(2) + zeta3*zvert(3)
+      endif
    end do
 end do
 
@@ -465,6 +514,142 @@ end do
 deallocate(qweights_1D,xquad_1D,yquad_1D,stat=astat)
 
 end subroutine quadrature_rule_tri_product
+
+!        -------------
+function triangle_area(xvert,yvert,zvert)
+!        -------------
+
+!----------------------------------------------------
+! This routine computes the area of a triangle with given vertices in 3-space
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+
+real(RKIND), intent(in) :: xvert(3), yvert(3), zvert(3)
+real(RKIND) :: triangle_area
+!----------------------------------------------------
+! Local variables:
+
+real(RKIND) :: a,b,c,t
+!----------------------------------------------------
+! Begin executable code
+
+! With side lengths a, b, c, Heron's formula for the area of a triangle is
+! sqrt(p(p-a)(p-b)(p-c))/2 where p=(a+b+c)/2 but it is unstable for triangles
+! with a small angle.  This is a stable version from Wikipedia.
+
+! side lengths
+
+a = sqrt((xvert(2)-xvert(1))**2+(yvert(2)-yvert(1))**2+(zvert(2)-zvert(1))**2)
+b = sqrt((xvert(3)-xvert(1))**2+(yvert(3)-yvert(1))**2+(zvert(3)-zvert(1))**2)
+c = sqrt((xvert(3)-xvert(2))**2+(yvert(3)-yvert(2))**2+(zvert(3)-zvert(2))**2)
+
+! sort to get a >= b >= c
+
+if (c > b) then
+   t=b; b=c; c=t
+endif
+if (b > a) then
+   t=a; a=b; b=t
+endif
+if (c > b) then
+   t=b; b=c; c=t
+endif
+
+triangle_area = sqrt((a+(b+c))*(c-(a-b))*(c+(a-b))*(a+(b-c)))/4
+
+end function triangle_area
+
+!          -------------------
+subroutine quadrature_rule_tet(order,xvert,yvert,zvert,nqpoints,qweights, &
+                               xquad,yquad,zquad,ierr,stay_in)
+!          -------------------
+
+!----------------------------------------------------
+! This routine returns quadrature points and weights for a quadrature rule
+! of order order over the tetrahedron defined by (xvert,yvert,zvert).
+! The integral is given by the sum of the weights times the function at the
+! quadrature points (the weights include the domain size).
+!
+! Some of the quadrature rules may contain quadrature points that are outside
+! the tetrahedron.  If stay_in is present and true, a quadrature rule that
+! uses points only in the tetrahedron is returned.  This may be a rule of higher
+! order than requested.
+!
+! For some orders a rule may not be given.  In these cases the first higher
+! order rule is returned.
+!
+! ierr is the return status:
+!   0 - sucess
+!   1 - no rule for quadrature of the requested order
+!   2 - memory allocation failed
+!
+! This routine allocates qweights, xquad, yquad and zquad; they
+! should be deallocated by the caller.
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+
+integer, intent(in) :: order
+real(RKIND), intent(in) :: xvert(:),yvert(:),zvert(:)
+integer, intent(out) :: nqpoints
+real(RKIND), pointer :: qweights(:)
+real(RKIND), pointer :: xquad(:),yquad(:),zquad(:)
+integer, intent(inout) :: ierr
+logical, intent(in), optional :: stay_in
+!----------------------------------------------------
+! Local variables:
+
+logical :: loc_stay_in
+integer :: i, astat
+real(RKIND) :: A(3,3)
+!----------------------------------------------------
+! Begin executable code
+
+ierr = 0
+
+if (present(stay_in)) then
+   loc_stay_in = stay_in
+else
+   loc_stay_in = .false.
+endif
+
+! currently only have a first order rule
+
+if (order /= 1) then
+   ierr = 1
+   return
+endif
+
+! one quadrature point, which is the midpoint
+
+nqpoints = 1
+allocate(xquad(nqpoints),yquad(nqpoints),zquad(nqpoints),qweights(nqpoints), &
+         stat=astat)
+if (astat /= 0) then
+   ierr = 2
+   return
+endif
+
+xquad(1) = sum(xvert)/4
+yquad(1) = sum(yvert)/4
+zquad(1) = sum(zvert)/4
+
+! the weight is the volume of the tetrahedra
+
+do i=1,3
+   A(1,i) = xvert(i) - xvert(4)
+   A(2,i) = yvert(i) - yvert(4)
+   A(3,i) = zvert(i) - zvert(4)
+end do
+
+qweights(1) = abs(A(1,1)*(A(2,2)*A(3,3)-A(3,2)*A(2,3)) - &
+                  A(1,2)*(A(2,1)*A(3,3)-A(3,1)*A(2,3)) + &
+                  A(1,3)*(A(2,1)*A(3,2)-A(3,1)*A(2,2)))
+
+end subroutine quadrature_rule_tet
 
 !          ----------
 subroutine setup_line(ierr)

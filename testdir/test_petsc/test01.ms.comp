@@ -1,9 +1,10 @@
 ---------------------------------------------------------
-           PHAML   Version 1.9.1
+           PHAML   Version 1.11.0
 
 Output from the master process
   PDE id is     0
   Number of slave processors is     4
+  Number of OpenMP threads is       1
 
 Subroutine phaml_solve_pde parameters:
   max_elem           infinity
@@ -17,10 +18,15 @@ Subroutine phaml_solve_pde parameters:
   task               BALANCE_REFINE_SOLVE
   solve_init         true
   system_size                 1
+  pde_has_first_order_terms  false
+  pde_has_cross_derivative   false
+  laplacian_operator         true
+  isosceles_right_triangles  true
   print_grid_when    PHASES
   print_grid_who     MASTER
   print_linsys_when  NEVER
-  print_solver_when  NEVER
+  print_solver_when  PHASES
+  print_solver_who   MASTER
   print_error_when   PHASES
   print_error_who    MASTER
   print_error_what   ENERGY_LINF_L2_ERR
@@ -37,7 +43,7 @@ Subroutine phaml_solve_pde parameters:
   errtype            ABSOLUTE_ERROR
   reftype            H_ADAPTIVE
   edge_rule          MINIMUM_RULE
-  refterm            DOUBLE_NEQ_SMOOTH
+  refterm            DOUBLE_NEQ
   derefine           true
   partition_method   RTK
   prebalance         BALANCE_ELEMENTS
@@ -59,6 +65,10 @@ Total Grid:
    degrees of freedom      =           9
    min and max degree      =           1          1
 
+Solver information:
+   number of iterations =           0
+   relative residual =   0.0000000000E+00
+
 Norms of error:
    energy norm of error       2.4822035936E+00
    Linf norm of error         8.7914044620E-01
@@ -71,13 +81,17 @@ Total Grid:
    degrees of freedom      =          29
    min and max degree      =           1          1
 
+Solver information:
+   number of iterations =          65
+   relative residual =   1.1914539537E-10
+
 Norms of error:
    energy norm of error       1.4543374687E+00
       reduced by              5.8590579453E-01
-   Linf norm of error         2.5755437365E-01
-      reduced by              2.9296157942E-01
-   L2 norm of error           9.0456404370E-02
-      reduced by              2.5844678799E-01
+   Linf norm of error         2.5755437366E-01
+      reduced by              2.9296157943E-01
+   L2 norm of error           9.0456404436E-02
+      reduced by              2.5844678818E-01
 
 Total Grid:
    number of vertices      =          36
@@ -86,85 +100,105 @@ Total Grid:
    degrees of freedom      =          36
    min and max degree      =           1          1
 
+Solver information:
+   number of iterations =          65
+   relative residual =   1.6135844893E-10
+
 Norms of error:
    energy norm of error       1.4268179201E+00
       reduced by              9.8107760463E-01
-   Linf norm of error         2.5755717453E-01
+   Linf norm of error         2.5755717454E-01
       reduced by              1.0000108749E+00
-   L2 norm of error           9.0525935639E-02
-      reduced by              1.0007686716E+00
+   L2 norm of error           9.0525935721E-02
+      reduced by              1.0007686718E+00
 
 Total Grid:
-   number of vertices      =          82
-   number of leaf elements =         132
-   number of levels        =           7
-   degrees of freedom      =          82
-   min and max degree      =           1          1
-
-Norms of error:
-   energy norm of error       8.2034400959E-01
-      reduced by              5.7494652824E-01
-   Linf norm of error         1.0000467173E-01
-      reduced by              3.8828144435E-01
-   L2 norm of error           2.7306631635E-02
-      reduced by              3.0164429058E-01
-
-Total Grid:
-   number of vertices      =         145
-   number of leaf elements =         246
+   number of vertices      =          98
+   number of leaf elements =         154
    number of levels        =           8
-   degrees of freedom      =         145
+   degrees of freedom      =          98
    min and max degree      =           1          1
 
+Solver information:
+   number of iterations =         206
+   relative residual =   3.9661249873E-10
+
 Norms of error:
-   energy norm of error       5.1482143540E-01
-      reduced by              6.2756773913E-01
-   Linf norm of error         3.8245739699E-02
-      reduced by              3.8243953045E-01
-   L2 norm of error           1.3402251040E-02
-      reduced by              4.9080572147E-01
+   energy norm of error       7.7955585392E-01
+      reduced by              5.4635973024E-01
+   Linf norm of error         1.0000000772E-01
+      reduced by              3.8826333572E-01
+   L2 norm of error           2.5635825529E-02
+      reduced by              2.8318763374E-01
 
 Total Grid:
-   number of vertices      =         334
-   number of leaf elements =         588
+   number of vertices      =         167
+   number of leaf elements =         288
+   number of levels        =           9
+   degrees of freedom      =         167
+   min and max degree      =           1          1
+
+Solver information:
+   number of iterations =         320
+   relative residual =   7.6420788405E-10
+
+Norms of error:
+   energy norm of error       4.8553639373E-01
+      reduced by              6.2283721081E-01
+   Linf norm of error         3.2559787160E-02
+      reduced by              3.2559784645E-01
+   L2 norm of error           1.2329106291E-02
+      reduced by              4.8093268059E-01
+
+Total Grid:
+   number of vertices      =         314
+   number of leaf elements =         552
    number of levels        =          10
-   degrees of freedom      =         334
+   degrees of freedom      =         314
    min and max degree      =           1          1
 
+Solver information:
+   number of iterations =         623
+   relative residual =   8.9984245423E-10
+
 Norms of error:
-   energy norm of error       3.7046876666E-01
-      reduced by              3.5980316784E-01
-   Linf norm of error         3.0340740539E-02
-      reduced by              7.9331033410E-01
-   L2 norm of error           5.8453975576E-03
-      reduced by              2.1807521513E-01
+   energy norm of error       3.3434878172E-01
+      reduced by              3.4430867185E-01
+   Linf norm of error         3.1415834333E-02
+      reduced by              9.6486608400E-01
+   L2 norm of error           8.0616208786E-03
+      reduced by              3.2693451936E-01
 
 Total Grid:
-   number of vertices      =         626
-   number of leaf elements =        1166
+   number of vertices      =         586
+   number of leaf elements =        1084
    number of levels        =          11
-   degrees of freedom      =         626
+   degrees of freedom      =         586
    min and max degree      =           1          1
 
+Solver information:
+   number of iterations =        1132
+   relative residual =   2.0293139637E-09
+
 Norms of error:
-   energy norm of error       2.4614958089E-01
-      reduced by              6.6442734999E-01
-   Linf norm of error         1.0118994030E-02
-      reduced by              3.3351176836E-01
-   L2 norm of error           3.3791809107E-03
-      reduced by              5.7809257240E-01
+   energy norm of error       2.4876295108E-01
+      reduced by              7.4402230450E-01
+   Linf norm of error         1.0114544260E-02
+      reduced by              3.2195688813E-01
+   L2 norm of error           3.3724176263E-03
+      reduced by              4.1832997075E-01
 
 Total Grid:
-   number of vertices      =         626
-   number of leaf elements =        1166
+   number of vertices      =         586
+   number of leaf elements =        1084
    number of levels        =          11
-   degrees of freedom      =         626
+   degrees of freedom      =         586
    min and max degree      =           1          1
 
 Norms of error:
-   energy norm of error       2.4614958089E-01
-   Linf norm of error         1.0118994030E-02
-   L2 norm of error           3.3791809107E-03
+   energy norm of error       2.4876295108E-01
+   Linf norm of error         1.0114544260E-02
+   L2 norm of error           3.3724176263E-03
 
 ---------------------------------------------------------
 phaml_solve_pde complete

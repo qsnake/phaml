@@ -1,4 +1,4 @@
-This is PHAML version 1.9.1, April 25, 2011
+This is PHAML version 1.11.0, August 6, 2012
 Please report all bugs, problems, questions, suggestions or even complements
 to phaml@nist.gov.
 
@@ -11,9 +11,9 @@ linear elliptic partial differential equations of the form
 (CXX*Ux)x - (CXY*Uy)x + (CYY*Uy)y + CX*Ux + CY*Uy + C*U = F on 2D domains with
 Dirichlet, Natural (often Neumann), mixed or periodic boundary conditions, and
 eigenvalue problems where F is lambda*U and the boundary conditions are
-homogeneous.  It uses linear or high order finite elements over triangles,
-adaptive refinement (possibly hp-adaptive), multigrid and message passing
-parallelism.
+homogeneous, and 3D problems of an equivalent form.  It uses linear or high
+order finite elements over triangles, adaptive refinement (possibly
+hp-adaptive), multigrid, message passing parallelism, and OpenMP parallelism.
 
 To start using PHAML immediately, see the Quick Start section of the User's
 Guide.

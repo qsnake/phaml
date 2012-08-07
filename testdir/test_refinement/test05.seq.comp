@@ -1,9 +1,10 @@
 ---------------------------------------------------------
-           PHAML   Version 1.9.1
+           PHAML   Version 1.11.0
 
 Output from slave number     1
   PDE id is     0
   Number of slave processors is     1
+  Number of OpenMP threads is       1
 
 Subroutine phaml_solve_pde parameters:
   max_elem           infinity
@@ -17,6 +18,10 @@ Subroutine phaml_solve_pde parameters:
   task               BALANCE_REFINE_SOLVE
   solve_init         true
   system_size                 1
+  pde_has_first_order_terms  false
+  pde_has_cross_derivative   false
+  laplacian_operator         true
+  isosceles_right_triangles  true
   print_grid_when    PHASES
   print_grid_who     SLAVES
   print_linsys_when  NEVER
@@ -37,7 +42,7 @@ Subroutine phaml_solve_pde parameters:
   errtype            ABSOLUTE_ERROR
   reftype            H_ADAPTIVE
   edge_rule          MINIMUM_RULE
-  refterm            DOUBLE_NEQ_SMOOTH
+  refterm            DOUBLE_NEQ
   derefine           true
   partition_method   RTK
   prebalance         BALANCE_ELEMENTS
@@ -198,21 +203,21 @@ My Grid:
    min and max degree       =           1          1
 
 Norms of error:
-   energy norm of error       7.5452671292E-01
-      reduced by              5.8800572720E-01
-   energy error estimate      1.7057210532E+00
-      reduced by              7.3218359700E-01
-      effectivity             2.2606503176E+00
-   Linf norm of error         3.7064826653E-02
-      reduced by              1.4681337290E-01
-   Linf error estimate        1.0578643245E-01
-      reduced by              4.8368437537E-01
-      effectivity             2.8540921947E+00
-   L2 norm of error           9.3870353579E-03
-      reduced by              3.4105451384E-01
-   L2 error estimate          3.2839908487E-02
-      reduced by              5.0177760333E-01
-      effectivity             3.4984323841E+00
+   energy norm of error       7.5452672019E-01
+      reduced by              5.8800573287E-01
+   energy error estimate      1.7057199078E+00
+      reduced by              7.3218310535E-01
+      effectivity             2.2606487778E+00
+   Linf norm of error         3.7065179674E-02
+      reduced by              1.4681477121E-01
+   Linf error estimate        1.0578629328E-01
+      reduced by              4.8368373905E-01
+      effectivity             2.8540612567E+00
+   L2 norm of error           9.3873648898E-03
+      reduced by              3.4106648656E-01
+   L2 error estimate          3.2839905801E-02
+      reduced by              5.0177756229E-01
+      effectivity             3.4983092898E+00
 
 My Grid:
    number of vertices       =         644
@@ -227,20 +232,20 @@ My Grid:
 
 Norms of error:
    energy norm of error       6.0245139564E-01
-      reduced by              7.9844939261E-01
+      reduced by              7.9844938492E-01
    energy error estimate      1.2038678500E+00
-      reduced by              7.0578237150E-01
-      effectivity             1.9982821166E+00
+      reduced by              7.0578284540E-01
+      effectivity             1.9982821165E+00
    Linf norm of error         3.1277160516E-02
-      reduced by              8.4385017657E-01
+      reduced by              8.4384213947E-01
    Linf error estimate        5.1854944718E-02
-      reduced by              4.9018521106E-01
-      effectivity             1.6579172745E+00
-   L2 norm of error           5.4482684483E-03
-      reduced by              5.8040352897E-01
+      reduced by              4.9018585593E-01
+      effectivity             1.6579172746E+00
+   L2 norm of error           5.4482684658E-03
+      reduced by              5.8038315648E-01
    L2 error estimate          1.5510886877E-02
-      reduced by              4.7231821255E-01
-      effectivity             2.8469388071E+00
+      reduced by              4.7231825119E-01
+      effectivity             2.8469387980E+00
 
 My Grid:
    number of vertices       =         644
@@ -256,13 +261,13 @@ My Grid:
 Norms of error:
    energy norm of error       6.0245139564E-01
    energy error estimate      1.2038678500E+00
-      effectivity             1.9982821166E+00
+      effectivity             1.9982821165E+00
    Linf norm of error         3.1277160516E-02
    Linf error estimate        5.1854944718E-02
-      effectivity             1.6579172745E+00
-   L2 norm of error           5.4482684483E-03
+      effectivity             1.6579172746E+00
+   L2 norm of error           5.4482684658E-03
    L2 error estimate          1.5510886877E-02
-      effectivity             2.8469388071E+00
+      effectivity             2.8469387980E+00
 
 ---------------------------------------------------------
 phaml_solve_pde complete

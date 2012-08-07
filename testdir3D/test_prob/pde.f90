@@ -1,0 +1,533 @@
+!---------------------------------------------------------------------!
+!                                PHAML                                !
+!                                                                     !
+! The Parallel Hierarchical Adaptive MultiLevel code for solving      !
+! linear elliptic partial differential equations of the form          !
+! (PUx)x + (QUy)y + RU = F on 2D polygonal domains with mixed         !
+! boundary conditions, and eigenvalue problems where F is lambda*U.   !
+!                                                                     !
+! PHAML is public domain software.  It was produced as part of work   !
+! done by the U.S. Government, and is not subject to copyright in     !
+! the United States.                                                  !
+!                                                                     !
+!     William F. Mitchell                                             !
+!     Applied and Computational Mathematics Division                  !
+!     National Institute of Standards and Technology                  !
+!     william.mitchell@nist.gov                                       !
+!     http://math.nist.gov/phaml                                      !
+!                                                                     !
+!---------------------------------------------------------------------!
+
+!----------------------------------------------------
+! This file contains the user supplied external subroutines that define
+! the PDE(s) to be solved, and other required external subroutines.
+!   pdecoefs bconds boundary_point boundary_npiece boundary_param iconds trues
+!   truexs trueys update_usermod phaml_integral_kernel
+!
+! This version illustrates the subroutines for a single PDE, thus all the
+! array arguments have dimension 1.  For a coupled system of PDEs, see
+! examples/system.
+!----------------------------------------------------
+
+module phaml_user_mod
+integer :: probno=0
+double precision, parameter :: pi=3.14159265358979d0
+end module phaml_user_mod
+
+!          --------
+subroutine pdecoefs(x,y,z,cxx,cyy,czz,cxy,cxz,cyz,cx,cy,cz,c,rs)
+!          --------
+
+!----------------------------------------------------
+! This subroutine returns the coefficient and right hand side of the PDE
+! at the point (x,y)
+!
+! The PDE is
+!
+!    -( cxx(x,y) * u  )  -( cyy(x,y) * u  ) + c(x,y) * u = rs(x,y)
+!                   x  x                y  y
+!
+! For eigenvalue problems, the right hand side is lambda * u * rs(x,y)
+!
+! cxy, cx and cy are not currently used and should not be set.  They are
+! for future expansion.
+!
+! NOTE: BE CAREFUL TO GET THE SIGNS RIGHT
+! e.g. cxx=cyy=1 means rs=-(uxx+uyy)
+!
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Modules used are:
+
+use phaml
+use phaml_user_mod
+!----------------------------------------------------
+
+implicit none
+
+!----------------------------------------------------
+! Dummy arguments
+
+real(my_real), intent(in) :: x,y,z
+real(my_real), intent(out) :: cxx(:,:),cyy(:,:),czz(:,:),cxy(:,:),cxz(:,:), &
+                              cyz(:,:),cx(:,:),cy(:,:),cz(:,:),c(:,:),rs(:)
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Local variables
+
+real(my_real) :: a,t,tx,ty,tz,txx,tyy,tzz,px,qy,rz
+!----------------------------------------------------
+
+interface
+
+   function trues(x,y,z,comp,eigen) ! real (my_real)
+   use phaml
+   real (my_real), intent(in) :: x,y,z
+   integer, intent(in) :: comp,eigen
+   real (my_real) :: trues
+   end function trues
+   function truexs(x,y,z,comp,eigen) ! real (my_real)
+   use phaml
+   real (my_real), intent(in) :: x,y,z
+   integer, intent(in) :: comp,eigen
+   real (my_real) :: truexs
+   end function truexs
+   function trueys(x,y,z,comp,eigen) ! real (my_real)
+   use phaml
+   real (my_real), intent(in) :: x,y,z
+   integer, intent(in) :: comp,eigen
+   real (my_real) :: trueys
+   end function trueys
+   function truezs(x,y,z,comp,eigen) ! real (my_real)
+   use phaml
+   real (my_real), intent(in) :: x,y,z
+   integer, intent(in) :: comp,eigen
+   real (my_real) :: truezs
+   end function truezs
+
+end interface
+
+!----------------------------------------------------
+! Begin executable code
+
+cxy=0; cxz=0; cyz=0; cx=0; cy=0; cz=0; c=0
+
+select case(probno)
+case(1,2,6,7)
+   cxx = 1.0_my_real
+   cyy = 1.0_my_real
+   czz = 1.0_my_real
+   rs = 12*pi**2*sin(2*pi*x+1)*sin(2*pi*y+1)*sin(2*pi*z+1)
+case(3)
+   cxx = 1 + x*x
+   a = 4.0_my_real*y*y + 0.9_my_real
+   cyy = 1 + a*a
+   czz = 1 + z*z
+   c = -(1.0_my_real+(8.0_my_real*y-x-4.0_my_real)**2)
+   t = trues(x,y,z,1,1)
+   tx = truexs(x,y,z,1,1)
+   ty = trueys(x,y,z,1,1)
+   tz = truezs(x,y,z,1,1)
+   txx = -4*pi**2*t
+   tyy = -4*pi**2*t
+   tzz = -4*pi**2*t
+   px = 2.0_my_real*x
+   qy = 2.0_my_real*a*8.0_my_real*y
+   rz = 2.0_my_real*z
+   rs = -cxx(1,1)*txx-px*tx -cyy(1,1)*tyy-qy*ty  -czz(1,1)*tzz-rz*tz+c(1,1)*t
+case(4)
+   cxx = 1.0_my_real
+   cyy = 1.0_my_real
+   czz = 1.0_my_real
+   cx = 1  + x*(1-x) + y*(1-y)
+   cy = 1  + x*(1-x) + y*(1-y)
+   cz = 1  + z*(1-z)
+   c = 0.0_my_real
+   rs = 12*pi**2*sin(2*pi*x+1)*sin(2*pi*y+1)*sin(2*pi*z+1) &
+        + cx(1,1)*truexs(x,y,z,1,1) + cy(1,1)*trueys(x,y,z,1,1) + &
+          cz(1,1)*truezs(x,y,z,1,1)
+case(5)
+   cxx = 1.0_my_real
+   cyy = 1.0_my_real
+   czz = 1.0_my_real
+   cxz = 1.0_my_real + x*(1-z)
+   cyz = 1.0_my_real + y*(1-z)
+   c = 0.0_my_real
+   rs = 12*pi**2*sin(2*pi*x+1)*sin(2*pi*y+1)*sin(2*pi*z+1)        &
+           - cxz(1,1)*4*pi**2*cos(2*pi*x+1)*sin(2*pi*y+1)*cos(2*pi*z+1) &
+           - cyz(1,1)*4*pi**2*sin(2*pi*x+1)*cos(2*pi*y+1)*cos(2*pi*z+1) &
+           - 2*(1-z)*truezs(x,y,z,1,1)
+
+case default
+   print *,"illegal problem number in pdecoefs"
+   stop
+end select
+
+end subroutine pdecoefs
+
+!          ------
+subroutine bconds(x,y,z,bmark,itype,c,rs)
+!          ------
+
+!----------------------------------------------------
+! This subroutine returns the boundary conditions at the point (x,y).
+!
+! Each boundary condition is either
+!
+!    u = rs(x,y) or  u  + c(x,y)*u = rs(x,y)
+!                     n
+!
+! itype indicates which type of condition applies to each point, using
+! symbolic constants from module phaml.  It is DIRICHLET for the first
+! condition, NATURAL for the second condition with c==0, and MIXED for
+! the second condition with c/=0.
+!
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Modules used are:
+
+use phaml
+use phaml_user_mod
+!----------------------------------------------------
+
+implicit none
+
+!----------------------------------------------------
+! Dummy arguments
+
+real(my_real), intent(in) :: x,y,z
+integer, intent(in) :: bmark
+integer, intent(out) :: itype(:)
+real(my_real), intent(out) :: c(:,:),rs(:)
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Non-module procedures used are:
+
+interface
+
+   function trues(x,y,z,comp,eigen) ! real (my_real)
+   use phaml
+   real (my_real), intent(in) :: x,y,z
+   integer, intent(in) :: comp,eigen
+   real (my_real) :: trues
+   end function trues
+   function truexs(x,y,z,comp,eigen) ! real (my_real)
+   use phaml
+   real (my_real), intent(in) :: x,y,z
+   integer, intent(in) :: comp,eigen
+   real (my_real) :: truexs
+   end function truexs
+   function trueys(x,y,z,comp,eigen) ! real (my_real)
+   use phaml
+   real (my_real), intent(in) :: x,y,z
+   integer, intent(in) :: comp,eigen
+   real (my_real) :: trueys
+   end function trueys
+   function truezs(x,y,z,comp,eigen) ! real (my_real)
+   use phaml
+   real (my_real), intent(in) :: x,y,z
+   integer, intent(in) :: comp,eigen
+   real (my_real) :: truezs
+   end function truezs
+
+end interface
+
+!----------------------------------------------------
+! Local variables
+
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Begin executable code
+
+! Dirichlet boundary conditions
+
+select case(probno)
+case(1)
+   select case(bmark)
+   case (13,17)
+      itype = PERIODIC
+      c = 0.0_my_real
+      rs = 0.0_my_real
+   case default
+      itype = DIRICHLET
+      c = 0.0_my_real
+      rs = trues(x,y,z,1,1)
+   end select
+
+case(2)
+   select case(bmark)
+   case(1)
+      itype = NATURAL
+      c = 0.0_my_real
+      rs = -truezs(x,y,z,1,1)
+   case(26)
+      itype = MIXED
+      c = 2.0_my_real
+      rs = truezs(x,y,z,1,1) + c(1,1)*trues(x,y,z,1,1)
+   case default
+      itype = DIRICHLET
+      c = 0.0_my_real
+      rs = trues(x,y,z,1,1)
+   end select
+
+case (3,4,5)
+   itype = DIRICHLET
+   c = 0.0_my_real
+   rs = trues(x,y,z,1,1)
+
+case(6)
+   select case(bmark)
+   case (13,17,11,15,10,12,14,16)
+      itype = PERIODIC
+      c = 0.0_my_real
+      rs = 0.0_my_real
+   case default
+      itype = DIRICHLET
+      c = 0.0_my_real
+      rs = trues(x,y,z,1,1)
+   end select
+
+case(7)
+   select case(bmark)
+   case (2,4,6,8,18,20,22,24)
+      itype = DIRICHLET
+      c = 0.0_my_real
+      rs = trues(x,y,z,1,1)
+   case default
+      itype = PERIODIC
+      c = 0.0_my_real
+      rs = 0.0_my_real
+   end select
+
+case default
+   print *,"illegal problem number in bconds"
+   stop
+end select
+
+end subroutine bconds
+
+!        ------
+function iconds(x,y,z,comp,eigen)
+!        ------
+
+!----------------------------------------------------
+! This routine returns the initial condition for a time dependent problem.
+! It can also be used for the initial guess for a nonlinear problem, or
+! systems of equations solved by sucessive substitution.
+! comp,eigen is which solution to use from a coupled system of PDEs or multiple
+! eigenvectors from an eigenvalue problem, and is ignored in this example.
+! For problems where there are no initial conditions, it is a dummy.
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Modules used are:
+
+use phaml
+!----------------------------------------------------
+
+implicit none
+
+!----------------------------------------------------
+! Dummy arguments
+
+real(my_real), intent(in) :: x,y,z
+integer, intent(in) :: comp,eigen
+real(my_real) :: iconds
+
+!----------------------------------------------------
+! Begin executable code
+
+iconds = 0.0_my_real
+
+end function iconds
+
+!        -----
+function trues(x,y,z,comp,eigen) ! real (my_real)
+!        -----
+
+!----------------------------------------------------
+! This is the true solution of the differential equation, if known.
+! comp,eigen is which solution to use from a coupled system of PDEs or multiple
+! eigenvectors from an eigenvalue problem, and is ignored in this example.
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Modules used are:
+
+use phaml
+use phaml_user_mod
+!----------------------------------------------------
+
+implicit none
+
+!----------------------------------------------------
+! Dummy arguments
+
+real(my_real), intent(in) :: x,y,z
+integer, intent(in) :: comp,eigen
+real (my_real) :: trues
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Begin executable code
+
+trues = sin(2*pi*x+1)*sin(2*pi*y+1)*sin(2*pi*z+1)
+
+end function trues
+
+!        ------
+function truexs(x,y,z,comp,eigen) ! real (my_real)
+!        ------
+
+!----------------------------------------------------
+! This is the x derivative of the true solution of the differential
+! equation, if known.
+! comp,eigen is which solution to use from a coupled system of PDEs or multiple
+! eigenvectors from an eigenvalue problem, and is ignored in this example.
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Modules used are:
+
+use phaml
+use phaml_user_mod
+!----------------------------------------------------
+
+implicit none
+
+!----------------------------------------------------
+! Dummy arguments
+
+real(my_real), intent(in) :: x,y,z
+integer, intent(in) :: comp,eigen
+real (my_real) :: truexs
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Begin executable code
+
+truexs = 2*pi*cos(2*pi*x+1)*sin(2*pi*y+1)*sin(2*pi*z+1)
+
+end function truexs
+
+!        ------
+function trueys(x,y,z,comp,eigen) ! real (my_real)
+!        ------
+
+!----------------------------------------------------
+! This is the y derivative of the true solution of the differential
+! equation, if known.
+! comp,eigen is which solution to use from a coupled system of PDEs or multiple
+! eigenvectors from an eigenvalue problem, and is ignored in this example.
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Modules used are:
+
+use phaml
+use phaml_user_mod
+!----------------------------------------------------
+
+implicit none
+
+!----------------------------------------------------
+! Dummy arguments
+
+real(my_real), intent(in) :: x,y,z
+integer, intent(in) :: comp,eigen
+real (my_real) :: trueys
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Begin executable code
+
+trueys = 2*pi*sin(2*pi*x+1)*cos(2*pi*y+1)*sin(2*pi*z+1)
+
+end function trueys
+
+!        ------
+function truezs(x,y,z,comp,eigen) ! real (my_real)
+!        ------
+
+!----------------------------------------------------
+! This is the z derivative of the true solution of the differential
+! equation, if known.
+! comp,eigen is which solution to use from a coupled system of PDEs or multiple
+! eigenvectors from an eigenvalue problem, and is ignored in this example.
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Modules used are:
+
+use phaml
+use phaml_user_mod
+!----------------------------------------------------
+
+implicit none
+
+!----------------------------------------------------
+! Dummy arguments
+
+real(my_real), intent(in) :: x,y,z
+integer, intent(in) :: comp,eigen
+real (my_real) :: truezs
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Begin executable code
+
+truezs = 2*pi*sin(2*pi*x+1)*sin(2*pi*y+1)*cos(2*pi*z+1)
+
+end function truezs
+
+!          --------------
+subroutine update_usermod(phaml_solution)
+!          --------------
+
+use phaml
+use phaml_user_mod
+type(phaml_solution_type), intent(in) :: phaml_solution
+
+integer :: iparam(1)
+real(my_real) :: rparam(1)
+
+iparam(1) = probno
+rparam(1) = 0.0_my_real
+call master_to_slaves(phaml_solution,iparam,rparam)
+probno = iparam(1)
+
+end subroutine update_usermod
+
+!        ---------------------
+function phaml_integral_kernel(kernel,x,y,z)
+!        ---------------------
+
+use phaml
+integer, intent(in) :: kernel
+real(my_real), intent(in) :: x,y,z
+real(my_real) :: phaml_integral_kernel
+
+! Identity function
+
+phaml_integral_kernel = 1.0
+
+end function phaml_integral_kernel
+
+!        ----------
+function regularity(x,y,z)
+!        ----------
+
+use phaml
+real(my_real), intent(in) :: x(*),y(*),z(*)
+real(my_real) :: regularity
+
+! Dummy version, assume infinitely differentiable everywhere.
+
+regularity = huge(0.0_my_real)
+
+end function regularity

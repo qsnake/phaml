@@ -15,21 +15,20 @@ e.g. mg_cycles=50, if running in parallel.
 *) For systems of equations, the L1 sum and L2 sum of the components in the
 graphics is wrong if using high order elements and subelement resolution.
 
-*) The PETSc preconditioners Eisenstat, ICC and ILU generate the PETSc error
-code 56.
-
-*) "make test" with openmpi fails for the interactive tests because mpirun
-is not used (because stdin doesn't get through it) and openmpi requires it.
+*) The PETSc preconditioners ICC and ILU generate the PETSc error code 56.
 
 *) the test suite is not available for SPMD model
 
+*) With Open MPI, the graphics test suite will report the tests failed, even
+   though they succeeded, because mpi_finalize is not called because, for some
+   unknown reason, the master and slaves get stuck in mpi_finalize if graphics
+   is used.
+
 *) BLOPEX can have problems with agressively optimized versions of LAPACK,
 because the optimization can break an invariance property that BLOPEX assumes.
-If you find that "make test what=blopexp" gives results that are significantly
-different from the comparison files, try using "BLAS source LAPACK source"
-when you run mkmkfile.sh.
-
-*) BLOPEX sometimes returns an error code when computing interior eigenvalues.
+If you find that "make test what=slepc" gives results that are significantly
+different from the BLOPEX comparison files, try using "BLAS source LAPACK
+source" when you run mkmkfile.sh.
 
 *) the explicit and equilibrated residual error estimators do not get
 the optimal convergence rate when the cross derivative term cxy is nonzero.
@@ -42,5 +41,8 @@ resize the window with the key off and then toggle it on.
 *) LAM and OpenMP do not work together, because LAM is not thread safe.  Try
 using Open MPI instead of LAM.
 
-*) The interface to SuperLU is way out of date (version 2.0).  Since 2.0 was
-not thread safe, it cannot be used with OpenMP.
+*) isosurface and face transparency requires the drawing primitives be sorted
+from back to front.  To reduce computation time, PHAML sorts the elements
+instead, which may cause some artifacts.  More importantly, it does not
+resort them while the image is rotated, so a sufficiently large rotation
+will destroy the image.  In this case, redraw the image.

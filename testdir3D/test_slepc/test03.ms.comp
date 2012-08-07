@@ -1,0 +1,241 @@
+
+------------------------------------------------------
+          PHAML Version 1.11.0 WARNING
+parallel not yet supported in 3D; setting nproc to 1
+------------------------------------------------------
+
+---------------------------------------------------------
+           PHAML   Version 1.11.0
+
+Output from the master process
+  PDE id is     0
+  Number of slave processors is     1
+  Number of OpenMP threads is       1
+
+Subroutine phaml_solve_pde parameters:
+  max_elem           infinity
+  max_vert           infinity
+  max_eq             infinity
+  max_lev            infinity
+  stop_on_maxlev     false
+  max_deg                    22
+  stop_on_maxdeg     false
+  max_refsolveloop   infinity
+  task               REFINE_ONLY
+  solve_init         true
+  system_size                 1
+  pde_has_first_order_terms  false
+  pde_has_cross_derivative   false
+  laplacian_operator         false
+  isosceles_right_triangles  false
+  print_grid_when    NEVER
+  print_linsys_when  NEVER
+  print_solver_when  NEVER
+  print_error_when   NEVER
+  print_time_when    NEVER
+  print_eval_when    NEVER
+  pause_after_draw   false
+  pause_after_phases false
+  pause_at_start     false
+  pause_at_end       false
+  degree             existing
+  sequential_vert           100
+  inc_factor          2.0000000000E+00
+  error_estimator    HIERARCHICAL_COEFFICIENT
+  errtype            ABSOLUTE_ERROR
+  reftype            H_UNIFORM
+  edge_rule          MINIMUM_RULE
+  refterm            DOUBLE_NEQ
+  derefine           false
+  partition_method   RTK
+  ignore_quad_err    true
+  solver             default
+  preconditioner     default
+  eigensolver        SLEPC_KRYLOV_SCHUR
+  num_eval                    1
+  lambda0            -infinity
+  scale_evec         SCALE_LINF
+  transformation     ST_NONE
+  eigen_ncv          default
+  eigen_maxit        default
+  eigen_tol          1.0000000000E-10
+  harmonic_extraction  false
+  true_residual        false
+---------------------------------------------------------
+
+---------------------------------------------------------
+phaml_solve_pde complete
+
+number of loops through phases =           1
+termination condition:
+  one trip refinement
+---------------------------------------------------------
+---------------------------------------------------------
+           PHAML   Version 1.11.0
+
+Output from the master process
+  PDE id is     0
+  Number of slave processors is     1
+  Number of OpenMP threads is       1
+
+Subroutine phaml_solve_pde parameters:
+  max_elem           infinity
+  max_vert                  500
+  max_eq             infinity
+  max_lev            infinity
+  stop_on_maxlev     false
+  max_deg                    22
+  stop_on_maxdeg     false
+  max_refsolveloop   infinity
+  task               BALANCE_REFINE_SOLVE
+  solve_init         true
+  system_size                 1
+  pde_has_first_order_terms  false
+  pde_has_cross_derivative   false
+  laplacian_operator         false
+  isosceles_right_triangles  false
+  print_grid_when    PHASES
+  print_grid_who     MASTER
+  print_linsys_when  NEVER
+  print_solver_when  PHASES
+  print_solver_who   MASTER
+  print_error_when   NEVER
+  print_time_when    NEVER
+  print_eval_when    PHASES
+  print_eval_who     MASTER
+  pause_after_draw   false
+  pause_after_phases false
+  pause_at_start     false
+  pause_at_end       false
+  degree             existing
+  sequential_vert           100
+  inc_factor          2.0000000000E+00
+  error_estimator    HIERARCHICAL_COEFFICIENT
+  errtype            ABSOLUTE_ERROR
+  reftype            H_ADAPTIVE
+  edge_rule          MINIMUM_RULE
+  refterm            DOUBLE_NEQ
+  derefine           false
+  partition_method   RTK
+  ignore_quad_err    true
+  solver             default
+  preconditioner     default
+  eigensolver        SLEPC_KRYLOV_SCHUR
+  num_eval                    1
+  lambda0             3.5000000000E+01
+  scale_evec         SCALE_LINF
+  transformation     ST_NONE
+  eigen_ncv          default
+  eigen_maxit              200
+  eigen_tol          1.0000000000E-10
+  harmonic_extraction  false
+  true_residual        false
+---------------------------------------------------------
+
+Total Grid:
+   number of vertices      =          38
+   number of leaf elements =          89
+   number of levels        =           4
+   degrees of freedom      =          38
+   min and max degree      =           1          1
+
+Solver information:
+   number of column vectors   =          16
+   maximum iterations allowed =         200
+   number of iterations used  =           1
+   number of converged eigens =           1
+   eigensolver L2 residual    =   1.5428194914E-12
+   eigensolver eval errest    =   9.7344265635E-14
+
+Eigenvalues and error estimates:
+     8.9781598142E+01  2.8333599620E+00
+
+Total Grid:
+   number of vertices      =          89
+   number of leaf elements =         298
+   number of levels        =           6
+   degrees of freedom      =          89
+   min and max degree      =           1          1
+
+Solver information:
+   number of column vectors   =          16
+   maximum iterations allowed =         200
+   number of iterations used  =           4
+   number of converged eigens =           1
+   eigensolver L2 residual    =   3.6768531136E-12
+   eigensolver eval errest    =   1.4774920780E-13
+
+Eigenvalues and error estimates:
+     7.2942602284E+01  2.0142109437E+00
+
+Total Grid:
+   number of vertices      =         155
+   number of leaf elements =         611
+   number of levels        =           7
+   degrees of freedom      =         155
+   min and max degree      =           1          1
+
+Solver information:
+   number of column vectors   =          16
+   maximum iterations allowed =         200
+   number of iterations used  =           6
+   number of converged eigens =           1
+   eigensolver L2 residual    =   4.7600070077E-10
+   eigensolver eval errest    =   3.1024456488E-11
+
+Eigenvalues and error estimates:
+     4.1428706274E+01  1.6209977671E+00
+
+Total Grid:
+   number of vertices      =         314
+   number of leaf elements =        1340
+   number of levels        =           9
+   degrees of freedom      =         314
+   min and max degree      =           1          1
+
+Solver information:
+   number of column vectors   =          16
+   maximum iterations allowed =         200
+   number of iterations used  =          10
+   number of converged eigens =           1
+   eigensolver L2 residual    =   6.7046632599E-09
+   eigensolver eval errest    =   1.8057362256E-10
+
+Eigenvalues and error estimates:
+     4.3293281529E+01  1.1364701682E+00
+
+Total Grid:
+   number of vertices      =         610
+   number of leaf elements =        2893
+   number of levels        =          10
+   degrees of freedom      =         610
+   min and max degree      =           1          1
+
+Solver information:
+   number of column vectors   =          16
+   maximum iterations allowed =         200
+   number of iterations used  =          13
+   number of converged eigens =           1
+   eigensolver L2 residual    =   3.1737444256E-08
+   eigensolver eval errest    =   9.1463782026E-10
+
+Eigenvalues and error estimates:
+     3.3976113697E+01  6.0456043823E-01
+
+Total Grid:
+   number of vertices      =         610
+   number of leaf elements =        2893
+   number of levels        =          10
+   degrees of freedom      =         610
+   min and max degree      =           1          1
+
+Eigenvalues and error estimates:
+     3.3976113697E+01  6.0456043823E-01
+
+---------------------------------------------------------
+phaml_solve_pde complete
+
+number of loops through phases =           4
+termination condition:
+  maximum vertices achieved
+---------------------------------------------------------

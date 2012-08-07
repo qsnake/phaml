@@ -60,6 +60,9 @@ DEFAULT_PHAML_PARALLEL=messpass_spawn
 # (mpi is used for native MPI libraries, as opposed to lam or mpich)
 DEFAULT_PHAML_PARLIB=lam
 
+# Element: triangle tetrahedron
+DEFAULT_PHAML_ELEMENT=triangle
+
 # Graphics: metro mesa none opengl
 DEFAULT_PHAML_GRAPHICS=mesa
 
@@ -69,10 +72,16 @@ DEFAULT_PHAML_BLAS=source
 # LAPACK: atlas compiler source standard vendor
 DEFAULT_PHAML_LAPACK=source
 
+# PETSc: no yes
+DEFAULT_PHAML_PETSC=no
+
+# SLEPc: no yes
+DEFAULT_PHAML_SLEPC=no
+
 # ARPACK: no yes
 DEFAULT_PHAML_ARPACK=no
 
-# BLOPEX: no withhypre withpetsc yes
+# BLOPEX: no yes
 DEFAULT_PHAML_BLOPEX=no
 
 # hypre: no yes
@@ -80,9 +89,6 @@ DEFAULT_PHAML_HYPRE=no
 
 # MUMPS: no yes
 DEFAULT_PHAML_MUMPS=no
-
-# PETSc: no yes
-DEFAULT_PHAML_PETSC=no
 
 # SuperLU: no yes
 DEFAULT_PHAML_SUPERLU=no
@@ -146,6 +152,10 @@ if [ -z $PHAML_PARLIB ]
 then
    PHAML_PARLIB=$DEFAULT_PHAML_PARLIB
 fi
+if [ -z $PHAML_ELEMENT ]
+then
+   PHAML_ELEMENT=$DEFAULT_PHAML_ELEMENT
+fi
 if [ -z $PHAML_GRAPHICS ]
 then
    PHAML_GRAPHICS=$DEFAULT_PHAML_GRAPHICS
@@ -157,6 +167,14 @@ fi
 if [ -z $PHAML_LAPACK ]
 then
    PHAML_LAPACK=$DEFAULT_PHAML_LAPACK
+fi
+if [ -z $PHAML_PETSC ]
+then
+   PHAML_PETSC=$DEFAULT_PHAML_PETSC
+fi
+if [ -z $PHAML_SLEPC ]
+then
+   PHAML_SLEPC=$DEFAULT_PHAML_SLEPC
 fi
 if [ -z $PHAML_ARPACK ]
 then
@@ -173,10 +191,6 @@ fi
 if [ -z $PHAML_MUMPS ]
 then
    PHAML_MUMPS=$DEFAULT_PHAML_MUMPS
-fi
-if [ -z $PHAML_PETSC ]
-then
-   PHAML_PETSC=$DEFAULT_PHAML_PETSC
 fi
 if [ -z $PHAML_SUPERLU ]
 then
@@ -231,15 +245,17 @@ do
       echo "  HASHSIZE 1 2 ($PHAML_HASHSIZE)"
       echo "  PARALLEL messpass_spawn messpass_nospawn openmp hybrid_spawn hybrid_nospawn sequential ($PHAML_PARALLEL)"
       echo "  PARLIB lam mpi mpich mpich2 myrinet openmpi none ($PHAML_PARLIB)"
+      echo "  ELEMENT triangle tetrahedron ($PHAML_ELEMENT)"
       echo "  GRAPHICS metro mesa none opengl ($PHAML_GRAPHICS)"
       echo "  BLAS atlas compiler goto source standard vendor ($PHAML_BLAS)"
       echo "  LAPACK atlas compiler source standard vendor ($PHAML_LAPACK)"
+      echo "  SLEPC no yes ($PHAML_SLEPC)"
       echo "  ARPACK no yes ($PHAML_ARPACK)"
-      echo "  BLOPEX no withpetsc ($PHAML_BLOPEX)"
-      echo "  HYPRE no yes ($PHAML_HYPRE)"
-      echo "  MUMPS no yes ($PHAML_MUMPS)"
+      echo "  BLOPEX no yes ($PHAML_BLOPEX)"
       echo "  PETSC no yes ($PHAML_PETSC)"
+      echo "  MUMPS no yes ($PHAML_MUMPS)"
       echo "  SUPERLU no yes ($PHAML_SUPERLU)"
+      echo "  HYPRE no yes ($PHAML_HYPRE)"
       echo "  ZOLTAN no yes ($PHAML_ZOLTAN)"
       echo "  PARMETIS no yes ($PHAML_PARMETIS)"
       echo "  JOSTLE no yes ($PHAML_JOSTLE)"
@@ -265,15 +281,17 @@ do
       PHAML_HASHSIZE|HASHSIZE) PHAML_HASHSIZE=$val ;;
       PHAML_PARALLEL|PARALLEL) PHAML_PARALLEL=$val ;;
       PHAML_PARLIB|PARLIB) PHAML_PARLIB=$val ;;
+      PHAML_ELEMENT|ELEMENT) PHAML_ELEMENT=$val ;;
       PHAML_GRAPHICS|GRAPHICS) PHAML_GRAPHICS=$val ;;
       PHAML_BLAS|BLAS) PHAML_BLAS=$val ;;
       PHAML_LAPACK|LAPACK) PHAML_LAPACK=$val ;;
+      PHAML_SLEPC|SLEPC) PHAML_SLEPC=$val ;;
       PHAML_ARPACK|ARPACK) PHAML_ARPACK=$val ;;
       PHAML_BLOPEX|BLOPEX) PHAML_BLOPEX=$val ;;
-      PHAML_HYPRE|HYPRE) PHAML_HYPRE=$val ;;
-      PHAML_MUMPS|MUMPS) PHAML_MUMPS=$val ;;
       PHAML_PETSC|PETSC) PHAML_PETSC=$val ;;
+      PHAML_MUMPS|MUMPS) PHAML_MUMPS=$val ;;
       PHAML_SUPERLU|SUPERLU) PHAML_SUPERLU=$val ;;
+      PHAML_HYPRE|HYPRE) PHAML_HYPRE=$val ;;
       PHAML_ZOLTAN|ZOLTAN) PHAML_ZOLTAN=$val ;;
       PHAML_PARMETIS|PARMETIS) PHAML_PARMETIS=$val ;;
       PHAML_JOSTLE|JOSTLE) PHAML_JOSTLE=$val ;;
@@ -337,6 +355,12 @@ case "$PHAML_PARLIB" in
       echo "             use one of lam mpi mpich mpich2 myrinet openmpi none"
       exit 1 ;;
 esac
+case "$PHAML_ELEMENT" in
+   triangle|tetrahedron) ;;
+   *) echo "mkmkfile.sh: $PHAML_ELEMENT is not a valid value for PHAML_ELEMENT"
+      echo "             use one of triangle tetrahedron"
+      exit 1 ;;
+esac
 case "$PHAML_GRAPHICS" in
    metro|mesa|none|opengl) ;;
    *) echo "mkmkfile.sh: $PHAML_GRAPHICS is not a valid value for PHAML_GRAPHICS"
@@ -355,6 +379,12 @@ case "$PHAML_LAPACK" in
       echo "             use one of atlas compiler source standard vendor"
       exit 1 ;;
 esac
+case "$PHAML_SLEPC" in
+   no|yes) ;;
+   *) echo "mkmkfile.sh: $PHAML_SLEPC is not a valid value for PHAML_SLEPC"
+      echo "             use one of no yes"
+      exit 1 ;;
+esac
 case "$PHAML_ARPACK" in
    no|yes) ;;
    *) echo "mkmkfile.sh: $PHAML_ARPACK is not a valid value for PHAML_ARPACK"
@@ -362,20 +392,8 @@ case "$PHAML_ARPACK" in
       exit 1 ;;
 esac
 case "$PHAML_BLOPEX" in
-   no|withpetsc) ;;
+   no|yes) ;;
    *) echo "mkmkfile.sh: $PHAML_BLOPEX is not a valid value for PHAML_BLOPEX"
-      echo "             use one of no withpetsc"
-      exit 1 ;;
-esac
-case "$PHAML_HYPRE" in
-   no|yes) ;;
-   *) echo "mkmkfile.sh: $PHAML_HYPRE is not a valid value for PHAML_HYPRE"
-      echo "             use one of no yes"
-      exit 1 ;;
-esac
-case "$PHAML_MUMPS" in
-   no|yes) ;;
-   *) echo "mkmkfile.sh: $PHAML_MUMPS is not a valid value for PHAML_MUMPS"
       echo "             use one of no yes"
       exit 1 ;;
 esac
@@ -385,9 +403,21 @@ case "$PHAML_PETSC" in
       echo "             use one of no yes"
       exit 1 ;;
 esac
+case "$PHAML_MUMPS" in
+   no|yes|standalone) ;;
+   *) echo "mkmkfile.sh: $PHAML_MUMPS is not a valid value for PHAML_MUMPS"
+      echo "             use one of no yes"
+      exit 1 ;;
+esac
 case "$PHAML_SUPERLU" in
    no|yes) ;;
    *) echo "mkmkfile.sh: $PHAML_SUPERLU is not a valid value for PHAML_SUPERLU"
+      echo "             use one of no yes"
+      exit 1 ;;
+esac
+case "$PHAML_HYPRE" in
+   no|yes) ;;
+   *) echo "mkmkfile.sh: $PHAML_HYPRE is not a valid value for PHAML_HYPRE"
       echo "             use one of no yes"
       exit 1 ;;
 esac
@@ -485,16 +515,6 @@ then
       echo "mkmkfile.sh: hypre requires an MPI library"
       exit 1
    fi
-   if [ $PHAML_PETSC != "no" ]
-   then
-      echo "mkmkfile.sh: PetSC requires an MPI library"
-      exit 1
-   fi
-   if [ $PHAML_SUPERLU != "no" ]
-   then
-      echo "mkmkfile.sh: SuperLU requires an MPI library"
-      exit 1
-   fi
    if [ $PHAML_ZOLTAN != "no" ]
    then
       echo "mkmkfile.sh: Zoltan requires an MPI library"
@@ -502,27 +522,9 @@ then
    fi
 fi
 
-if [ $PHAML_BLOPEX == "yes" -a $PHAML_HYPRE == "yes" ]
+if [ $PHAML_SLEPC == "yes" -a $PHAML_PETSC == "no" ]
 then
-   echo "mkmkfile.sh: BLOPEX==yes requires HYPRE==no"
-   exit 1
-fi
-
-if [ $PHAML_BLOPEX == "withpetsc" -a $PHAML_HYPRE == "yes" ]
-then
-   echo "mkmkfile.sh: BLOPEX==withpetsc requires HYPRE==no"
-   exit 1
-fi
-
-if [ $PHAML_BLOPEX == "withhypre" -a $PHAML_HYPRE == "no" ]
-then
-   echo "mkmkfile.sh: BLOPEX==withhypre requires HYPRE==yes"
-   exit 1
-fi
-
-if [ $PHAML_BLOPEX == "withpetsc" -a $PHAML_PETSC == "no" ]
-then
-   echo "mkmkfile.sh: BLOPEX==withpetsc requires PETSC==yes"
+   echo "mkmkfile.sh: SLEPC==yes requires PETSC==yes"
    exit 1
 fi
 
@@ -612,7 +614,7 @@ case "$PHAML_F90" in
       CPUSEC=cpusec_f95.f90
       CPUSEC_COMP='$(F90) $(FFLAGS)' ;;
 
-# g95 (GCC 4.0.3 (g95 0.92!) Jun 24 2009)
+# g95 Stable version 0.92, June 2009
 
    g95)
       F90=g95
@@ -630,7 +632,7 @@ case "$PHAML_F90" in
       CPUSEC=cpusec_f95.f90
       CPUSEC_COMP='$(F90) $(FFLAGS)' ;;
 
-# GNU Fortran 95 4.5.0 20091223
+# GNU Fortran (GCC) 4.7.2 20120630 (prerelease)
 
    gfortran)
       F90=gfortran
@@ -648,13 +650,13 @@ case "$PHAML_F90" in
       CPUSEC=cpusec_f95.f90
       CPUSEC_COMP='$(F90) $(FFLAGS)' ;;
 
-# Intel Fortran 11.1.069
+# Intel Fortran 12.1 update 11
 
    intel)
       F90=ifort
       FFLAGS="-O -w"
       LINKER=$F90
-      LINKFLAGS=
+      LINKFLAGS=-w
       case "$PHAML_PARALLEL" in
          openmp|hybrid_spawn|hybrid_nospawn)
             FFLAGS="$FFLAGS -openmp"
@@ -683,7 +685,7 @@ case "$PHAML_F90" in
       CPUSEC=cpusec_f95.f90
       CPUSEC_COMP='$(F90) $(FFLAGS)' ;;
 
-# NAGWare Fortran 95 Release 5.2(718)
+# NAGWare Fortran 95 Release 5.3 (887)
 
    nag)
       F90=nagfor
@@ -820,7 +822,7 @@ case "$PHAML_C" in
             CFLAGS=-O ;;
       esac ;;
 
-# GCC 4.5.0 20091205
+# GCC 4.7.2 20120630 (prerelease)
 
    gcc)
       CC=gcc
@@ -885,7 +887,7 @@ case "$PHAML_PARLIB" in
       MESSPASSLIBS='-L$(MPICH_HOME)/lib -lpmpich -lmpich -L/home/pozo/MYRICOM/gm-1.2.3/binary/lib -lgm'
       MESSPASSPACK='mpipack1.o mpipack2.o' ;;
 
-# Open MPI 1.3.3
+# Open MPI 1.4-4
 
    openmpi)
 
@@ -926,7 +928,7 @@ case "$PHAML_GRAPHICS" in
       OGLMODS="$MODFLAG"'$(OPENGL_HOME)/include/GL'
       OGLLIBS='-L$(OPENGL_HOME)/lib -L/usr/X11R6/lib -lf90glut -lf90GLU -lf90GL -lglut -lGLU -lGL' ;;
 
-# Mesa 7.4.4, Glut MesaGLUT 7.4.4, f90gl 1.2.15
+# Mesa 7.8.2, Glut MesaGLUT 7.8.2, f90gl 1.2.15
 
    mesa)
       OGLMODS="$MODFLAG"'$(MESA_HOME)/'"$PHAML_F90/include/GL"
@@ -951,7 +953,7 @@ case "$PHAML_GRAPHICS" in
 
 esac
 
-# Zoltan 3.2
+# Zoltan 3.3
 
 # As of version 3.2 (or maybe 3.1) only one library is needed.  Select the
 # correct form.
@@ -962,7 +964,7 @@ ZOLTANLIB='-L$(ZOLTAN_HOME)'"/$PHAML_F90/$PHAML_PARLIB/lib -lzoltan"
 ZOLTANMOD="$MODFLAG"'$(ZOLTAN_HOME)'"/$PHAML_F90/$PHAML_PARLIB/include"
 ZOLTANINC='-I$(ZOLTAN_HOME)/include -I$(ZOLTAN_HOME)/Utilities/Communication -I$(ZOLTAN_HOME)/Utilities/Memory -I$(ZOLTAN_HOME)/Utilities/DDirectory'
 
-# ParMETIS 3.1.0
+# ParMETIS 3.1 from Zoltan 3.3
 
 PARMETISLIB='-L$(PARMETIS_HOME)'"/$PHAML_PARLIB/lib -lparmetis -lmetis"
 
@@ -995,7 +997,7 @@ case "$PHAML_ARPACK" in
       then
          ARPACKLIBS='-L$(ARPACK_HOME)/'"$PHAML_F90/$PHAML_PARLIB/lib -larpack"
       else
-         ARPACKLIBS='-L$(ARPACK_HOME)/'"$PHAML_F90/$PHAML_PARLIB/lib -larpack -lparpack"
+         ARPACKLIBS='-L$(ARPACK_HOME)/'"$PHAML_F90/$PHAML_PARLIB/lib -lparpack -larpack"
       fi ;;
 
    no)
@@ -1004,53 +1006,6 @@ case "$PHAML_ARPACK" in
 # invalid value for PHAML_ARPACK
 
    *) echo "mkmkfile.sh: $PHAML_ARPACK is not a valid value for PHAML_ARPACK"
-      exit 1 ;;
-
-esac
-
-case "$PHAML_BLOPEX" in
-
-# BLOPEX no version number
-
-# stand alone BLOPEX
-
-   yes)
-      echo "mkmkfile.sh: BLOPEX is currently only supported via PETSc"
-      exit 1
-      BLOPEXINC=
-      BLOPEXLIBS= ;;
-
-# BLOPEX as an external package to PETSc.  The BLOPEX include files lobpcg.h,
-# interpreter.h, multivector.h, and petsc-interface.h can be found
-# in $PETSC_DIR/externalpackages/blopex_abstract/[krylov,multivector]
-# and $PETSC_DIR/src/contrib/blopex/petsc-interface.  The BLOPEX library is
-# also under blopex_abstract somewhere.  I relocate these to the PETSc
-# include and lib directories.
-
-# NOTE: BLOPEX version 1.1 required some major changes to src/blopex_c.petsc.c.
-#       You should make blopex_c.petsc.c be a symbolic link to either
-#       blopex_c.petsc.1.0.c or blopex_c.petsc.1.1.c depending on your version
-#       of BLOPEX.  If your PETSc is newer than version 3.1 then you probably
-#       have BLOPEX 1.1.  In any case, you will get a compilation error if you
-#       use the wrong one.
-
-   withpetsc)
-      BLOPEXINC='-I$(PETSC_HOME)/'"$PHAML_F90/$PHAML_PARLIB"'/include'
-      BLOPEXLIBS='-L$(PETSC_HOME)/'"$PHAML_F90/$PHAML_PARLIB"'/lib -lBLOPEX' ;;
-
-# included with hypre
-
-   withhypre)
-      echo "mkmkfile.sh: BLOPEX is currently only supported via PETSc"
-      exit 1
-      BLOPEXINC=
-      BLOPEXLIBS= ;;
-
-   no)
-      BLOPEXINC=
-      BLOPEXLIBS= ;;
-
-   *) echo "mkmkfile.sh: $PHAML_BLOPEX is not a valid value for PHAML_BLOPEX"
       exit 1 ;;
 
 esac
@@ -1071,7 +1026,9 @@ case "$PHAML_BLAS" in
          lahey)
             BLASLIBS='-L$(LAHEY_HOME)/lib -lblasmt' ;;
          intel)
-            BLASLIBS='-L$(MKL_HOME) -lmkl_intel -lmkl_intel_thread -lmkl_core -liomp5 -lpthread' ;;
+# or use mkl=sequential for nonthreaded library; pthread is to avoid blas source
+            LINKFLAGS="$LINKFLAGS -mkl"
+            BLASLIBS='-lpthread' ;;
          *)
             BLASLIBS='-L/usr/lib -lblas' ;;
       esac ;;
@@ -1094,14 +1051,14 @@ case "$PHAML_BLAS" in
    vendor)
       case "$PHAML_ARCH" in
          x86)
-# MKL 11.1.046 supports intel and gfortran; otherwise use source
+# MKL 11.1.046 supports intel, gfortran and absoft; otherwise use source
             if [ $PHAML_F90 = "intel" ]
             then
-               BLASLIBS='-L$(MKL_HOME) -lmkl_intel -lmkl_intel_thread -lmkl_core -liomp5 -lpthread'
+               BLASLIBS='-L$(MKL_HOME) -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -liomp5'
             else
-               if [ $PHAML_F90 = "gfortran" ]
+               if [ $PHAML_F90 = "gfortran" -o $PHAML_F90 = "absoft" ]
                then
-                  BLASLIBS='-L$(MKL_HOME) -lmkl_gf -lmkl_gnu_thread -lmkl_core -liomp5 -lpthread'
+                  BLASLIBS='-L$(MKL_HOME) -lmkl_gf_lp64 -lmkl_sequential -lmkl_core'
                else
                   BLASLIBS=
                fi
@@ -1144,7 +1101,8 @@ case "$PHAML_LAPACK" in
             then
                LAPACKLIBS='-lpthread'
             else
-               LAPACKLIBS='-L$(MKL_HOME) -lmkl_intel -lmkl_intel_thread -lmkl_core -liomp5 -lpthread'
+               LINKFLAGS="$LINKFLAGS -mkl"
+               LAPACKLIBS='-lpthread'
             fi ;;
          *)
             LAPACKLIBS='-L/usr/lib -llapack' ;;
@@ -1171,11 +1129,11 @@ case "$PHAML_LAPACK" in
             else
                if [ $PHAML_F90 = "intel" ]
                then
-                  LAPACKLIBS='-L$(MKL_HOME) -lmkl_intel -lmkl_intel_thread -lmkl_core -liomp5 -lpthread'
+                  LAPACKLIBS='-L$(MKL_HOME) -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -liomp5'
                else
-                  if [ $PHAML_F90 = "gfortran" ]
+                  if [ $PHAML_F90 = "gfortran" -o $PHAML_F90 = "absoft" ]
                   then
-                     LAPACKLIBS='-L$(MKL_HOME) -lmkl_gf -lmkl_gnu_thread -lmkl_core -liomp5 -lpthread'
+                     LAPACKLIBS='-L$(MKL_HOME) -lmkl_gf_lp64 -lmkl_sequential -lmkl_core'
                   else
                      LAPACKLIBS=
                   fi
@@ -1196,9 +1154,9 @@ case "$PHAML_LAPACK" in
 
 esac
 
-# PETSc 3.0.0 (Versions before 2.3.1 may need changes in petsc_init.F90 and
-#              petsc_interf.F90.  Search for "before" to find them.  Also,
-#              select the right one for PETSCLIBS right here.)
+# PETSc 3.2-p5 (Versions before 2.3.1 may need changes in petsc_init.F90 and
+#               petsc_interf.F90.  Search for "before" to find them.  Also,
+#               select the right one for PETSCLIBS right here.)
 
 case "$PHAML_PETSC" in
 
@@ -1213,15 +1171,57 @@ case "$PHAML_PETSC" in
 # that, then you'll want this version
       PETSCLIBS='-L$(PETSC_HOME)/'"$PHAML_F90/$PHAML_PARLIB"'/lib -lpetsc'
 
-# PETSc version 3.0.0 and later only need the first include directory, but
-# I still have some older versions on some machines
-      PETSCINC='-I$(PETSC_HOME)/'"$PHAML_F90/$PHAML_PARLIB"'/include -I$(PETSC_HOME)/'"$PHAML_F90/$PHAML_PARLIB"'/bmake/$(PETSC_ARCH) -I$(PETSC_HOME)/'"$PHAML_F90/$PHAML_PARLIB $MESSPASSINC" ;;
+# PETSc before version 3.0.0 needed more include directories than new versions
+#      PETSCINC='-I$(PETSC_HOME)/'"$PHAML_F90/$PHAML_PARLIB"'/include -I$(PETSC_HOME)/'"$PHAML_F90/$PHAML_PARLIB"'/bmake/$(PETSC_ARCH) -I$(PETSC_HOME)/'"$PHAML_F90/$PHAML_PARLIB $MESSPASSINC" ;;
+
+      PETSCINC='-I$(PETSC_HOME)/'"$PHAML_F90/$PHAML_PARLIB"'/include -I$(PETSC_HOME)/'"$PHAML_F90/$PHAML_PARLIB $MESSPASSINC"
+      if [ $PHAML_PARALLEL = "sequential" -o $PHAML_PARALLEL = "openmp" ]
+      then
+         PETSCINC="$PETSCINC "'-I$(PETSC_HOME)/'"$PHAML_F90/$PHAML_PARLIB"'/include/mpiuni'
+      fi ;;
 
    no)
       PETSCLIBS=
       PETSCINC= ;;
 
    *) echo "mkmkfile.sh: $PHAML_PETSC is not a valid value for PHAML_PETSC"
+      exit 1 ;;
+
+esac
+
+# SLEPc 3.2-p5
+
+case "$PHAML_SLEPC" in
+
+   yes)
+      SLEPCLIBS='-L$(SLEPC_HOME)/'"$PHAML_F90/$PHAML_PARLIB"'/lib -lslepc'
+      SLEPCINC='-I$(SLEPC_HOME)/'"$PHAML_F90/$PHAML_PARLIB"'/include'
+      if [ $PHAML_BLOPEX = "yes" ]
+      then
+         SLEPCLIBS="$SLEPCLIBS -lBLOPEX"
+      fi
+
+# TEMP SLEPc 3.2-p3 does not distinguish between calling the parpack routines
+#      and the arpack routines when SLEPc is compiled sequentially.  So I have
+#      parpack.dum.f call the arpack routines and compile it into the phaml
+#      library if ARPACK is included in a sequential build.  But, since
+#      libphaml is linked before libslepc, the linker still gets unresolved
+#      references to the parpack routines.  So I need to link libphaml again
+#      after libslepc.
+
+      if [ $PHAML_ARPACK = "yes" ]
+      then
+         if [ $PHAML_PARALLEL = "sequential" -o $PHAML_PARALLEL = "openmp" ]
+         then
+            SLEPCLIBS="$SLEPCLIBS -lphaml"
+         fi
+      fi ;;
+
+   no)
+      SLEPCLIBS=
+      SLEPCINC= ;;
+
+   *) echo "mkmkfile.sh: $PHAML_SLEPC is not a valid value for PHAML_SLEPC"
       exit 1 ;;
 
 esac
@@ -1250,55 +1250,69 @@ case "$PHAML_HYPRE" in
 
 esac
 
-# BLACS 1.1 patch 3 (needed for MUMPS)
-
-BLACSLIB='-L$(BLACS_HOME)/'"$PHAML_F90/$PHAML_PARLIB/lib -lblacs -lblacsF77init -lblacs"
-
-# SCALAPACK 1.8 (needed for MUMPS)
-
-SCALAPACKLIB='-L$(SCALAPACK_HOME)/'"$PHAML_F90/$PHAML_PARLIB/lib -lscalapack"
-
-# MUMPS 4.9.2
+# MUMPS 4.10.0
 
 case "$PHAML_MUMPS" in
 
    yes)
 
-# sometime between versions 4.7.3 and 4.9 they added libmumps_common.  Pick
-# the right form.
-#      MUMPSLIB='-L$(MUMPS_HOME)/'"$PHAML_F90/$PHAML_PARLIB/lib -ldmumps -lpord"
-      MUMPSLIB='-L$(MUMPS_HOME)/'"$PHAML_F90/$PHAML_PARLIB/lib -ldmumps -lmumps_common -lpord"
-# the sequential version of MUMPS does not need BLACS and SCALAPACK, but
-# does need MUMPS sequential replacement for MPI and pthread
+# For sequential PETSc, I used --with-mumps-dir and my own compiled MUMPS lib
+
       if [ $PHAML_PARALLEL = "sequential" -o $PHAML_PARALLEL = "openmp" ]
       then
-         MUMPSLIBS="$MUMPSLIB -lmpiseq -lpthread"
+         MUMPSLIBS='-L$(MUMPS_HOME)/'"$PHAML_F90/$PHAML_PARLIB/lib -ldmumps -lmumps_common -lpord -lmpiseq"
       else
-         MUMPSLIBS="$MUMPSLIB $SCALAPACKLIB $BLACSLIB"
-      fi
-      MUMPSINC='-I$(MUMPS_HOME)/'"$PHAML_F90/$PHAML_PARLIB/include" ;;
+
+# For parallel PETSc, I used the --download approach to adding MUMPS support
+# to PETSc.  This places these libraries in the PETSc library directory, and
+# since these follow PETSc in the Makefile I don't need to give the directory
+# here.  If you are using separately compiled MUMPS, SCALAPACK, BLACS and/or
+# ParMETIS then you might need to specify some directory(s).
+
+# if SUPERLU or ZOLTAN/PARMETIS is included, delay linking ParMETIS
+
+         if [ $PHAML_SUPERLU = "yes" -o $PHAML_PARMETIS = "yes" ]
+         then
+            MUMPSLIBS='-ldmumps -lmumps_common -lpord -lscalapack -lblacs'
+         else
+            MUMPSLIBS='-ldmumps -lmumps_common -lpord -lscalapack -lblacs -lparmetis -lmetis'
+         fi
+
+      fi ;;
 
    no)
-      MUMPSLIBS=
-      MUMPSINC= ;;
+      MUMPSLIBS= ;;
 
    *) echo "mkmkfile.sh: $PHAML_MUMPS is not a valid value for PHAML_MUMPS"
       exit 1 ;;
 
 esac
 
-# SuperLU 2.0
+# SuperLU installed with PETSc.  I used the --download approach.  If you
+# compiled it separately, you might have to add directories here.
 
 case "$PHAML_SUPERLU" in
 
    yes)
 
-      SUPERLULIBS='-L$(SUPERLU_HOME)/'"$PHAML_F90/$PHAML_PARLIB/lib -lsuperlu"
-      SUPERLUINC='-I$(SUPERLU_HOME)/'"$PHAML_F90/$PHAML_PARLIB/include" ;;
+      if [ $PHAML_PARALLEL = "sequential" -o $PHAML_PARALLEL = "openmp" ]
+      then
+         SUPERLULIBS="-lsuperlu"
+
+      else
+# if ZOLTAN/PARMETIS is included, delay linking ParMETIS
+
+         if [ $PHAML_PARMETIS = "yes" ]
+         then
+            SUPERLULIBS="-lsuperlu_dist"
+         else
+            SUPERLULIBS="-lsuperlu_dist -lparmetis -lmetis"
+         fi
+
+      fi ;;
 
    no)
-      SUPERLULIBS=
-      SUPERLUINC= ;;
+      SUPERLULIBS= ;;
 
    *) echo "mkmkfile.sh: $PHAML_SUPERLU is not a valid value for PHAML_SUPERLU"
       exit 1 ;;
@@ -1348,7 +1362,11 @@ case "$PHAML_SYSTEM" in
          fi
          if [ $PHAML_BLAS = "standard" -o $PHAML_LAPACK = "standard" ]
          then
-            OTHERLIBS="$OTHERLIBS -L/usr/lib/gcc/x86_64-redhat-linux/3.4.3 -lg2c"
+            OTHERLIBS="$OTHERLIBS -L/usr/lib/gcc/x86_64-redhat-linux/3.4.6 -lg2c"
+         fi
+         if [ $PHAML_BLAS = "vendor" ]
+         then
+            BLASLIBS='-L$(MKL_HOME) -lmkl_core -lmkl_intel_lp64 -lmkl_intel_thread -liomp5 -lpthread'
          fi
       ;;
 
@@ -1388,10 +1406,62 @@ case "$PHAML_SYSTEM" in
    pepe)
 
 # ARPACK needs etime, which can be obtained from libg2c
+# That was before I used ARPACK with SLEPc; test if I still need this.
+# Also, that line causes problems with my own gfortran 4.7.
 
-      if [ $PHAML_ARPACK = "yes" ]
+#      if [ $PHAML_ARPACK = "yes" ]
+#      then
+#         OTHERLIBS="$OTHERLIBS -L/usr/lib/gcc/x86_64-redhat-linux/3.4.6 -lg2c"
+#      fi;;
+
+# Because I don't have the nagfor script in /usr/local/bin, I need to use Qpath
+
+      if [ $PHAML_F90 = "nag" ]
       then
-         OTHERLIBS="$OTHERLIBS -L/usr/lib/gcc/x86_64-redhat-linux/3.4.6 -lg2c"
+         FFLAGS="$FFLAGS -Qpath /local/apps/nag/lib/NAG_Fortran"
+         LINKFLAGS="$LINKFLAGS -Qpath /local/apps/nag/lib/NAG_Fortran"
+
+# nagfor quits on the -m64 and -pthread flags in the LAM and Open MPI compiler
+# wrappers.  So don't use the wrappers and put all the other flags shown by
+# --showme into the flags.  Also add two -W flags that pass -m64 to gcc.
+
+         if [ $PHAML_PARLIB = "lam" ]
+         then
+            FFLAGS="$FFLAGS -I/usr/lib64/lam/include -I/usr/lib64/lam/include/64 -L/usr/lib64/lam/lib -llammpio -llamf77mpi -lmpi -llam -laio -laio -lutil -ldl -Wc,-m64 -Wl,-m64"
+            LINKFLAGS="$LINKFLAGS -I/usr/lib64/lam/include -I/usr/lib64/lam/include/64 -L/usr/lib64/lam/lib -llammpio -llamf77mpi -lmpi -llam -laio -laio -lutil -ldl -Wc,-m64 -Wl,-m64"
+            F90="nagfor"
+            LINKER="nagfor"
+         fi
+
+         if [ $PHAML_PARLIB = "openmpi" ]
+         then
+            FFLAGS="$FFLAGS -I/usr/lib64/openmpi/1.4-gcc/include -I/usr/lib64/openmpi/1.4-gcc/lib -L/usr/lib64/openmpi/1.4-gcc/lib -lmpi_f90 -lmpi_f77 -lmpi -lopen-rte -lopen-pal -ldl -Wl,--export-dynamic -lnsl -lutil -lm -ldl -Wc,-m64 -Wl,-m64"
+            LINKFLAGS="$LINKFLAGS -I/usr/lib64/openmpi/1.4-gcc/include -I/usr/lib64/openmpi/1.4-gcc/lib -L/usr/lib64/openmpi/1.4-gcc/lib -lmpi_f90 -lmpi_f77 -lmpi -lopen-rte -lopen-pal -ldl -Wl,--export-dynamic -lnsl -lutil -lm -ldl -Wc,-m64 -Wl,-m64"
+            F90="nagfor"
+            LINKER="nagfor"
+         fi
+
+# nagfor with PETSc fails to find some MPI routines, because the MPI libraries
+# in LINKFLAGS occur before the PETSc libraries, so add LINKFLAGS to the end
+# of OTHERLIBS.  Do this without a PETSc condition because it is possible it
+# could happen without PETSc, too.
+
+         OTHERLIBS="$OTHERLIBS "'$(LINKFLAGS)'
+
+      fi
+
+# The Absoft compiler needs libU77 for flush and system
+
+      if [ $PHAML_F90 = "absoft" ]
+      then
+         OTHERLIBS="$OTHERLIBS -lU77"
+      fi
+
+# gfortran 4.7 is not finding it's own libquadmath
+
+      if [ $PHAML_F90 = "gfortran" ]
+      then
+         OTHERLIBS="$OTHERLIBS -L/local/apps/gfortran/lib64 -lquadmath"
       fi;;
 
 ########
@@ -1474,6 +1544,11 @@ then
    esac
 fi
 
+if [ $PHAML_PETSC = "yes" ]
+then
+   PHAML_GETS_GRAPHICSLIBS='yes'
+fi
+
 ##############################################################################
 
 # You should not have to change anything below here.
@@ -1489,15 +1564,17 @@ export PHAML_C
 export PHAML_HASHSIZE
 export PHAML_PARALLEL
 export PHAML_PARLIB
+export PHAML_ELEMENT
 export PHAML_GRAPHICS
 export PHAML_BLAS
 export PHAML_LAPACK
+export PHAML_SLEPC
 export PHAML_ARPACK
 export PHAML_BLOPEX
-export PHAML_HYPRE
-export PHAML_MUMPS
 export PHAML_PETSC
+export PHAML_MUMPS
 export PHAML_SUPERLU
+export PHAML_HYPRE
 export PHAML_SYSTEM
 export PHAML_ZOLTAN
 export PHAML_PARMETIS
@@ -1524,21 +1601,19 @@ export XLIBS
 export LAPACKLIBS
 export BLASLIBS
 export ZOLTANLIBS
+export SLEPCLIBS
 export ARPACKLIBS
-export BLOPEXINC
-export BLOPEXLIBS
 export PETSCLIBS
-export HYPRELIBS
 export MUMPSLIBS
 export SUPERLULIBS
+export HYPRELIBS
 export OTHERLIBS
 export PHAML_GETS_GRAPHICSLIBS
 export ZOLTANMOD
 export ZOLTANINC
 export OGLMODS
+export SLEPCINC
 export PETSCINC
-export MUMPSINC
-export SUPERLUINC
 export MESSPASSINC
 export RUNMPI
 export CPUSEC
@@ -1552,11 +1627,22 @@ echo "make makefile for src"
 cd src
 ./mkmkfile.sh
 
-echo "make makefile for testdir"
-cd ../testdir
+case "$PHAML_ELEMENT" in
+   triangle)
+      echo "make makefile for testdir"
+      cd ../testdir ;;
+   tetrahedron)
+      echo "make makefile for testdir3D"
+      cd ../testdir3D ;;
+esac
 ./mkmkfile.sh
 
-cd ../examples
+case "$PHAML_ELEMENT" in
+   triangle)
+      cd ../examples ;;
+   tetrahedron)
+      cd ../examples3D ;;
+esac
 for dir in `ls`
 do
    echo "make makefile for $dir"
@@ -1605,15 +1691,17 @@ echo "#   C compiler:       " $PHAML_C 1>>$f
 echo "#   Hash size:        " $PHAML_HASHSIZE 1>>$f
 echo "#   Parallel form:    " $PHAML_PARALLEL 1>>$f
 echo "#   Parallel library: " $PHAML_PARLIB 1>>$f
+echo "#   Element:          " $PHAML_ELEMENT 1>>$f
 echo "#   Graphics:         " $PHAML_GRAPHICS 1>>$f
 echo "#   BLAS:             " $PHAML_BLAS 1>>$f
 echo "#   LAPACK:           " $PHAML_LAPACK 1>>$f
+echo "#   SLEPc:            " $PHAML_SLEPC 1>>$f
 echo "#   ARPACK:           " $PHAML_ARPACK 1>>$f
 echo "#   BLOPEX:           " $PHAML_BLOPEX 1>>$f
-echo "#   hypre:            " $PHAML_HYPRE 1>>$f
-echo "#   MUMPS:            " $PHAML_MUMPS 1>>$f
 echo "#   PETSc:            " $PHAML_PETSC 1>>$f
+echo "#   MUMPS:            " $PHAML_MUMPS 1>>$f
 echo "#   SUPERLU:          " $PHAML_SUPERLU 1>>$f
+echo "#   hypre:            " $PHAML_HYPRE 1>>$f
 echo "#   Zoltan:           " $PHAML_ZOLTAN 1>>$f
 echo "#   ParMETIS:         " $PHAML_PARMETIS 1>>$f
 echo "#   JOSTLE:           " $PHAML_JOSTLE 1>>$f
@@ -1630,30 +1718,60 @@ echo "" 1>>$f
 
 echo "clean:" 1>>$f
 echo "	cd src; make clean" 1>>$f
-echo "	cd testdir; make clean" 1>>$f
+case "$PHAML_ELEMENT" in
+   triangle)
+echo "	cd testdir; make clean" 1>>$f ;;
+   tetrahedron)
+echo "	cd testdir3D; make clean" 1>>$f ;;
+esac
+case "$PHAML_ELEMENT" in
+   triangle)
 for dir in `ls examples`
 do
 echo "	cd examples/$dir; make clean" 1>>$f
-done
+done ;;
+   tetrahedron)
+for dir in `ls examples3D`
+do
+echo "	cd examples3D/$dir; make clean" 1>>$f
+done ;;
+esac
 echo "" 1>>$f
 
 echo "reallyclean:" 1>>$f
 echo "	cd src; make clean" 1>>$f
-echo "	cd testdir; make reallyclean" 1>>$f
+case "$PHAML_ELEMENT" in
+   triangle)
+echo "	cd testdir; make reallyclean" 1>>$f ;;
+   tetrahedron)
+echo "	cd testdir3D; make reallyclean" 1>>$f ;;
+esac
+case "$PHAML_ELEMENT" in
+   triangle)
 for dir in `ls examples`
 do
 echo "	cd examples/$dir; make clean" 1>>$f
-done
+echo "	cd examples/$dir; rm -f Makefile Makefile.bak" 1>>$f
+done ;;
+   tetrahedron)
+for dir in `ls examples3D`
+do
+echo "	cd examples3D/$dir; make clean" 1>>$f
+echo "	cd examples3D/$dir; rm -f Makefile Makefile.bak" 1>>$f
+done ;;
+esac
 echo "	rm -f lib/*" 1>>$f
 echo "	rm -f modules/*" 1>>$f
 echo "	cd src; rm -f Makefile Makefile.bak" 1>>$f
 echo "	cd testdir; rm -f Makefile Makefile.bak" 1>>$f
-for dir in `ls examples`
-do
-echo "	cd examples/$dir; rm -f Makefile Makefile.bak" 1>>$f
-done
+echo "	cd testdir3D; rm -f Makefile Makefile.bak" 1>>$f
 echo "" 1>>$f
 
 echo "test:" 1>>$f
-echo '	cd testdir; make test what=$(what)' 1>>$f
+case "$PHAML_ELEMENT" in
+   triangle)
+echo '	cd testdir; make test what=$(what)' 1>>$f ;;
+   tetrahedron)
+echo '	cd testdir3D; make test what=$(what)' 1>>$f ;;
+esac
 echo "" 1>>$f

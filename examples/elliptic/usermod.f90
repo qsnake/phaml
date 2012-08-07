@@ -45,7 +45,7 @@ implicit none
 
 ! Set choice to determine which problem to solve
 
-integer, parameter :: choice = 6
+integer, parameter :: choice = 15
 
 ! The choices are:
 !  1) Laplace, solution x+y

@@ -47,21 +47,6 @@ public init_grid
 
 interface
 
-   function trues(x,y,comp,eigen) ! real (my_real)
-   use global
-   real (my_real), intent(in) :: x,y
-   integer, intent(in) :: comp, eigen
-   real (my_real) :: trues
-   end function trues
-
-   subroutine bconds(x,y,bmark,itype,c,rs)
-   use global
-   real(my_real), intent(in) :: x,y
-   integer, intent(in) :: bmark
-   integer, intent(out) :: itype(:)
-   real(my_real), intent(out) :: c(:,:),rs(:)
-   end subroutine bconds
-
    subroutine boundary_point(ipiece,s,x,y)
    use global
    integer, intent(in) :: ipiece
@@ -150,13 +135,6 @@ endif
 
 call read_triangle_data(grid,td)
 
-! included master for creating triangle data files and checking on opening
-! triangle data files, but don't generate a grid for the master
-
-if (my_proc(procs) == MASTER) then
-   return
-endif
-
 ! space for PERIODIC_MASTER vertex for PERIODIC_SLAVEs
 ! include space for the vertices created by refinement to create the initial
 ! grid.  3*td%nvert should be sufficient; use 4 to be sure.
@@ -191,6 +169,14 @@ call pair_triangles(td,mate,NO_MATE)
 
 call refine_start(grid,td,mate,elemedge_bmark,NO_MATE)
 
+! Match up periodic vertices and initialize vertex type to a form of
+! PERIODIC or INTERIOR
+
+! Some of this section is legacy, from when I had a doubly linked list of
+! vertices on each level.  We no longer have that list, and only use "next"
+! for periodic masters and slaves to point at each other.
+!
+! This is what I used to do:
 ! Set the vertex linked list.
 ! Need to do vertices on sides that have periodic boundary conditions first so
 ! that next(PERIODIC_SLAVE) = PERIODIC_MASTER.
@@ -208,25 +194,22 @@ call refine_start(grid,td,mate,elemedge_bmark,NO_MATE)
 !   nonpeak, periodic
 !   nonpeak, nonperiodic
 ! Also set vertex type to a form of PERIODIC or INTERIOR as an initialization.
+!
+! Now I still go through the vertices in the same order, but only set next
+! for periodic points.  And set next for the master to be the slave, instead
+! of what used to be next in the linked list.  In the case of doubly periodic
+! conditions, the master points back to the first slave in a cycle.
 
-grid%head_level_vert(1) = END_OF_LIST
+grid%vertex_type(1:grid%nvert,:) = INTERIOR
+
 do i=td%nvert+1,grid%nvert
    if (td%vert_master(i) /= NO_MATE .and. &
        td%vert_master(i) /= NO_MATE-1) then
-      grid%vertex(td%vert_master(i))%next = grid%head_level_vert(1)
+      grid%vertex(td%vert_master(i))%next = i
       grid%vertex(i)%next = td%vert_master(i)
-      grid%head_level_vert(1) = i
       grid%vertex_type(i,:) = PERIODIC_SLAVE
       grid%vertex_type(td%vert_master(i),:) = PERIODIC_MASTER
       td%vert_master(td%vert_master(i)) = NO_MATE-1
-   endif
-end do
-
-do i=td%nvert+1,grid%nvert
-   if (td%vert_master(i) == NO_MATE) then
-      grid%vertex(i)%next = grid%head_level_vert(1)
-      grid%head_level_vert(1) = i
-      grid%vertex_type(i,:) = INTERIOR
    endif
 end do
 
@@ -266,7 +249,7 @@ do i=1,td%nvert
          endif
       end do
 ! insert them in the list
-      grid%vertex(doubly(ndoubly))%next = grid%head_level_vert(1)
+      grid%vertex(doubly(ndoubly))%next = doubly(1)
       grid%vertex_type(doubly(ndoubly),:) = PERIODIC_MASTER
       td%vert_master(doubly(j)) = NO_MATE-1
       do j=ndoubly-1,1,-1
@@ -274,36 +257,18 @@ do i=1,td%nvert
          grid%vertex_type(doubly(j),:) = PERIODIC_SLAVE
          td%vert_master(doubly(j)) = NO_MATE-1
       end do
-      grid%head_level_vert(1) = doubly(1)
    endif
 end do
 
 do i=1,td%nvert
    if (td%vert_master(i) /= NO_MATE .and. &
        td%vert_master(i) /= NO_MATE-1) then
-      grid%vertex(td%vert_master(i))%next = grid%head_level_vert(1)
+      grid%vertex(td%vert_master(i))%next = i
       grid%vertex(i)%next = td%vert_master(i)
-      grid%head_level_vert(1) = i
       grid%vertex_type(i,:) = PERIODIC_SLAVE
       grid%vertex_type(td%vert_master(i),:) = PERIODIC_MASTER
       td%vert_master(td%vert_master(i)) = NO_MATE-1
    endif
-end do
-
-do i=1,td%nvert
-   if (td%vert_master(i) == NO_MATE) then
-      grid%vertex(i)%next = grid%head_level_vert(1)
-      grid%head_level_vert(1) = i
-      grid%vertex_type(i,:) = INTERIOR
-   endif
-end do
-
-i = grid%head_level_vert(1)
-grid%vertex(i)%previous = END_OF_LIST
-do while (i /= END_OF_LIST)
-   j = grid%vertex(i)%next
-   if (j /= END_OF_LIST) grid%vertex(j)%previous = i
-   i = j
 end do
 
 ! set remaining components of grid
@@ -327,23 +292,29 @@ do i=1,grid%nelem
    endif
    grid%element(i)%degree = degree
    if (degree > 2) then
-      allocate(grid%element(i)%solution(((degree-1)*(degree-2))/2,grid%system_size,max(1,grid%num_eval)),&
-               stat=stat)
+      allocate(grid%element(i)%solution(element_dof(degree),grid%system_size, &
+               max(1,grid%num_eval)),stat=stat)
       if (stat /= 0) then
          call fatal("allocation failed for mates in init_grid")
          stop
       endif
       grid%element(i)%solution = 0.0_my_real
       if (grid%have_true) then
-         allocate(grid%element(i)%exact(((degree-1)*(degree-2))/2,grid%system_size,max(1,grid%num_eval)),&
-                  stat=stat)
+         allocate(grid%element(i)%exact(element_dof(degree),grid%system_size, &
+                  max(1,grid%num_eval)),stat=stat)
          if (stat /= 0) then
             call fatal("allocation failed for mates in init_grid")
             stop
          endif
          grid%element(i)%exact = 0.0_my_real
+      else
+         nullify(grid%element(i)%exact)
       endif
+   else
+      nullify(grid%element(i)%solution)
+      nullify(grid%element(i)%exact)
    endif
+   nullify(grid%element(i)%oldsoln)
    grid%element(i)%in = grid%element(i)%vertex(1)
    grid%element(i)%out = grid%element(i)%vertex(2)
    grid%element(i)%order = (/1,2/)
@@ -356,7 +327,7 @@ do i=1,grid%nelem
    grid%element(i)%oldleaf = .false.
    grid%element(i)%sp_eta_pred = 0.0_my_real
    call hash_insert(grid%element(i)%gid,i,grid%elem_hash)
-   do j=1,3
+   do j=1,VERTICES_PER_ELEMENT
       grid%vertex(grid%element(i)%vertex(j))%assoc_elem = i
       if (grid%initial_neighbor(j,i) == BOUNDARY) then
          where (grid%vertex_type(grid%element(i)%vertex(1+mod(j,3)),:) == INTERIOR) &
@@ -385,8 +356,9 @@ do i=1,grid%nvert
    if (grid%vertex_type(i,1) == INTERIOR) then
       grid%vertex_solution(i,:,:) = 0.0_my_real
    else
-      call bconds(grid%vertex(i)%coord%x,grid%vertex(i)%coord%y, &
-                  grid%vertex(i)%bmark,bctype,bccoef,bcrhs)
+      call my_bconds(grid%vertex(i)%coord%x,grid%vertex(i)%coord%y, &
+                     zcoord(grid%vertex(i)%coord), &
+                     grid%vertex(i)%bmark,bctype,bccoef,bcrhs)
       do j=1,grid%system_size
          if (grid%vertex_type(i,j) == PERIODIC_SLAVE .or. &
              grid%vertex_type(i,j) == PERIODIC_MASTER) then
@@ -451,8 +423,9 @@ endif
 
 ! check for true solution known
 
-if (trues((grid%boundbox_max%x+grid%boundbox_min%x)/2, &
-          (grid%boundbox_max%y+grid%boundbox_min%y)/2, 1, 1) &
+if (my_trues((grid%boundbox_max%x+grid%boundbox_min%x)/2, &
+             (grid%boundbox_max%y+grid%boundbox_min%y)/2, &
+             (zcoord(grid%boundbox_max)+zcoord(grid%boundbox_min))/2, 1, 1) &
     == huge(0.0_my_real)) then
    grid%have_true = .false.
 else
@@ -467,13 +440,14 @@ endif
 
 ! define the edges
 
+grid%any_periodic = .false.
 nedge = 0
 do i=1,grid%nelem
-   do j=1,EDGES_PER_ELEMENT
+   do j=1,NEIGHBORS_PER_ELEMENT
       neigh = grid%initial_neighbor(j,i)
       neighbmark = 1
       if (neigh /= BOUNDARY) then
-         do k=1,EDGES_PER_ELEMENT
+         do k=1,NEIGHBORS_PER_ELEMENT
             if (grid%initial_neighbor(k,neigh) == i) then
                neighbmark = elemedge_bmark(k,neigh)
             endif
@@ -497,14 +471,17 @@ do i=1,grid%nelem
          if (neigh == BOUNDARY .or. elemedge_bmark(j,i) < 0 .or. &
              neighbmark < 0) then
 ! point is not on curved boundary, but I'm only after bctype
-            call bconds((grid%vertex(grid%edge(nedge)%vertex(1))%coord%x + &
+            call my_bconds((grid%vertex(grid%edge(nedge)%vertex(1))%coord%x + &
                          grid%vertex(grid%edge(nedge)%vertex(2))%coord%x)/2, &
                         (grid%vertex(grid%edge(nedge)%vertex(1))%coord%y + &
                          grid%vertex(grid%edge(nedge)%vertex(2))%coord%y)/2, &
+                    (zcoord(grid%vertex(grid%edge(nedge)%vertex(1))%coord) + &
+                     zcoord(grid%vertex(grid%edge(nedge)%vertex(2))%coord))/2, &
                         grid%edge(nedge)%bmark,bctype,bccoef,bcrhs)
             grid%edge_type(nedge,:) = bctype
             do k=1,grid%system_size
                if (grid%edge_type(nedge,k) == PERIODIC) then
+                  grid%any_periodic = .true.
                   if (grid%edge(nedge)%bmark < 0) then
                      grid%edge_type(nedge,k) = PERIODIC_SLAVE
                   else
@@ -518,20 +495,22 @@ do i=1,grid%nelem
          grid%edge(nedge)%assoc_elem = i
          grid%edge(nedge)%degree = degree
          if (degree > 1) then
-            allocate(grid%edge(nedge)%solution(degree-1,grid%system_size,max(1,grid%num_eval)),&
-                     stat=stat)
+            allocate(grid%edge(nedge)%solution(degree-1,grid%system_size, &
+                     max(1,grid%num_eval)),stat=stat)
             if (stat /= 0) then
                call fatal("allocation failed for mates in init_grid")
                stop
             endif
             if (grid%have_true) then
-               allocate(grid%edge(nedge)%exact(degree-1,grid%system_size,max(1,grid%num_eval)),&
-                        stat=stat)
+               allocate(grid%edge(nedge)%exact(degree-1,grid%system_size, &
+                        max(1,grid%num_eval)),stat=stat)
                if (stat /= 0) then
                   call fatal("allocation failed for mates in init_grid")
                   stop
                endif
                grid%edge(nedge)%exact = 0.0_my_real
+            else
+               nullify(grid%edge(nedge)%exact)
             endif
             do k=1,grid%system_size
                if (grid%edge_type(nedge,k) == DIRICHLET) then
@@ -540,9 +519,13 @@ do i=1,grid%nelem
                   grid%edge(nedge)%solution(:,k,:) = 0.0_my_real
                endif
             end do
+         else
+            nullify(grid%edge(nedge)%solution)
+            nullify(grid%edge(nedge)%exact)
          endif
+         nullify(grid%edge(nedge)%oldsoln)
       else
-         do k=1,EDGES_PER_ELEMENT
+         do k=1,NEIGHBORS_PER_ELEMENT
             if (grid%initial_neighbor(k,neigh) == i) then
                grid%element(i)%edge(j) = grid%element(neigh)%edge(k)
                exit
@@ -575,8 +558,12 @@ grid%dof = grid%nvert*grid%system_size - &
 if (degree >= 2) grid%dof = grid%dof + nedge*(degree-1)*grid%system_size - &
                 (degree-1)*count(grid%edge_type(1:nedge,:)==PERIODIC_SLAVE)
 if (degree >= 3) grid%dof = grid%dof + &
-                    grid%nelem*(((degree-2)*(degree-1))/2)*grid%system_size
-grid%dof_own = grid%dof
+                    grid%nelem*element_dof(degree)*grid%system_size
+if (set_iown) then
+   grid%dof_own = grid%dof
+else
+   grid%dof_own = 0
+endif
 
 ! find the master edge for PERIODIC_SLAVE edges
 ! Very slight chance this will fail.  Would have to have an element in the
@@ -631,6 +618,13 @@ do i=1,grid%nelem
    end do
 end do
 
+! set the biggest index used so far
+
+grid%biggest_vert = grid%nvert
+grid%biggest_edge = grid%nedge
+grid%biggest_face = 0
+grid%biggest_elem = grid%nelem
+
 grid%partition = partition
 grid%nlev = 1
 grid%errind_up2date = .false.
@@ -639,11 +633,11 @@ grid%errind_up2date = .false.
 
 do i=1,grid%nvert
 
-   if (is_periodic_master(i)) then
-      other_vert = grid%vertex(i)%previous
-      do while (is_periodic_slave(other_vert))
+   if (is_periodic_vert_master(i,grid)) then
+      other_vert = grid%vertex(i)%next
+      do while (other_vert /= i)
          grid%vertex(other_vert)%assoc_elem = grid%vertex(i)%assoc_elem
-         other_vert = grid%vertex(other_vert)%previous
+         other_vert = grid%vertex(other_vert)%next
       end do
    endif
 
@@ -670,9 +664,10 @@ if (grid%have_true) then
    do i=1,grid%nvert
       do k=1,max(1,grid%num_eval)
          do j=1,grid%system_size
-            grid%vertex_exact(i,j,k) = trues(grid%vertex(i)%coord%x, &
-                                             grid%vertex(i)%coord%y, &
-                                             j,k)
+            grid%vertex_exact(i,j,k) = my_trues(grid%vertex(i)%coord%x, &
+                                                grid%vertex(i)%coord%y, &
+                                                zcoord(grid%vertex(i)%coord), &
+                                                j,k)
          end do
       end do
    end do
@@ -681,7 +676,7 @@ endif
 if (grid%have_true) then
    do i=1,grid%nelem
       do k=1,grid%system_size
-         do j=1,EDGES_PER_ELEMENT
+         do j=1,NEIGHBORS_PER_ELEMENT
             if (grid%initial_neighbor(j,i) > i) cycle
             call edge_exact(grid,grid%element(i)%edge(j),k,"t")
          end do
@@ -699,26 +694,6 @@ deallocate(td%vert_coord,td%tri_edge,td%tri_vert,td%tri_neigh,td%edge_tri, &
            td%edge_vert,td%vert_tri,td%vert_edge,td%vert_bmark, &
            td%vert_bparam,td%edge_bmark,td%vert_master,td%vert_master2, &
            stat=stat)
-
-contains
-
-function is_periodic_slave(test_vert)
-integer, intent(in) :: test_vert
-logical :: is_periodic_slave
-is_periodic_slave = any(grid%vertex_type(test_vert,:)==PERIODIC_SLAVE) .or. &
-                    any(grid%vertex_type(test_vert,:)==PERIODIC_SLAVE_DIR) .or.&
-                    any(grid%vertex_type(test_vert,:)==PERIODIC_SLAVE_NAT) .or.&
-                    any(grid%vertex_type(test_vert,:)==PERIODIC_SLAVE_MIX)
-end function is_periodic_slave
-
-function is_periodic_master(test_vert)
-integer, intent(in) :: test_vert
-logical :: is_periodic_master
-is_periodic_master=any(grid%vertex_type(test_vert,:)==PERIODIC_MASTER) .or. &
-                   any(grid%vertex_type(test_vert,:)==PERIODIC_MASTER_DIR) .or.&
-                   any(grid%vertex_type(test_vert,:)==PERIODIC_MASTER_NAT) .or.&
-                   any(grid%vertex_type(test_vert,:)==PERIODIC_MASTER_MIX)
-end function is_periodic_master
 
 end subroutine init_grid
 
@@ -1256,7 +1231,7 @@ td%edge_tri = -1
 do i=1,td%ntri
    nset = 0
 ! for each vertex of the triangle
-   do j=1,3
+   do j=1,VERTICES_PER_ELEMENT
 ! search the edges of the vertex for any that contain another vertex of the
 ! triangle
 ! for each edge of this vertex
@@ -1326,8 +1301,6 @@ do i=1,td%ntri
       stop
    endif
 end do
-! TEMP must verify that bmark/=0 iff vertex is on boundary.  Might need to
-! change the documentation
 do i=1,td%nedge
    if (td%edge_tri(1,i) == -1 .or. &
        (td%edge_bmark(i) == 0 .and. td%edge_tri(2,i) == -1)) then
@@ -2068,11 +2041,13 @@ endif
 ! of periodic sides with +-bmark
 
 ! point may not be on curved boundary, but I'm only after itype
-call bconds((td%vert_coord(td%edge_vert(1,edge))%x + &
-             td%vert_coord(td%edge_vert(2,edge))%x)/2, &
-            (td%vert_coord(td%edge_vert(1,edge))%y + &
-             td%vert_coord(td%edge_vert(2,edge))%y)/2, &
-            m,itype,c,rs)
+call my_bconds((td%vert_coord(td%edge_vert(1,edge))%x + &
+                td%vert_coord(td%edge_vert(2,edge))%x)/2, &
+               (td%vert_coord(td%edge_vert(1,edge))%y + &
+                td%vert_coord(td%edge_vert(2,edge))%y)/2, &
+               (zcoord(td%vert_coord(td%edge_vert(1,edge))) + &
+                zcoord(td%vert_coord(td%edge_vert(2,edge))))/2, &
+               m,itype,c,rs)
 if (all(itype /= PERIODIC)) then
    if (m < 0) then
       jerr = -1
@@ -2207,8 +2182,9 @@ new_nvert = td%nvert + nbreak
 new_ntri = td%ntri + nbreak
 new_nedge = td%nedge + 2*nbreak
 
-allocate(new_vert_coord(new_nvert), new_tri_edge(3,new_ntri), &
-         new_tri_vert(3,new_ntri), new_tri_neigh(3,new_ntri), &
+allocate(new_vert_coord(new_nvert), new_tri_edge(EDGES_PER_ELEMENT,new_ntri), &
+         new_tri_vert(VERTICES_PER_ELEMENT,new_ntri), &
+         new_tri_neigh(NEIGHBORS_PER_ELEMENT,new_ntri), &
          new_edge_tri(2,new_nedge), new_edge_vert(2,new_nedge), &
          new_vert_bmark(new_nvert), new_vert_tri(MAX_TD_VERT_NEIGH,new_nvert), &
          new_vert_edge(MAX_TD_VERT_NEIGH,new_nvert), &
@@ -2338,7 +2314,7 @@ end do
 
 ! define the new triangles; the first one overwrites the existing one
 
-do i=1,3
+do i=1,VERTICES_PER_ELEMENT
    if (td%tri_vert(i,tri) == last) td%tri_vert(i,tri) = td%nvert + 1
 end do
 do j=1,nbreak
@@ -2351,16 +2327,16 @@ td%tri_vert(3,td%ntri+nbreak) = last
 ! set the new neighbors
 
 lastneigh = -1
-outer1: do i=1,3
+outer1: do i=1,NEIGHBORS_PER_ELEMENT
    lastneigh = td%tri_neigh(i,tri)
    if (lastneigh <= 0) cycle
-   do j=1,3
+   do j=1,VERTICES_PER_ELEMENT
       lastloc = j
       if (td%tri_vert(j,lastneigh) == last) exit outer1
    enddo
 end do outer1
 
-if (i > 3) then
+if (i > NEIGHBORS_PER_ELEMENT) then
    ierr = PHAML_INTERNAL_ERROR
    call fatal("didn't find last neighbor")
    stop
@@ -2429,7 +2405,7 @@ real(my_real) :: x1, x2, x3, y1, y2, y3, dx1, dx2, dy1, dy2, denom, mincos
 ! compute the cosines of the angles of all the triangles
 
 do i=1,td%ntri
-   do j=1,3
+   do j=1,VERTICES_PER_ELEMENT
       x1 = td%vert_coord(td%tri_vert(j,i))%x
       y1 = td%vert_coord(td%tri_vert(j,i))%y
       x2 = td%vert_coord(td%tri_vert(1+mod(j+1,3),i))%x
@@ -2456,7 +2432,7 @@ do i=1,td%ntri
 
    maxang = -1
    mincos = 2.0_my_real
-   do j=1,3
+   do j=1,NEIGHBORS_PER_ELEMENT
       if (td%tri_neigh(j,i) == -1) then
          if (cos_angle(j,i) < mincos .and. &
              abs(cos_angle(j,i)-mincos) > 100*epsilon(0.0_my_real)) then
@@ -2481,7 +2457,7 @@ do i=1,td%ntri
 ! triangle i and set its mate
 
       if (td%tri_neigh(maxang,i) /= -1) then
-         do j=1,3
+         do j=1,NEIGHBORS_PER_ELEMENT
             if (td%tri_neigh(j,td%tri_neigh(maxang,i)) == i) then
                mate(td%tri_neigh(maxang,i)) = j
             endif
@@ -2540,7 +2516,7 @@ do i=1,td%ntri
       grid%nvert = grid%nvert + 1
       grid%nelem = grid%nelem + 4
    endif
-   do j=1,EDGES_PER_ELEMENT
+   do j=1,VERTICES_PER_ELEMENT
       if (td%vert_bmark(td%tri_vert(j,i)) < 0) then
          bound_periodic_nvert = bound_periodic_nvert + 1
       endif
@@ -2567,7 +2543,7 @@ if (size(grid%element) < grid%nelem) then
       stop
    endif
 endif
-allocate(grid%initial_neighbor(EDGES_PER_ELEMENT,grid%nelem),stat=stat)
+allocate(grid%initial_neighbor(NEIGHBORS_PER_ELEMENT,grid%nelem),stat=stat)
 if (stat /= 0) then
    call fatal("allocation failed for grid%initial_neighbor in refine_start", &
               intlist=(/grid%nelem/))
@@ -2615,8 +2591,8 @@ do tri=1,td%ntri
 
    if (mate(tri) == NO_MATE) then
 
-      grid%vertex(next_vert)%coord%x = sum(td%vert_coord(td%tri_vert(:,tri))%x)/3
-      grid%vertex(next_vert)%coord%y = sum(td%vert_coord(td%tri_vert(:,tri))%y)/3
+      grid%vertex(next_vert)%coord%x = sum(td%vert_coord(td%tri_vert(:,tri))%x)/VERTICES_PER_ELEMENT
+      grid%vertex(next_vert)%coord%y = sum(td%vert_coord(td%tri_vert(:,tri))%y)/VERTICES_PER_ELEMENT
       grid%vertex(next_vert)%bmark = 0
 
       grid%element(next_elem  )%vertex(1) = td%tri_vert(2,tri)
@@ -2666,7 +2642,7 @@ do tri=1,td%ntri
       grid%initial_neighbor(2,next_elem+2) = next_elem+1
       grid%initial_neighbor(3,next_elem+2) = -1
 
-      do j=1,3
+      do j=1,NEIGHBORS_PER_ELEMENT
          neigh = td%tri_neigh(j,tri)
 
          if (neigh == -1) then
@@ -2842,7 +2818,7 @@ do tri=1,td%ntri
 
       old1m = -1
       old2m = -1
-      do j=1,3
+      do j=1,VERTICES_PER_ELEMENT
          if (td%tri_vert(j,my_mate) == td%tri_vert(old1,tri)) then
             old1m = j
          else
@@ -3148,8 +3124,8 @@ neigh_vert = -1
 
 elem = grid%head_level_elem(1)
 do while (elem /= END_OF_LIST)
-   do vert = 1,3
-      do vert2 = 1,3
+   do vert = 1,VERTICES_PER_ELEMENT
+      do vert2 = 1,VERTICES_PER_ELEMENT
          if (vert == vert2) cycle
          do i=1,32
             if (neigh_vert(i,grid%element(elem)%vertex(vert)) == -1) exit
@@ -3231,8 +3207,8 @@ do elem=1,grid%nelem
       xcent = xcent + grid%vertex(grid%element(elem)%vertex(i))%coord%x
       ycent = ycent + grid%vertex(grid%element(elem)%vertex(i))%coord%y
    end do
-   xcent = xcent/3
-   ycent = ycent/3
+   xcent = xcent/VERTICES_PER_ELEMENT
+   ycent = ycent/VERTICES_PER_ELEMENT
    xcent = (xcent-xmin)/(xmax-xmin)
    ycent = (ycent-ymin)/(ymax-ymin)
    sfccoord(elem) = invsierpinski2d(xcent,ycent)

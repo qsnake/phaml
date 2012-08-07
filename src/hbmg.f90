@@ -39,6 +39,7 @@ use lapack_solve
 use linsys_io
 use error_estimators
 use hash_mod
+use omp_lib, only: omp_get_num_threads
 
 !----------------------------------------------------
 
@@ -83,11 +84,17 @@ integer :: ncyc, cycle, lev, nu1, nu2, nu1ho, nu2ho, nlev, proc, ni, nr
 real(my_real) :: mg_tol, resid
 integer, pointer :: irecv(:)
 real(my_real), pointer :: rrecv(:)
-logical :: fudop_comm, conventional_comm, yes_master
+logical :: fudop_comm, conventional_comm, yes_master, use_simple_relax_ho
 integer, allocatable :: neqlist(:,:,:), eqlist(:,:,:,:,:)
 
 !----------------------------------------------------
 ! Begin executable code
+
+if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+   ierr = PHAML_INTERNAL_ERROR
+   call fatal("3D version of PHAML multigrid has not been written")
+   stop
+endif
 
 if (present(no_master)) then
    yes_master = .not. no_master
@@ -110,9 +117,9 @@ if (present(maxlev)) then
    nlev = maxlev
 else
    if (linear_system%maxdeg == 1) then
-      nlev = linear_system%nlev
+      nlev = linear_system%nlev_vert
    else
-      nlev = linear_system%nlev+1
+      nlev = linear_system%edge_level
    endif
 endif
 
@@ -126,7 +133,7 @@ if (mg_tol == MG_ERREST_TOL) then
       deallocate(rrecv)
    else
 ! TEMP for systems of equations, should be a combination not the max
-      call error_estimate(grid,procs,errest_L2=mg_tol)
+      call error_estimate(grid,procs,HIERARCHICAL_COEFFICIENT,errest_L2=mg_tol)
       mg_tol = sqrt(phaml_global_sum(procs,mg_tol**2,1401))
       mg_tol = max(100*epsilon(1.0_my_real),mg_tol/1000)
       if (my_proc(procs) == 1 .and. yes_master) then
@@ -177,7 +184,11 @@ endif
 ! relaxations can be performed in OpenMP parallel without conflicts and
 ! always in the same order.
 
-if (linear_system%maxdeg > 1) call make_pmg_sets
+use_simple_relax_ho = (num_proc(procs) == 1 .and. omp_get_num_threads() == 1)
+
+if (linear_system%maxdeg > 1 .and. .not. use_simple_relax_ho) then
+   call make_pmg_sets
+endif
 
 ! make sure the solution at unowned points is current
 
@@ -203,10 +214,11 @@ endif
 if (fudop_comm .or. conventional_comm) then
    call init_r_other(linear_system%solution(1:),procs,still_sequential)
 else
-!$omp single
+!$omp master
    linear_system%r_mine = 0.0_my_real
    linear_system%r_others = 0.0_my_real
-!$omp end single
+!$omp end master
+!$omp barrier
 endif
 
 ! repeat ncycle times or until L2 norm of residual < mg_tol
@@ -216,57 +228,70 @@ do cycle=1,ncyc
 ! for each level from finest to coarsest, relaxation and restriction
 
    do lev=nlev,2,-1
-      if (lev == linear_system%nlev+1) then
-         call relax_ho(lev,nu1ho,linear_system,-1,procs, &
-                       fudop_comm.or.conventional_comm,still_sequential, &
-                       neqlist,eqlist)
+      if (lev > linear_system%nlev_vert) then
+         if (use_simple_relax_ho) then
+            call singleproc_relax_ho(lev,nu1ho,linear_system,-1)
+         else
+            call relax_ho(lev,nu1ho,linear_system,-1,procs, &
+                          fudop_comm.or.conventional_comm,still_sequential, &
+                          neqlist,eqlist)
+         endif
       else
          call relax(lev,nu1,linear_system,conventional_comm)
       endif
-!$omp single
+!$omp master
       call basis_change(lev,TO_HIER,linear_system)
-!$omp end single
+!$omp end master
+!$omp barrier
       call rhs_minus_Axh(linear_system,lev,still_sequential,procs)
       if (conventional_comm) then
-!$omp single
+!$omp master
          call exchange_fudop_soln_residual(procs,linear_system, &
                                            1420+cycle+lev,1430+cycle+lev, &
                                            1440+cycle+lev,max_lev=lev)
-!$omp end single
+!$omp end master
+!$omp barrier
       endif
    end do
 
 ! fix solution values and residuals via information from other processors
 
    if (fudop_comm) then
-!$omp single
+!$omp master
       call exchange_fudop_soln_residual(procs,linear_system, &
                                         1420+cycle,1430+cycle,1440+cycle)
-!$omp end single
+!$omp end master
+!$omp barrier
    endif
 
 ! solve on coarsest grid
 
-!$omp single
+!$omp master
    call coarse_solve(linear_system)
-!$omp end single
+!$omp end master
+!$omp barrier
 
 ! for each level from coarsest to finest, prolongation and relaxation
 
    do lev=2,nlev
       call rhs_plus_Axh(linear_system,lev,still_sequential,procs)
-!$omp single
+!$omp master
       if (conventional_comm) then
          call exchange_fudop_soln_residual(procs,linear_system, &
                                            1450+cycle+lev,1460+cycle+lev, &
                                            1470+cycle+lev,max_lev=lev)
       endif
       call basis_change(lev,TO_NODAL,linear_system)
-!$omp end single
-      if (lev == linear_system%nlev+1) then
-         call relax_ho(lev,nu2ho,linear_system,1,procs, &
-                       fudop_comm.or.conventional_comm,still_sequential, &
-                       neqlist,eqlist)
+!$omp end master
+!$omp barrier
+      if (lev > linear_system%nlev_vert) then
+         if (use_simple_relax_ho) then
+            call singleproc_relax_ho(lev,nu2ho,linear_system,1)
+         else
+            call relax_ho(lev,nu2ho,linear_system,1,procs, &
+                          fudop_comm.or.conventional_comm,still_sequential, &
+                          neqlist,eqlist)
+         endif
       else
          call relax(lev,nu2,linear_system,conventional_comm)
       endif
@@ -275,16 +300,17 @@ do cycle=1,ncyc
 ! fix solution values via information from other processors
 
    if (fudop_comm .or. conventional_comm) then
-!$omp single
+!$omp master
       call exchange_fudop_vect(linear_system%solution(1:),procs, &
                                linear_system,1450+cycle,1460+cycle, &
                                1470+cycle)
-!$omp end single
+!$omp end master
+!$omp barrier
    endif
 
 ! print error after this cycle (if requested) and test for small residual
 
-!$omp single
+!$omp master
    if (io_cntl%print_error_when == FREQUENTLY .or. &
        io_cntl%print_error_when == TOO_MUCH) then
       call linsys_residual(linear_system,procs,still_sequential,cycle, &
@@ -295,15 +321,17 @@ do cycle=1,ncyc
                               1410+cycle,.false.,.false.,relresid=resid,no_master=no_master)
       endif
    endif
-!$omp end single
+!$omp end master
+!$omp barrier
 
    if (resid < mg_tol) exit
 
 end do ! next cycle
 
-!$omp single
+!$omp master
 linear_system%solver_niter = min(cycle,ncyc)
-!$omp end single
+!$omp end master
+!$omp barrier
 
 !$omp end parallel
 
@@ -359,10 +387,14 @@ hold_soln = solution
 ! do the first half of a V cycle to generate the residual
 
 do lev=nlev,2,-1
-   if (lev == linear_system%nlev+1) then
-      call relax_ho(lev,nu1ho,linear_system,-1,procs, &
-                    fudop_comm.or.conventional_comm,still_sequential, &
-                    neqlist,eqlist)
+   if (lev > linear_system%nlev_vert) then
+      if (use_simple_relax_ho) then
+         call singleproc_relax_ho(lev,nu1ho,linear_system,-1)
+      else
+         call relax_ho(lev,nu1ho,linear_system,-1,procs, &
+                       fudop_comm.or.conventional_comm,still_sequential, &
+                       neqlist,eqlist)
+      endif
    else
       call relax(lev,nu1,linear_system,conventional_comm)
    endif
@@ -429,7 +461,7 @@ subroutine make_pmg_sets()
 
 integer :: ss, astat, lev, elem, side, edge, mate, degm1, sys, eq
 logical :: compat_div
-logical(small_logical) :: on_list(size(grid%edge))
+logical(small_logical) :: on_list(grid%biggest_edge)
 !----------------------------------------------------
 ! Begin executable code
 
@@ -457,7 +489,7 @@ do lev=1,grid%nlev
    do while (elem /= END_OF_LIST)
       if (grid%element(elem)%isleaf) then
          compat_div = .false.
-         do side = 1,3
+         do side = 1,EDGES_PER_ELEMENT
             edge = grid%element(elem)%edge(side)
             if (.not. on_list(edge)) then
                if (side == 3) then
@@ -500,7 +532,7 @@ do lev=1,grid%nlev
    do while (elem /= END_OF_LIST)
       if (grid%element(elem)%isleaf) then
          compat_div = .false.
-         do side = 1,3
+         do side = 1,EDGES_PER_ELEMENT
             edge = grid%element(elem)%edge(side)
             if (.not. on_list(edge)) then
                if (side == 3) then
@@ -833,7 +865,7 @@ if (dir == -1) then
                end do ! h-level
             end do ! degree
 !$omp single
-            do eq=1,matrix%begin_level(matrix%nlev+1)-1
+            do eq=1,matrix%begin_level(matrix%nlev_vert+1)-1
                if (new_comm) then ! TEMP090127
                   if ((loop==1 .and. matrix%nn_comm_remote_neigh(eq)) .or. &
                       (loop==2 .and. .not. matrix%nn_comm_remote_neigh(eq))) then
@@ -928,7 +960,7 @@ elseif (dir == 1) then
                end do ! h-level
             end do ! degree
 !$omp single
-            do eq=1,matrix%begin_level(matrix%nlev+1)-1
+            do eq=1,matrix%begin_level(matrix%nlev_vert+1)-1
                if (new_comm) then ! TEMP090127
                   if ((loop==1 .and. matrix%nn_comm_remote_neigh(eq)) .or. &
                       (loop==2 .and. .not. matrix%nn_comm_remote_neigh(eq))) then
@@ -967,6 +999,120 @@ deallocate(isneigh)
 !$omp end single
 
 end subroutine relax_ho
+
+!          -------------------
+subroutine singleproc_relax_ho(edgelev,nu,matrix,dir)
+!          -------------------
+
+!----------------------------------------------------
+! This routine performs one direction of the p-multigrid cycle when we are
+! running one thread on one processor.    If dir==-1
+! it performs nu Gauss-Seidel iterations with the entire (condensed) matrix,
+! then with the matrix up to maxdeg-1, then maxdeg-2, ... 2.  If dir==1 it
+! starts at 2 and works up to maxdeg.
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+
+integer, intent(in) :: edgelev, nu
+type(linsys_type), intent(inout) :: matrix
+integer, intent(in) :: dir
+!----------------------------------------------------
+! Local variables:
+
+logical :: isneigh(matrix%begin_level(edgelev+1)-1)
+integer :: plev, gsiter, eq, j
+real(my_real) :: temp
+!----------------------------------------------------
+! Begin executable code
+
+! Downward half of V-cycle
+
+if (dir == -1) then
+
+! For each p level
+
+   do plev = matrix%maxdeg,2,-1
+
+! isneigh is used to limit the equations with level less than plev to those
+! that are neighbors of equations of level plev
+
+      isneigh = .false.
+
+! nu Gauss-Siedel iterations
+
+      do gsiter=1,nu
+
+! Perform relaxation on equations with degree plev or neighbors of degree plev
+
+! Do level plev first to identify neighbors
+
+         do eq=matrix%edge_begin_degree(plev),matrix%edge_begin_degree(plev+1)-1
+            if (matrix%equation_type(eq) == DIRICHLET) cycle
+            temp = matrix%rhs(eq) + matrix%r_mine(eq) + matrix%r_others(eq)
+            do j=matrix%begin_row(eq)+1,matrix%end_row(eq)
+               if (matrix%column_index(j) == NO_ENTRY) cycle
+               isneigh(matrix%column_index(j)) = .true.
+               temp = temp - &
+                    matrix%matrix_val(j)*matrix%solution(matrix%column_index(j))
+            end do
+            matrix%solution(eq) = temp / matrix%matrix_val(matrix%begin_row(eq))
+         end do
+
+! Then do level 1 up to level plev-1
+
+         do eq=1,matrix%edge_begin_degree(plev)-1
+            if (matrix%equation_type(eq) == DIRICHLET) cycle
+            if (.not. isneigh(eq)) cycle
+            temp = matrix%rhs(eq) + matrix%r_mine(eq) + matrix%r_others(eq)
+            do j=matrix%begin_row(eq)+1,matrix%end_row(eq)
+               if (matrix%column_index(j) == NO_ENTRY) cycle
+               temp = temp - &
+                    matrix%matrix_val(j)*matrix%solution(matrix%column_index(j))
+            end do
+            matrix%solution(eq) = temp / matrix%matrix_val(matrix%begin_row(eq))
+         end do
+
+      end do
+   end do
+ 
+! Upward half of V-cycle
+! See the downward half for comments.  This is the same except reversing plev.
+
+elseif (dir == 1) then
+ 
+   do plev = 2,matrix%maxdeg
+      isneigh = .false.
+      do gsiter=1,nu
+         do eq=matrix%edge_begin_degree(plev),matrix%edge_begin_degree(plev+1)-1
+            if (matrix%equation_type(eq) == DIRICHLET) cycle
+            temp = matrix%rhs(eq) + matrix%r_mine(eq) + matrix%r_others(eq)
+            do j=matrix%begin_row(eq)+1,matrix%end_row(eq)
+               if (matrix%column_index(j) == NO_ENTRY) cycle
+               isneigh(matrix%column_index(j)) = .true.
+               temp = temp - &
+                    matrix%matrix_val(j)*matrix%solution(matrix%column_index(j))
+            end do
+            matrix%solution(eq) = temp / matrix%matrix_val(matrix%begin_row(eq))
+         end do
+         do eq=1,matrix%edge_begin_degree(plev)-1
+            if (matrix%equation_type(eq) == DIRICHLET) cycle
+            if (.not. isneigh(eq)) cycle
+            temp = matrix%rhs(eq) + matrix%r_mine(eq) + matrix%r_others(eq)
+            do j=matrix%begin_row(eq)+1,matrix%end_row(eq)
+               if (matrix%column_index(j) == NO_ENTRY) cycle
+               temp = temp - &
+                    matrix%matrix_val(j)*matrix%solution(matrix%column_index(j))
+            end do
+            matrix%solution(eq) = temp / matrix%matrix_val(matrix%begin_row(eq))
+         end do
+      end do
+   end do
+
+endif
+
+end subroutine singleproc_relax_ho
 
 !          ------------
 subroutine rhs_plus_Axh(matrix,lev,still_sequential,procs)

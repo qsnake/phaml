@@ -289,3 +289,75 @@ c
       endif
       return
       end
+
+      subroutine znaupd
+     &   ( ido, bmat, n, which, nev, tol, resid, ncv, v, ldv, iparam,
+     &     ipntr, workd, workl, lworkl, rwork, info )
+      use message_passing
+      character  bmat*1, which*2
+      integer    ido, info, ldv, lworkl, n, ncv, nev
+      Double precision
+     &           tol
+      integer    iparam(11), ipntr(14)
+      Complex*16
+     &           resid(n), v(ldv,ncv), workd(3*n), workl(lworkl)
+      Double precision
+     &           rwork(ncv)
+      call warning("Dummy version of ARPACK routine znaupd called.",
+     &             "Need to link in an ARPACK library.")
+      info = ido
+      info = ldv
+      info = nev
+      info = iparam(1)
+      info = ipntr(1)
+      info = ichar(bmat(1:1))
+      info = ichar(which(1:1))
+      info = tol
+      info = resid(1)
+      info = v(1,1)
+      info = workd(1)
+      info = workl(1)
+      info = 0
+      return
+      end
+
+      subroutine zneupd (rvec, howmny, select, d, z, ldz, sigma,
+     &                   workev, bmat, n, which, nev, tol,
+     &                   resid, ncv, v, ldv, iparam, ipntr, workd,
+     &                   workl, lworkl, rwork, info)
+      use message_passing
+      character  bmat, howmny, which*2
+      logical    rvec
+      integer    info, ldz, ldv, lworkl, n, ncv, nev
+      Complex *16
+     &           sigma
+      Double precision
+     &           tol
+      integer    iparam(11), ipntr(14)
+      logical    select(ncv)
+      Double precision
+     &           rwork(ncv)
+      Complex*16
+     &           d(nev), resid(n), v(ldv,ncv), z(ldz,nev),
+     &           workd(3*n), workl(lworkl), workev(2*ncv)
+      call warning("Dummy version of ARPACK routine zneupd called.",
+     &             "Need to link in an ARPACK library.")
+      if (rvec .and. select(1)) then
+         info = ichar(bmat(1:1))
+         info = ichar(howmny(1:1))
+         info = ichar(which(1:1))
+         info = sigma
+         info = tol
+         info = iparam(1)
+         info = ipntr(1)
+         info = d(1)
+         info = resid(1)
+         info = v(1,1)
+         info = z(1,1)
+         info = workd(1)
+         info = workl(1)
+         info = workev(1)
+         info = 0
+      endif
+      return
+      end

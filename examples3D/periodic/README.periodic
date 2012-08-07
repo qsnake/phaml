@@ -1,0 +1,5 @@
+This illustrates how to solve problems with periodic boundary conditions.
+See the section on 3D problems in the user's guide for an explanation of the
+bmark values used in subroutine bconds in pde.f90.  In that subroutine you
+can choose between periodic in x, periodic in y, and doubly periodic in both
+x and y.  For a triply periodic example, see testdir3D/test_prob.

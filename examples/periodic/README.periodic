@@ -5,3 +5,8 @@ boundary conditions on the left side.  It uses 2 processors (unless compiled
 as a sequential program where nproc is ignored, or with messpass_nospawn where
 number of processors is determined by the launching command) and prints the
 grid information and norms of the error after each refine/solve loop.
+
+This directory also contains dperiod.poly for a doubly periodic boundary with
+Dirichlet conditions at the corners (which all must be the same value, because
+of periodicity), but does not contain a test problem for that condition.
+For such a test problem, see testdir/test_prob.

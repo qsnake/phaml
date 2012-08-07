@@ -37,6 +37,7 @@ use hash_eq_mod
 use linsystype_mod
 use gridtype_mod
 use sort_mod
+use grid_util
 
 !----------------------------------------------------
 
@@ -46,7 +47,8 @@ public basis_change, exchange_neigh_vect, exchange_fudop_vect, &
        send_neigh_vect, recv_neigh_vect, make_need_r_others, &
        exchange_fudop_soln_residual, sum_fudop_vect, all_to_mine, mine_to_all, &
        grid_to_eq, eq_to_grid, matrix_times_vector, linsys_residual, &
-       test_precon, TO_NODAL, TO_HIER, VERTEX_ID, EDGE_ID, ELEMENT_ID
+       get_element_eq_list, find_col_in_row, &
+       test_precon, TO_NODAL, TO_HIER, VERTEX_ID, EDGE_ID, FACE_ID, ELEMENT_ID
 
 !----------------------------------------------------
 ! Parameters
@@ -59,8 +61,9 @@ integer, parameter :: SHIFT = 4
 
 ! specifies the object type for equation gids
 
-integer, parameter :: VERTEX_ID  = 1, &
-                      EDGE_ID    = 2, &
+integer, parameter :: VERTEX_ID  = 0, &
+                      EDGE_ID    = 1, &
+                      FACE_ID    = 2, &
                       ELEMENT_ID = 3
 
 contains
@@ -71,7 +74,7 @@ subroutine grid_to_eq(grid,linear_system,object_type,basis_rank, &
 !          ----------
 
 !----------------------------------------------------
-! This routine takes a vertex, edge or element gid, a rank within that
+! This routine takes a vertex, edge, face or element gid, a rank within that
 ! object, and a rank within a system of PDEs and returns an equation lid
 ! and/or gid.
 !----------------------------------------------------
@@ -95,28 +98,32 @@ integer :: array_gid(KEY_SIZE+1), lid
 ! Begin executable code
 
 gid = grid_gid
-if (object_type == VERTEX_ID .or. object_type == EDGE_ID) then
-   select case (object_type)
-   case (VERTEX_ID)
-      lid = hash_decode_key(grid_gid,grid%vert_hash)
-      if (lid /= HASH_NOT_FOUND) then
-         do while (grid%vertex_type(lid,system_rank) == PERIODIC_SLAVE .or. &
-             grid%vertex_type(lid,system_rank) == PERIODIC_SLAVE_DIR .or. &
-             grid%vertex_type(lid,system_rank) == PERIODIC_SLAVE_NAT .or. &
-             grid%vertex_type(lid,system_rank) == PERIODIC_SLAVE_MIX)
-            lid = grid%vertex(lid)%next
-         end do
-      endif
-      gid = grid%vertex(lid)%gid
-   case (EDGE_ID)
-      lid = hash_decode_key(grid_gid,grid%edge_hash)
-      if (lid /= HASH_NOT_FOUND) then
-         if (grid%edge_type(lid,system_rank) == PERIODIC_SLAVE) then
-            gid = grid%edge(grid%edge(lid)%next)%gid
-         endif
-      endif
-   end select
-endif
+select case (object_type)
+case (VERTEX_ID)
+   lid = hash_decode_key(grid_gid,grid%vert_hash)
+   if (lid /= HASH_NOT_FOUND) then
+      do while (is_periodic_vert_slave(lid,grid,system_rank))
+         lid = grid%vertex(lid)%next
+      end do
+   endif
+   gid = grid%vertex(lid)%gid
+case (EDGE_ID)
+   lid = hash_decode_key(grid_gid,grid%edge_hash)
+   if (lid /= HASH_NOT_FOUND) then
+      do while (is_periodic_edge_slave(lid,grid,system_rank))
+         lid = grid%edge(lid)%next
+      end do
+   endif
+   gid = grid%edge(lid)%gid
+case (FACE_ID)
+   lid = hash_decode_key(grid_gid,grid%face_hash)
+   if (lid /= HASH_NOT_FOUND) then
+      do while (is_periodic_face_slave(lid,grid,system_rank))
+         lid = grid%face(lid)%next
+      end do
+   endif
+   gid = grid%face(lid)%gid
+end select
 
 call hash_pack_key(gid,array_gid,1)
 array_gid(KEY_SIZE+1) = object_type + &
@@ -133,7 +140,7 @@ subroutine eq_to_grid(linear_system,eqn_gid,object_type,basis_rank, &
 !          ----------
 
 !----------------------------------------------------
-! This routine takes an equation gid and returns the vertex, edge or
+! This routine takes an equation gid and returns the vertex, edge, face or
 ! element lid and/or gid, rank on that object of the corresponding basis
 ! function, and rank in a system of PDEs.
 !----------------------------------------------------
@@ -173,6 +180,8 @@ if (present(grid_lid)) then
       grid_lid = hash_decode_key(loc_gid,grid%vert_hash)
    case (EDGE_ID)
       grid_lid = hash_decode_key(loc_gid,grid%edge_hash)
+   case (FACE_ID)
+      grid_lid = hash_decode_key(loc_gid,grid%face_hash)
    case (ELEMENT_ID)
       grid_lid = hash_decode_key(loc_gid,grid%elem_hash)
    case default
@@ -219,24 +228,39 @@ logical :: do_matrix, boundary_vert, loc_do_mass
 ! Begin executable code
 
 ! for p-hierarchical high order bases, just change the end of row between
-! the whole row and end of edge or linear bases
+! the whole row and end of edge (face in 3D) or linear bases
 
-if (lev > phaml_matrix%nlev) then
+if (lev > phaml_matrix%nlev_vert) then
    select case (direction)
    case (TO_HIER)
-      if (lev == phaml_matrix%nlev+2) then
-         phaml_matrix%end_row => phaml_matrix%end_row_edge
-      elseif (lev == phaml_matrix%nlev+1) then
+      if (lev == phaml_matrix%bubble_level) then
+         select case (global_element_kind)
+         case (TRIANGULAR_ELEMENT)
+            phaml_matrix%end_row => phaml_matrix%end_row_edge
+         case (TETRAHEDRAL_ELEMENT)
+            phaml_matrix%end_row => phaml_matrix%end_row_face
+         end select
+      elseif (lev == phaml_matrix%face_level) then
+         phaml_matrix%end_row => phaml_matrix%end_row_linear
+      elseif (lev == phaml_matrix%edge_level) then
          phaml_matrix%end_row => phaml_matrix%end_row_linear
       endif
    case (TO_NODAL)
-      if (lev == phaml_matrix%nlev+2) then
+      if (lev == phaml_matrix%bubble_level) then
+         phaml_matrix%end_row => phaml_matrix%end_row_bubble
+      elseif (lev == phaml_matrix%face_level) then
          phaml_matrix%end_row => phaml_matrix%end_row_face
-      elseif (lev == phaml_matrix%nlev+1) then
+      elseif (lev == phaml_matrix%edge_level) then
          phaml_matrix%end_row => phaml_matrix%end_row_edge
       endif
    end select
    return
+endif
+
+if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+   ierr = PHAML_INTERNAL_ERROR
+   call fatal("basis change has not yet been modified for 3D")
+   stop
 endif
 
 ! for systems of equations, only work with the first component.  To get at
@@ -1728,7 +1752,7 @@ subroutine exchange_fudop_vect(vector,procs,linear_system,tag1,tag2,tag3, &
 real(my_real), intent(inout) :: vector(:)
 type(proc_info), intent(in) :: procs
 type(linsys_type), intent(in) :: linear_system
-! TEMP090210 when all is said and done, I only need 2 tag
+! TEMP090210 when all is said and done, I only need 2 tags
 integer, intent(in) :: tag1, tag2, tag3
 logical, optional, intent(in) :: notime
 !----------------------------------------------------
@@ -2756,8 +2780,8 @@ subroutine send_neigh_vect(vector,procs,linear_system,tag,max_deg,notime)
 ! processors.  The vector is assumed to be associated with rows, or IDs, of
 ! the matrix, and only those associated with bases of degree less than or
 ! equal to max_deg are sent.  If max_deg = linear_system%maxdeg+1 then
-! equations associated with face bases are included; there is no capability of
-! including only including face bases up to a given degree.
+! equations associated with bubble bases are included; there is no capability of
+! including only including bubble bases up to a given degree.
 ! The messages should be received by recv_neigh_vect.
 !----------------------------------------------------
 
@@ -2904,17 +2928,17 @@ type(linsys_type), intent(inout) :: linear_system
 ! Local variables:
 
 integer :: lev, i, j, eq, nblack, neigh, allocstat
-logical :: has_face, has_edge
+logical :: has_bubble, has_edge
 integer, allocatable :: black_list(:)
 logical(small_logical), allocatable :: on_black_list(:)
 !----------------------------------------------------
 ! Begin executable code
 
-! if the matrix includes face bases, change to ending with edge bases
+! if the matrix includes bubble bases, change to ending with edge bases
 
-has_face = associated(linear_system%end_row,linear_system%end_row_face)
-if (has_face) call basis_change(linear_system%nlev+2,TO_HIER,linear_system, &
-                                skip_matrix=.true.)
+has_bubble = associated(linear_system%end_row,linear_system%end_row_bubble)
+if (has_bubble) call basis_change(linear_system%bubble_level,TO_HIER, &
+                                  linear_system,skip_matrix=.true.)
 
 ! if the matrix includes edge bases, pass through all vertex and edge rows
 ! to identify any rows that need r_others in relax_ho, and change to ending
@@ -2922,7 +2946,7 @@ if (has_face) call basis_change(linear_system%nlev+2,TO_HIER,linear_system, &
 
 has_edge = associated(linear_system%end_row,linear_system%end_row_edge)
 if (has_edge .and. linear_system%maxdeg > 1) then
-   do eq = linear_system%begin_level(1),linear_system%begin_level(linear_system%nlev+2)-1
+   do eq = linear_system%begin_level(1),linear_system%begin_level(linear_system%bubble_level)-1
       do i=linear_system%begin_row(eq)+1,linear_system%end_row(eq)
          if (linear_system%column_index(i) /= NO_ENTRY) then
             if (.not. linear_system%iown(linear_system%column_index(i))) then
@@ -2932,7 +2956,7 @@ if (has_edge .and. linear_system%maxdeg > 1) then
       end do
    end do
 endif
-if (has_edge) call basis_change(linear_system%nlev+1,TO_HIER,linear_system, &
+if (has_edge) call basis_change(linear_system%edge_level,TO_HIER,linear_system,&
                                 skip_matrix=.true.)
 
 ! simulate the first half of a V cycle to identify the equations that need
@@ -2945,7 +2969,7 @@ if (allocstat /= 0) then
    call fatal("allocation failed in make_need_r_others")
    return
 endif
-do lev=linear_system%nlev,2,-1
+do lev=linear_system%nlev_vert,2,-1
    nblack = 0
    on_black_list = .false.
    do eq = linear_system%begin_level(lev), linear_system%begin_level(lev+1)-1
@@ -2984,13 +3008,13 @@ end do
 
 ! convert back to the nodal basis
 
-do lev=2,linear_system%nlev
+do lev=2,linear_system%nlev_vert
    call basis_change(lev,TO_NODAL,linear_system,skip_matrix=.true.)
 end do
-if (has_edge) call basis_change(linear_system%nlev+1,TO_NODAL,linear_system, &
-                                skip_matrix=.true.)
-if (has_face) call basis_change(linear_system%nlev+2,TO_NODAL,linear_system, &
-                                skip_matrix=.true.)
+if (has_edge) call basis_change(linear_system%edge_level,TO_NODAL, &
+                                linear_system,skip_matrix=.true.)
+if (has_bubble) call basis_change(linear_system%bubble_level,TO_NODAL, &
+                                  linear_system,skip_matrix=.true.)
 
 end subroutine make_need_r_others
 
@@ -3083,8 +3107,8 @@ subroutine matrix_times_vector(x,y,mat,procs,still_sequential,tag1,tag2, &
 ! If natural is present and true, Dirichlet boundary rows are treated like
 ! natural boundary conditions, i.e. the actual row of the matrix is used for
 ! the product instead of the identity row of Dirichlet boundary conditions.
-! If end_row indicates rows have been shortened to exclude face or edge bases,
-! the face and/or edge bases rows are omitted in the product.
+! If end_row indicates rows have been shortened to exclude bubble or edge bases,
+! the bubble and/or edge bases rows are omitted in the product.
 !----------------------------------------------------
 
 !----------------------------------------------------
@@ -3140,10 +3164,10 @@ else
 endif
 
 if (associated(mat%end_row,mat%end_row_linear)) then
-   lasteq = mat%begin_level(mat%nlev+1)-1
+   lasteq = mat%begin_level(mat%edge_level)-1
    lastcomm = 1
 elseif (associated(mat%end_row,mat%end_row_edge)) then
-   lasteq = mat%begin_level(mat%nlev+2)-1
+   lasteq = mat%begin_level(mat%bubble_level)-1
    lastcomm = mat%maxdeg
 else
    lasteq = mat%neq
@@ -3348,6 +3372,193 @@ else
 endif
 
 end subroutine linsys_residual
+
+!          -------------------
+subroutine get_element_eq_list(grid,linear_system,elem,eq_list)
+!          -------------------
+
+!----------------------------------------------------
+! This routine returns a list of all the equation lids associated with elem
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+
+type(grid_type), intent(in) :: grid
+type(linsys_type), intent(in) :: linear_system
+integer, intent(in) :: elem
+integer, pointer :: eq_list(:)
+!----------------------------------------------------
+! Local variables:
+
+integer :: neq, ivert, iedge, iface, vert, edge, face, i, j, astat
+!----------------------------------------------------
+! Begin executable code
+
+! count the total number of equations
+
+neq = VERTICES_PER_ELEMENT*linear_system%system_size
+
+do iedge=1,EDGES_PER_ELEMENT
+   edge = grid%element(elem)%edge(iedge)
+   if (grid%edge(edge)%degree > 1) then
+      neq = neq + (grid%edge(edge)%degree-1)*linear_system%system_size
+   endif
+end do
+
+do iface=1,FACES_PER_ELEMENT
+   face = grid%element(elem)%face(iface)
+   if (grid%face(face)%degree > 2) then
+      neq = neq + face_dof(grid%face(face)%degree)*linear_system%system_size
+   endif
+end do
+
+neq = neq + element_dof(grid%element(elem)%degree)*linear_system%system_size
+
+! allocate space for the result
+
+allocate(eq_list(neq),stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("memory allocation failed in get_element_eq_list")
+   stop
+endif
+
+! get the lids
+
+neq = 0
+
+do ivert=1,VERTICES_PER_ELEMENT
+   vert = grid%element(elem)%vertex(ivert)
+   do i=1,linear_system%system_size
+      neq = neq + 1
+      call grid_to_eq(grid,linear_system,VERTEX_ID,1,i, &
+                      grid%vertex(vert)%gid,eq_list(neq))
+   end do
+end do
+
+do iedge=1,EDGES_PER_ELEMENT
+   edge = grid%element(elem)%edge(iedge)
+   if (grid%edge(edge)%degree < 2) cycle
+   do j=1,grid%edge(edge)%degree-1
+      do i=1,linear_system%system_size
+         neq = neq + 1
+         call grid_to_eq(grid,linear_system,EDGE_ID,j,i, &
+                         grid%edge(edge)%gid,eq_list(neq))
+      end do
+   end do
+end do
+
+do iface=1,FACES_PER_ELEMENT
+   face = grid%element(elem)%face(iface)
+   if (grid%face(face)%degree < 3) cycle
+   do j=1,face_dof(grid%face(face)%degree)
+      do i=1,linear_system%system_size
+         neq = neq + 1
+         call grid_to_eq(grid,linear_system,FACE_ID,j,i, &
+                         grid%face(face)%gid,eq_list(neq))
+      end do
+   end do
+end do
+
+if (grid%element(elem)%degree > 2) then
+   do j=1,element_dof(grid%element(elem)%degree)
+      do i=1,linear_system%system_size
+         neq = neq + 1
+         call grid_to_eq(grid,linear_system,ELEMENT_ID,j,i, &
+                         grid%element(elem)%gid,eq_list(neq))
+      end do
+   end do
+endif
+
+end subroutine get_element_eq_list
+
+!        ---------------
+function find_col_in_row(linear_system,row,col)
+!        ---------------
+
+!----------------------------------------------------
+! This routine searches for column col in row row and returns the index for
+! matrix_val and column_index where it is found, or 0 if not found.
+! It assumes the column indices within a row are in increasing order, except
+! for the diagonal which is at the start (or diagonal block if system_size > 1)
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+
+type(linsys_type), intent(in) :: linear_system
+integer, intent(in) :: row, col
+integer :: find_col_in_row
+!----------------------------------------------------
+! Local variables:
+
+integer :: lo, hi, mid
+!----------------------------------------------------
+! Begin executable code
+
+find_col_in_row = 0
+
+! if col == row, it had better be at the beginning of the row
+
+if (col == row) then
+   if (linear_system%column_index(linear_system%begin_row(row)) == col) then
+      find_col_in_row = linear_system%begin_row(row)
+   else
+      ierr = PHAML_INTERNAL_ERROR
+      call fatal("find_col_in_row: beginning of row isn't row")
+      stop
+   endif
+
+! second search the first system_size columns, since they might not be
+! in increasing order
+
+else
+
+   do mid=linear_system%begin_row(row)+1, &
+          linear_system%begin_row(row)+linear_system%system_size-1
+      if (linear_system%column_index(mid) == col) then
+         find_col_in_row = mid
+         exit
+      endif
+   end do
+
+! otherwise, use bisection to find col
+
+   if (find_col_in_row == 0) then
+      lo = linear_system%begin_row(row)+linear_system%system_size
+      hi = linear_system%end_row(row)
+      mid = (lo+hi)/2
+
+! but first, check the endpoints
+
+      if (linear_system%column_index(lo) == col) then
+         find_col_in_row = lo
+      elseif (linear_system%column_index(hi) == col) then
+         find_col_in_row = hi
+      else
+
+         do
+            if (linear_system%column_index(mid) == col) then
+               find_col_in_row = mid
+               exit
+            endif
+            if (mid == lo .or. mid == hi) exit
+            if (linear_system%column_index(mid) > col) then
+               if (mid == lo+1) exit 
+               hi = mid
+            else
+               if (mid == hi-1) exit
+               lo = mid
+            endif
+            mid = (lo+hi)/2
+         end do
+
+      endif
+   endif
+endif
+
+end function find_col_in_row
 
 !          -----------
 subroutine test_precon(invec,outvec,matrix,grid,procs,solver_cntl, &

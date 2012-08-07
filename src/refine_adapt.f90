@@ -115,7 +115,8 @@ end function use_old_refinement
 !          ---------------
 subroutine refine_adaptive(grid,procs,refine_control,solver_control,io_control,&
                            lb,still_sequential,init_nvert,init_nelem,init_dof, &
-                           loop,partition_method,balance_what,predictive,no_time)
+                           loop,partition_method,balance_what,predictive, &
+                           stalled,no_time)
 !          ---------------
 
 !----------------------------------------------------
@@ -134,13 +135,15 @@ type(Zoltan_Struct), pointer :: lb
 integer, intent(in) :: init_nvert, init_nelem, init_dof, loop, &
                        partition_method, balance_what
 logical, intent(in) :: still_sequential, predictive
+logical, intent(out) :: stalled
 logical, intent(in), optional :: no_time
 !----------------------------------------------------
 ! Local variables:
 
-logical :: any_changes, any_coarsened
+logical :: any_changes, any_p_coarsened, any_h_coarsened, any_p_refined, &
+           any_h_refined
 real(my_real) :: target
-integer :: nelem, loop_count, astat
+integer :: nelem, loop_count, astat, itemp
 integer, pointer :: desired_level(:),desired_degree(:), &
                     leaf_elements(:)
 !----------------------------------------------------
@@ -151,13 +154,19 @@ if (use_old_refinement(refine_control,procs,predictive)) then
    call old_refine_adaptive(grid,procs,refine_control,solver_control, &
                             io_control,still_sequential,init_nvert,init_nelem, &
                             init_dof,loop,balance_what,predictive,no_time)
+   stalled = .false.
    return
 endif
+
+any_h_coarsened = .false.
+any_p_coarsened = .false.
+any_h_refined   = .false.
+any_p_refined   = .false.
 
 ! Allocate memory.
 
 allocate(desired_level(size(grid%element)),desired_degree(size(grid%element)), &
-         leaf_elements(size(grid%element)),stat=astat)
+         leaf_elements(grid%biggest_elem),stat=astat)
 if (astat /= 0) then
    ierr = ALLOC_FAILED
    call fatal("memory allocation failed in refine_adaptive")
@@ -181,12 +190,26 @@ loop_count = 0
 do
    loop_count = loop_count + 1
 
+! Make a list of leaf elements.
+
+   if (size(leaf_elements) /= grid%biggest_elem) then
+      deallocate(leaf_elements)
+      allocate(leaf_elements(grid%biggest_elem),stat=astat)
+      if (astat /= 0) then
+         ierr = ALLOC_FAILED
+         call fatal("memory allocation failed in refine_adaptive")
+         stop
+      endif
+   endif
+
+   call list_elements(grid,leaf_elements,nelem,leaf=.true.)
+
 ! Mark elements for refinement.  This sets, for each leaf element, the new
 ! h-level and p in the conforming adapted grid.
 
    call mark_for_refinement(grid,procs,refine_control,still_sequential, &
-                            desired_level,desired_degree,any_changes, &
-                            loop_count<4)
+                            leaf_elements,nelem,desired_level,desired_degree, &
+                            any_changes,loop_count<4)
 
 ! If there are no changes on any processor, quit.
 
@@ -195,21 +218,43 @@ do
 ! Perform predictive load balancing.
 
    if (predictive .and. .not. still_sequential) then
-      call pred_load_balance(grid,procs,refine_control,lb,partition_method, &
-                             still_sequential,balance_what,desired_level, &
-                             desired_degree,any_changes)
+      call pred_load_balance(grid,procs,refine_control,solver_control,lb, &
+                             partition_method,still_sequential,balance_what, &
+                             desired_level,desired_degree,any_changes)
+
+! Reallocate if predictive load balance reallocated grid%element or performed
+! refinement that changed the biggest element lid
+
+      if (size(desired_level) /= size(grid%element)) then
+         deallocate(desired_level,desired_degree)
+         allocate(desired_level(size(grid%element)), &
+                  desired_degree(size(grid%element)), stat=astat)
+         if (astat /= 0) then
+            ierr = ALLOC_FAILED
+            call fatal("memory allocation failed in refine_adaptive")
+            stop
+         endif
+      endif
+
+      if (size(leaf_elements) /= grid%biggest_elem) then
+         deallocate(leaf_elements)
+         allocate(leaf_elements(grid%biggest_elem),stat=astat)
+         if (astat /= 0) then
+            ierr = ALLOC_FAILED
+            call fatal("memory allocation failed in refine_adaptive")
+            stop
+         endif
+      endif
 
 ! redo mark for refinement because load balance changed grid
+
       if (any_changes) then
+         call list_elements(grid,leaf_elements,nelem,leaf=.true.)
          call mark_for_refinement(grid,procs,refine_control,still_sequential, &
-                                  desired_level,desired_degree,any_changes, &
-                                  loop_count<4)
+                                  leaf_elements,nelem,desired_level, &
+                                  desired_degree,any_changes,loop_count<4)
       endif
    endif
-
-! Make a list of leaf elements.
-
-   call list_elements(grid,leaf_elements,nelem,leaf=.true.)
 
 ! Stop doing coarsening after 3 loops (arbitrary 3) to avoid an infinite
 ! loop of coarsen/refine.
@@ -224,43 +269,50 @@ do
              refine_control%reftype == P_ADAPTIVE .or. &
              refine_control%reftype == HP_ADAPTIVE) then
             call p_coarsen_grid(grid,refine_control,desired_degree, &
-                                leaf_elements,nelem)
+                                leaf_elements,nelem,any_p_coarsened)
+         else
+            any_p_coarsened = .false.
          endif
          if (refine_control%reftype == H_UNIFORM .or. &
              refine_control%reftype == H_ADAPTIVE .or. &
              refine_control%reftype == HP_ADAPTIVE) then
             call h_coarsen_grid(grid,leaf_elements,nelem,desired_level, &
-                                desired_degree,refine_control,any_coarsened)
+                                desired_degree,refine_control,any_h_coarsened)
+         else
+            any_h_coarsened = .false.
          endif
 
 ! If not increasing the size of the grid, check to see if we're done after
 ! the coarsening phase.
 
          if (refine_control%refterm == KEEP_NVERT        .or. &
-             refine_control%refterm == KEEP_NVERT_SMOOTH .or. &
              refine_control%refterm == KEEP_NELEM        .or. &
-             refine_control%refterm == KEEP_NELEM_SMOOTH .or. &
              refine_control%refterm == KEEP_NEQ          .or. &
-             refine_control%refterm == KEEP_NEQ_SMOOTH   .or. &
              refine_control%refterm == KEEP_ERREST) then
             if (adapt_done(grid,procs,refine_control,still_sequential, &
-                           target)) exit
+                           target,.true.)) then
+               any_p_refined = .false.
+               any_h_refined = .false.
+               exit
+            endif
          endif
 
       else
 
-         any_coarsened = .false.
+         any_p_coarsened = .false.
+         any_h_coarsened = .false.
 
       endif
 
    else
-      any_coarsened = .false.
+      any_p_coarsened = .false.
+      any_h_coarsened = .false.
 
    endif
 
 ! Remake the list of leaf elements because h coarsening invalidates it.
 
-   if (any_coarsened) then
+   if (any_h_coarsened) then
       call list_elements(grid,leaf_elements,nelem,leaf=.true.)
    endif
 
@@ -269,20 +321,46 @@ do
    if (refine_control%reftype == P_UNIFORM .or. &
        refine_control%reftype == P_ADAPTIVE .or. &
        refine_control%reftype == HP_ADAPTIVE) then
-      call p_refine_grid(grid,refine_control,desired_degree,leaf_elements,nelem)
+      call p_refine_grid(grid,refine_control,desired_degree,leaf_elements, &
+                         nelem,any_p_refined)
+   else
+      any_p_refined = .false.
    endif
    if (refine_control%reftype == H_UNIFORM .or. &
        refine_control%reftype == H_ADAPTIVE .or. &
        refine_control%reftype == HP_ADAPTIVE) then
-      call h_refine_grid(grid,refine_control,desired_level,desired_degree, &
-                         leaf_elements,nelem)
+      call h_refine_grid(grid,refine_control,solver_control,desired_level, &
+                         desired_degree,leaf_elements,nelem,any_h_refined)
+   else
+      any_h_refined = .false.
    endif
 
 ! See if enough refinement has occured.
 
-   if (adapt_done(grid,procs,refine_control,still_sequential,target)) exit
+   if (adapt_done(grid,procs,refine_control,still_sequential,target, &
+                  any_p_coarsened .or. any_h_coarsened .or. &
+                  any_p_refined .or. any_h_refined)) exit
 
 end do
+
+! check for stalling
+
+if (loop_count == 1) then
+   if (any_p_coarsened .or. any_h_coarsened .or. any_p_refined .or. &
+       any_h_refined) then
+      itemp = 1
+   else
+      itemp = 0
+   endif
+   itemp = phaml_global_max(procs,itemp,3307)
+   if (itemp == 0) then
+      stalled = .true.
+   else
+      stalled = .false.
+   endif
+else
+   stalled = .false.
+endif
 
 ! Free memory.
 
@@ -291,7 +369,7 @@ deallocate(desired_level,desired_degree,leaf_elements)
 ! Enforce the overlap conditions around the partition boundary.
 
 if (num_proc(procs) > 1 .and. .not. still_sequential) then
-   call enforce_overlap(grid,refine_control,procs)
+   call enforce_overlap(grid,refine_control,solver_control,procs)
 endif
 
 end subroutine refine_adaptive
@@ -337,17 +415,17 @@ endif
 
 select case (refine_control%refterm)
 
-case (DOUBLE_NVERT, DOUBLE_NVERT_SMOOTH)
+case (DOUBLE_NVERT)
 
    target = init_nvert*refine_control%inc_factor**loop
    if (target > refine_control%max_vert) target = refine_control%max_vert
 
-case (DOUBLE_NELEM, DOUBLE_NELEM_SMOOTH)
+case (DOUBLE_NELEM)
 
    target = init_nelem*refine_control%inc_factor**loop
    if (target > refine_control%max_elem) target = refine_control%max_elem
 
-case (DOUBLE_NEQ, DOUBLE_NEQ_SMOOTH)
+case (DOUBLE_NEQ)
 
    target = init_dof*refine_control%inc_factor**loop
    if (target > refine_control%max_dof) target = refine_control%max_dof
@@ -359,7 +437,7 @@ case (HALVE_ERREST)
    endif
    target = compute_global_max_errind(grid,procs,still_sequential)/2
 
-case (KEEP_NVERT, KEEP_NVERT_SMOOTH)
+case (KEEP_NVERT)
 
    if (refine_control%max_vert /= huge(0)) then
       target = refine_control%max_vert
@@ -369,7 +447,7 @@ case (KEEP_NVERT, KEEP_NVERT_SMOOTH)
       if (target > refine_control%max_vert) target = refine_control%max_vert
    endif
 
-case (KEEP_NELEM, KEEP_NELEM_SMOOTH)
+case (KEEP_NELEM)
 
    if (refine_control%max_elem /= huge(0)) then
       target = refine_control%max_elem
@@ -380,7 +458,7 @@ case (KEEP_NELEM, KEEP_NELEM_SMOOTH)
       if (target > refine_control%max_elem) target = refine_control%max_elem
    endif
 
-case (KEEP_NEQ, KEEP_NEQ_SMOOTH)
+case (KEEP_NEQ)
 
    if (refine_control%max_dof /= huge(0)) then
       target = refine_control%max_dof
@@ -410,7 +488,8 @@ end select
 end function set_termination_target
 
 !        ----------
-function adapt_done(grid,procs,refine_control,still_sequential,target)
+function adapt_done(grid,procs,refine_control,still_sequential,target, &
+                    any_changes)
 !        ----------
 
 !----------------------------------------------------
@@ -425,6 +504,7 @@ type (proc_info), intent(in) :: procs
 type(refine_options), intent(in) :: refine_control
 logical, intent(in) :: still_sequential
 real(my_real), intent(in) :: target
+logical, intent(in) :: any_changes
 logical :: adapt_done
 !----------------------------------------------------
 ! Local variables:
@@ -441,17 +521,17 @@ adapt_done = .false.
 
 select case (refine_control%refterm)
 
-case (DOUBLE_NVERT, KEEP_NVERT, DOUBLE_NVERT_SMOOTH, KEEP_NVERT_SMOOTH)
+case (DOUBLE_NVERT, KEEP_NVERT)
 
    call get_grid_info(grid,procs,still_sequential,3302,total_nvert=compare)
    if (compare >= target) adapt_done = .true.
 
-case (DOUBLE_NELEM, KEEP_NELEM, DOUBLE_NELEM_SMOOTH, KEEP_NELEM_SMOOTH)
+case (DOUBLE_NELEM, KEEP_NELEM)
 
    call get_grid_info(grid,procs,still_sequential,3302,total_nelem_leaf=compare)
    if (compare >= target) adapt_done = .true.
 
-case (DOUBLE_NEQ, KEEP_NEQ, DOUBLE_NEQ_SMOOTH, KEEP_NEQ_SMOOTH)
+case (DOUBLE_NEQ, KEEP_NEQ)
 
    call get_grid_info(grid,procs,still_sequential,3302,total_dof=compare)
    if (compare >= target) adapt_done = .true.
@@ -476,12 +556,36 @@ case default
 
 end select
 
+! check for reaching maximum levels or degree
+
+if (.not. adapt_done) then
+   if (refine_control%stop_on_maxlev) then
+      call get_grid_info(grid,procs,still_sequential,3304,max_nlev=compare)
+      if (compare >= refine_control%max_lev) adapt_done = .true.
+   endif
+
+   if (refine_control%stop_on_maxdeg) then
+      call get_grid_info(grid,procs,still_sequential,3305,maxdeg=compare)
+      if (compare >= refine_control%max_deg) adapt_done = .true.
+   endif
+endif
+
+if (.not. adapt_done) then
+   if (any_changes) then
+      compare = 1
+   else
+      compare = 0
+   endif
+   compare = phaml_global_max(procs,compare,3306)
+   if (compare == 0) adapt_done = .true.
+endif
+
 end function adapt_done
 
 !          -------------------
 subroutine mark_for_refinement(grid,procs,refine_control,still_sequential, &
-                               desired_level,desired_degree,any_changes, &
-                               coarsen_OK)
+                               leaf_elements,nleaf,desired_level, &
+                               desired_degree,any_changes,coarsen_OK)
 !          -------------------
 
 !----------------------------------------------------
@@ -498,6 +602,8 @@ type(grid_type), intent(inout) :: grid
 type(proc_info), intent(in) :: procs
 type(refine_options), intent(in) :: refine_control
 logical, intent(in) :: still_sequential
+integer, intent(in) :: leaf_elements(:)
+integer, intent(in) :: nleaf
 integer, intent(out) :: desired_level(:), desired_degree(:)
 logical, intent(out) :: any_changes
 logical, intent(in) :: coarsen_OK
@@ -505,9 +611,8 @@ logical, intent(in) :: coarsen_OK
 ! Local variables:
 
 real(my_real) :: refine_cutoff, coarsen_cutoff
-integer :: leaf_elements(grid%nelem_leaf)
-integer :: nleaf, i, elem, new_p(2)
-character(len=1) :: reftype(size(grid%element))
+integer :: i, elem, new_p(2)
+character(len=1) :: reftype(grid%biggest_elem)
 logical :: h_coarsen, p_coarsen
 !----------------------------------------------------
 ! Begin executable code
@@ -526,11 +631,14 @@ call all_error_indicators(grid,refine_control%error_estimator,delayed=.true.)
 ! should be refined or coarsened.
 
 call determine_cutoffs(grid,procs,refine_control,still_sequential, &
-                       refine_cutoff,coarsen_cutoff)
+                       leaf_elements,nleaf,refine_cutoff,coarsen_cutoff)
 
-! Make a list of the leaf elements.
+! In 3D, if the refine cutoff is essentially 0, we have probably refined all
+! elements, because the initial guess is setting the hierarchical coefficients
+! to 0, so quit because we don't know what to refine.
 
-call list_elements(grid,leaf_elements,nleaf,leaf=.true.)
+if (global_element_kind == TETRAHEDRAL_ELEMENT .and. &
+    refine_cutoff < 1.0e-100_my_real) return
 
 ! For each leaf element ...
 
@@ -626,7 +734,7 @@ end subroutine mark_for_refinement
 
 !          -----------------
 subroutine determine_cutoffs(grid,procs,refine_control,still_sequential, &
-                             refine_cutoff,coarsen_cutoff)
+                             leaf_elements,nleaf,refine_cutoff,coarsen_cutoff)
 !          -----------------
 
 !----------------------------------------------------
@@ -637,10 +745,12 @@ subroutine determine_cutoffs(grid,procs,refine_control,still_sequential, &
 !----------------------------------------------------
 ! Dummy arguments
 
-type(grid_type), intent(in) :: grid
+type(grid_type), intent(inout) :: grid
 type(proc_info), intent(in) :: procs
 type(refine_options), intent(in) :: refine_control
 logical, intent(in) :: still_sequential
+integer, intent(in) :: leaf_elements(:)
+integer, intent(in) :: nleaf
 real(my_real), intent(out) :: refine_cutoff, coarsen_cutoff
 !----------------------------------------------------
 ! Local variables:
@@ -681,7 +791,9 @@ case(ONE_REF_HALF_ERRIND)
 ! For ONE_REF_HALF_ERRIND, the refine cutoff is the maximum error indicator
 ! divided by inc_factor.
 
-   global_max_errind = compute_global_max_errind(grid,procs,still_sequential)
+! TEMP120127 if this works, add leaf_elements to other calls to compute_glob...
+   global_max_errind = compute_global_max_errind(grid,procs,still_sequential, &
+                                                 leaf_elements,nleaf)
    refine_cutoff = global_max_errind/refine_control%inc_factor
 
 ! Set the coarsening cutoff at 1/100 the maximum error indicator.
@@ -733,14 +845,14 @@ real(my_real) :: hcoarsen_errind, pcoarsen_errind
 ! relatives
 
 if (grid%element(elem)%level /= 1) then
-   parent = hash_decode_key(grid%element(elem)%gid/2,grid%elem_hash)
-   siblings(1:2) = get_child_lid(grid%element(parent)%gid,(/1,2/), &
+   parent = hash_decode_key(grid%element(elem)%gid/MAX_CHILD,grid%elem_hash)
+   siblings(1:2) = get_child_lid(grid%element(parent)%gid,ALL_CHILDREN, &
                                  grid%elem_hash)
    if (grid%element(parent)%mate == BOUNDARY) then
       siblings(3:4) = NO_CHILD
    else
       siblings(3:4) = get_child_lid( &
-                     grid%element(parent)%mate,(/1,2/),grid%elem_hash)
+                     grid%element(parent)%mate,ALL_CHILDREN,grid%elem_hash)
    endif
 endif
 
@@ -806,7 +918,7 @@ subroutine reconcile_requests(grid,procs,still_sequential,leaf_elements,nleaf, &
 !----------------------------------------------------
 ! Dummy arguments
 
-type(grid_type), intent(in) :: grid
+type(grid_type), intent(inout) :: grid
 type(proc_info), intent(in) :: procs
 logical, intent(in) :: still_sequential
 integer, intent(in) :: leaf_elements(:), nleaf
@@ -815,9 +927,10 @@ logical, intent(inout) :: any_changes
 !----------------------------------------------------
 ! Local variables:
 
-integer :: part_bound_elements(size(grid%element)), npartbound, isend2(2), &
+integer :: part_bound_elements(grid%biggest_elem), npartbound, isend2(2), &
            new_desired(size(desired_level)), i, elem, j, neigh, p, &
-           neighbors(3,size(grid%element)), neighneigh(3), neigh_change, loop, &
+           neighbors(NEIGHBORS_PER_ELEMENT,grid%biggest_elem), &
+           neighneigh(NEIGHBORS_PER_ELEMENT), neigh_change, loop, &
            nirecv, nrrecv
 logical :: changed, changed_this_pass
 integer, pointer :: irecv(:)
@@ -845,6 +958,11 @@ if (num_proc(procs) > 1 .and. .not. still_sequential) then
    call exchange_desired(loop,grid,procs,changed,part_bound_elements, &
                          npartbound,any_changes,desired_level,desired_degree)
 endif
+
+! The 3D adaptive refinement algorithm does not maintain compatibility during
+! individual refinements, so does not need to match up desired_level.
+
+if (global_element_kind == TETRAHEDRAL_ELEMENT) return
 
 ! Identify the neighbors of each leaf element
 
@@ -886,7 +1004,7 @@ do while (changed)
 
 ! For each neighbor of elem ...
 
-         do j=1,EDGES_PER_ELEMENT
+         do j=1,NEIGHBORS_PER_ELEMENT
             neigh = neighbors(j,elem)
             if (neigh == BOUNDARY) cycle
 
@@ -1038,7 +1156,7 @@ subroutine exchange_desired(loop,grid,procs,changed,part_bound_elements, &
 ! Dummy arguments
 
 integer, intent(in) :: loop
-type(grid_type), intent(in) :: grid
+type(grid_type), intent(inout) :: grid
 type(proc_info), intent(in) :: procs
 logical, intent(inout) :: changed
 integer, intent(in) :: part_bound_elements(:), npartbound
@@ -1049,9 +1167,9 @@ integer, intent(inout), optional :: desired_degree(:)
 ! Local variables:
 
 integer :: my_processor, nproc, nisend, count, i, p, ip, nirecv, nrrecv, lid, &
-           k, neigh(3), astat
+           k, neigh(NEIGHBORS_PER_ELEMENT), astat, istart
 logical :: on_boundary
-integer, allocatable :: isend(:)
+integer, allocatable :: isend(:), nrecv(:)
 integer, pointer :: irecv(:)
 real(my_real), pointer :: rrecv(:)
 !----------------------------------------------------
@@ -1068,7 +1186,7 @@ nisend = 3 + (1+KEY_SIZE)*npartbound
 if (present(desired_degree)) then
    nisend = nisend + npartbound
 endif
-allocate(isend(nisend),stat=astat)
+allocate(isend(nisend),nrecv(nproc),stat=astat)
 if (astat /= 0) then
    ierr = ALLOC_FAILED
    call fatal("memory allocation failed in exchange_desired")
@@ -1108,36 +1226,36 @@ else
    isend(4:nisend) = 0
 endif
 
-! Send the message to the other processors.
+! Exchange the message with the other processors.
+
 ! TEMP eventually send it only to neighbor processors; need to be careful
 !      about global reduction of changed in that case
 
 if (my_processor /= MASTER) then
-   do p=1,nproc
-      if (p==my_processor) cycle
-      call phaml_send(procs,p,isend,nisend,(/0.0_my_real/),0,3310+loop)
-   end do
-endif
+   call phaml_alltoall(procs,isend,nisend,irecv,nrecv,3310+loop)
 
 ! Receive and process the messages.
 
-if (my_processor /= MASTER) then
-   do ip=1,nproc-1
-      call phaml_recv(procs,p,irecv,nirecv,rrecv,nrrecv,3310+loop)
+   istart = 0
+   do ip=1,nproc
+      if (ip == my_processor) then
+         istart = istart + nrecv(ip)
+         cycle
+      endif
 
 ! Indicate if there was a change
 
-      if (irecv(1) == 1) changed = .true.
-      if (irecv(2) == 1) any_changes = .true.
+      if (irecv(1+istart) == 1) changed = .true.
+      if (irecv(2+istart) == 1) any_changes = .true.
 
 ! If there are changes in this message, desired should be the maximum of
 ! what the owner of each element thinks and what I have, if the element is
 ! on the partition boundary.
 ! TEMP I'm not sure if this disrupts coarsening.
 
-      if (irecv(1) == 1) then
-         count = 4
-         do i=1,irecv(3) ! irecv(3) is the number of elements sent
+      if (irecv(1+istart) == 1) then
+         count = 4+istart
+         do i=1,irecv(3+istart) ! irecv(3) is the number of elements sent
             lid = hash_decode_key(hash_unpack_key(irecv,count),grid%elem_hash)
             if (lid == HASH_NOT_FOUND) then
                count = count + KEY_SIZE+1
@@ -1145,7 +1263,7 @@ if (my_processor /= MASTER) then
             else
                neigh = get_neighbors(lid,grid)
                on_boundary = .false.
-               do k=1,3
+               do k=1,NEIGHBORS_PER_ELEMENT
                   if (neigh(k) /= boundary) then
                      if (grid%element(neigh(k))%iown) on_boundary = .true.
                   endif
@@ -1165,14 +1283,16 @@ if (my_processor /= MASTER) then
             endif
          end do
       end if
-      deallocate(irecv)
+      istart = istart + nrecv(ip)
    end do
+   deallocate(irecv)
 endif
 
 end subroutine exchange_desired
 
 !          --------------
-subroutine p_coarsen_grid(grid,refine_control,desired_degree,elem_list,nelem)
+subroutine p_coarsen_grid(grid,refine_control,desired_degree,elem_list,nelem, &
+                          any_changes)
 !          --------------
 
 !----------------------------------------------------
@@ -1187,6 +1307,7 @@ subroutine p_coarsen_grid(grid,refine_control,desired_degree,elem_list,nelem)
 type(grid_type), intent(inout) :: grid
 type(refine_options), intent(in) :: refine_control
 integer, intent(in) :: desired_degree(:), elem_list(:), nelem
+logical, intent(out) :: any_changes
 !----------------------------------------------------
 ! Local variables:
 
@@ -1194,6 +1315,8 @@ integer :: i, errcode, delta_dof, delta_dof_own, total_delta_dof, &
            total_delta_dof_own
 !----------------------------------------------------
 ! Begin executable code
+
+any_changes = .false.
 
 ! p-coarsen the interior of each element that wants to be p coarsened.
 
@@ -1203,12 +1326,14 @@ total_delta_dof_own = 0
 !$omp parallel do schedule(dynamic) &
 !$omp  default(shared) &
 !$omp  private(i,errcode,delta_dof,delta_dof_own) &
-!$omp  reduction(+ : total_delta_dof, total_delta_dof_own)
+!$omp  reduction(+ : total_delta_dof, total_delta_dof_own) &
+!$omp  reduction(.or.: any_changes)
 
 do i=1,nelem
    do while (grid%element(elem_list(i))%degree > desired_degree(elem_list(i)))
       call p_coarsen_elem_interior(grid,elem_list(i),errcode,refine_control, &
                                    delta_dof,delta_dof_own,delay_errind=.true.)
+      if (errcode == 0) any_changes = .true.
       total_delta_dof = total_delta_dof + delta_dof
       total_delta_dof_own = total_delta_dof_own + delta_dof_own
    end do
@@ -1224,7 +1349,7 @@ end subroutine p_coarsen_grid
 
 !          --------------
 subroutine h_coarsen_grid(grid,leaf_list,nleaf,desired_level,desired_degree, &
-                          refine_control,any_coarsened)
+                          refine_control,any_changes)
 !          --------------
 
 !----------------------------------------------------
@@ -1239,11 +1364,11 @@ type(grid_type), intent(inout) :: grid
 integer, intent(inout) :: leaf_list(:), nleaf, desired_level(:), &
                           desired_degree(:)
 type(refine_options) :: refine_control
-logical, intent(out) :: any_coarsened
+logical, intent(out) :: any_changes
 !----------------------------------------------------
 ! Local variables:
 
-integer :: i, lev, coarsen_list(size(grid%element)), ncoarsen, errcode, &
+integer :: i, lev, coarsen_list(grid%biggest_elem), ncoarsen, errcode, &
            delta_nelem, delta_nelem_leaf, delta_nedge,  delta_nvert, &
            delta_nelem_leaf_own,  delta_nvert_own, delta_dof, delta_dof_own, &
            total_delta_nelem, total_delta_nelem_leaf, total_delta_nedge, &
@@ -1252,7 +1377,7 @@ integer :: i, lev, coarsen_list(size(grid%element)), ncoarsen, errcode, &
 !----------------------------------------------------
 ! Begin executable code
 
-any_coarsened = .false.
+any_changes = .false.
 
 ! For each level, finest to coarsest ...
 
@@ -1263,8 +1388,6 @@ do lev=grid%nlev,2,-1
 
    call make_h_coarsen_list(grid,leaf_list,nleaf,lev,desired_level, &
                             desired_degree,coarsen_list,ncoarsen)
-
-   if (ncoarsen > 0) any_coarsened = .true.
 
 ! Coarsen each element on the list.
 
@@ -1285,15 +1408,17 @@ do lev=grid%nlev,2,-1
 !$omp reduction(+ : total_delta_nelem, total_delta_nelem_leaf, &
 !$omp               total_delta_nedge, total_delta_nvert, &
 !$omp               total_delta_nelem_leaf_own, total_delta_nvert_own, &
-!$omp               total_delta_dof, total_delta_dof_own)
+!$omp               total_delta_dof, total_delta_dof_own) &
+!$omp  reduction(.or.: any_changes)
 
    do i=1,ncoarsen
-      call unbisect_triangle_pair(grid,coarsen_list(i),errcode,refine_control, &
+      call h_coarsen_element(grid,coarsen_list(i),errcode,refine_control, &
                                   delta_nelem, delta_nelem_leaf, delta_nedge, &
                                   delta_nvert, delta_nelem_leaf_own, &
                                   delta_nvert_own, delta_dof, delta_dof_own, &
                                   delay_errind=.true.)
 
+      if (errcode == 0) any_changes = .true.
       total_delta_dof = total_delta_dof + delta_dof
       total_delta_dof_own = total_delta_dof_own + delta_dof_own
       total_delta_nelem = total_delta_nelem + delta_nelem
@@ -1343,7 +1468,8 @@ integer, intent(out) :: coarsen_list(:), ncoarsen
 ! Local variables:
 
 integer :: i, elem, parent, mate, new_nleaf, sibling
-logical :: onlist(size(grid%element))
+! TEMP110504 this should be small_logical; search for others
+logical :: onlist(grid%biggest_elem)
 !----------------------------------------------------
 ! Begin executable code
 
@@ -1366,7 +1492,7 @@ do i=1,nleaf
 
 ! Identify the parent and mate
 
-   parent = hash_decode_key(grid%element(elem)%gid/2,grid%elem_hash)
+   parent = hash_decode_key(grid%element(elem)%gid/MAX_CHILD,grid%elem_hash)
    if (.not. grid%element(parent)%mate == BOUNDARY) then
       mate = hash_decode_key(grid%element(parent)%mate,grid%elem_hash)
    else
@@ -1408,7 +1534,8 @@ nleaf = new_nleaf
 end subroutine make_h_coarsen_list
 
 !          -------------
-subroutine p_refine_grid(grid,refine_control,desired_degree,elem_list,nelem)
+subroutine p_refine_grid(grid,refine_control,desired_degree,elem_list,nelem, &
+                         any_changes)
 !          -------------
 
 !----------------------------------------------------
@@ -1423,13 +1550,18 @@ subroutine p_refine_grid(grid,refine_control,desired_degree,elem_list,nelem)
 type(grid_type), intent(inout) :: grid
 type(refine_options), intent(in) :: refine_control
 integer, intent(in) :: desired_degree(:), elem_list(:), nelem
+logical, intent(out) :: any_changes
 !----------------------------------------------------
 ! Local variables:
 
+! TEMP seems like edge_list need not be bigger than grid%nedge.  Verify and
+!      look for similar places where biggest is used for dimension
 integer :: total_delta_dof, total_delta_dof_own, i, errcode, delta_dof, &
-           delta_dof_own, edge_list(size(grid%edge)), nedge
+           delta_dof_own, edge_list(grid%biggest_edge), nedge
 !----------------------------------------------------
 ! Begin executable code
+
+any_changes = .false.
 
 ! p-refine the interior of each element that wants to be p refined.
 
@@ -1439,13 +1571,15 @@ total_delta_dof_own = 0
 !$omp parallel &
 !$omp  default(shared) &
 !$omp  private(i,errcode,delta_dof,delta_dof_own) &
-!$omp  reduction(+ : total_delta_dof, total_delta_dof_own)
+!$omp  reduction(+ : total_delta_dof, total_delta_dof_own) &
+!$omp  reduction(.or.: any_changes)
 
 !$omp do schedule(dynamic)
 do i=1,nelem
    do while (grid%element(elem_list(i))%degree < desired_degree(elem_list(i)))
       call p_refine_element_interior(grid,refine_control,elem_list(i), &
                                      errcode,delta_dof,delta_dof_own)
+      if (errcode == 0) any_changes = .true.
       total_delta_dof = total_delta_dof + delta_dof
       total_delta_dof_own = total_delta_dof_own + delta_dof_own
    end do
@@ -1488,8 +1622,8 @@ grid%dof_own = grid%dof_own + total_delta_dof_own
 end subroutine p_refine_grid
 
 !          -------------
-subroutine h_refine_grid(grid,refine_control,desired_level,desired_degree, &
-                         elem_list,nelem)
+subroutine h_refine_grid(grid,refine_control,solver_control,desired_level, &
+                         desired_degree,elem_list,nelem,any_changes)
 !          -------------
 
 !----------------------------------------------------
@@ -1502,14 +1636,14 @@ subroutine h_refine_grid(grid,refine_control,desired_level,desired_degree, &
 
 type(grid_type), intent(inout) :: grid
 type(refine_options), intent(in) :: refine_control
+type(solver_options), intent(in) :: solver_control
 integer, pointer :: desired_level(:), desired_degree(:), elem_list(:)
 integer, intent(in) :: nelem
+logical, intent(out) :: any_changes
 !----------------------------------------------------
 ! Local variables:
 
-integer :: lev, elem, errcode, mate, parent, i, nrefine, &
-           refine_list(size(grid%element)), vert_lid(2,size(grid%element)), &
-           edge_lid(6,size(grid%element)), elem_lid(4,size(grid%element)), &
+integer :: lev, elem, errcode, mate, parent, i, nrefine, newsize, &
            one_vert_lid(2),one_edge_lid(6),one_elem_lid(4), &
            delta_dof, total_delta_dof, delta_dof_own, total_delta_dof_own, &
            delta_nelem, total_delta_nelem, delta_nelem_leaf, &
@@ -1517,11 +1651,39 @@ integer :: lev, elem, errcode, mate, parent, i, nrefine, &
            total_delta_nelem_leaf_own, delta_nedge, total_delta_nedge, &
            delta_nedge_own, total_delta_nedge_own, delta_nvert, &
            total_delta_nvert, delta_nvert_own, total_delta_nvert_own, &
-           max_nlev, max_max_nlev, astat
+           max_nlev, max_max_nlev, astat, refedge, nrefedge
+integer, allocatable :: refine_list(:), vert_lid(:,:), edge_lid(:,:), &
+                        elem_lid(:,:), refinement_edge_list(:)
 logical, allocatable :: onlist(:)
+logical :: reallocated
 
 !----------------------------------------------------
 ! Begin executable code
+
+any_changes = .false.
+
+! Allocate refine_list and lid lists
+
+allocate(refine_list(grid%biggest_elem), vert_lid(2,grid%biggest_elem), &
+         edge_lid(6,grid%biggest_elem), elem_lid(4,grid%biggest_elem), &
+         stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("memory allocation failed in h_refine_grid")
+   stop
+endif
+
+! Allocate the list of refinement edges
+
+if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+   allocate(refinement_edge_list(grid%biggest_edge),stat=astat)
+   if (astat /= 0) then
+      ierr = ALLOC_FAILED
+      call fatal("memory allocation failed in h_refine_grid")
+      stop
+   endif
+   nrefedge = 0
+endif
 
 ! Allocate onlist
 
@@ -1531,11 +1693,41 @@ if (astat /= 0) then
    call fatal("memory allocation failed in h_refine_grid")
    stop
 endif
-onlist = .false.
+
+! Note: grid%dof etc must not be used in before_h_refine or after_h_refine
+! because the reduction does not occur until the end of the parallel section
+
+total_delta_dof = 0
+total_delta_dof_own = 0
+total_delta_nelem = 0
+total_delta_nelem_leaf = 0
+total_delta_nelem_leaf_own = 0
+total_delta_nedge = 0
+total_delta_nedge_own = 0
+total_delta_nvert = 0
+total_delta_nvert_own = 0
+max_max_nlev = 0
+
+!$omp parallel &
+!$omp  default(shared) &
+!$omp  private(lev,i,errcode,one_elem_lid,one_edge_lid,one_vert_lid, &
+!$omp    delta_dof, delta_dof_own, delta_nelem, delta_nelem_leaf, &
+!$omp    delta_nelem_leaf_own, delta_nedge, delta_nedge_own, &
+!$omp    delta_nvert, delta_nvert_own, max_nlev, refedge) &
+!$omp  reduction(+ : total_delta_dof, total_delta_dof_own, total_delta_nelem, &
+!$omp    total_delta_nelem_leaf, total_delta_nelem_leaf_own, total_delta_nedge,&
+!$omp    total_delta_nedge_own, total_delta_nvert, total_delta_nvert_own) &
+!$omp  reduction(max : max_max_nlev) &
+!$omp  reduction(.or.: any_changes)
 
 ! for each level, starting with the coarsest level ...
 
+! TEMP3D I think they can be done all at once rather than by level
+
 do lev=1,grid%nlev
+
+!$omp barrier
+!$omp single
 
 ! Make sure onlist is still big enough.
 
@@ -1547,81 +1739,86 @@ do lev=1,grid%nlev
          call fatal("memory allocation failed in h_refine_grid")
          stop
       endif
-      onlist = .false.
    endif
 
 ! Create a list of elements on this level to be refined.
+! There is a slight possibility that refine_list and the lid lists will
+! come up short.  If that happens, double the allocation and start over.
 
-   nrefine = 0
-   do i=1,nelem
-      elem = elem_list(i)
-      if (grid%element(elem)%level == lev .and. &
-          grid%element(elem)%level < desired_level(elem)) then
-         if (onlist(elem)) cycle
-         if (.not. grid%element(elem)%mate == BOUNDARY) then
-            mate = hash_decode_key(grid%element(elem)%mate,grid%elem_hash)
-         else
-            mate = BOUNDARY
+   reallocated = .true.
+   do while (reallocated)
+      reallocated = .false.
+      onlist(1:grid%biggest_elem) = .false.
+      nrefine = 0
+      do i=1,nelem
+         elem = elem_list(i)
+         if (grid%element(elem)%level == lev .and. &
+             grid%element(elem)%level < desired_level(elem)) then
+            if (onlist(elem)) cycle
+            if (.not. grid%element(elem)%mate == BOUNDARY) then
+               mate = hash_decode_key(grid%element(elem)%mate,grid%elem_hash)
+            else
+               mate = BOUNDARY
+            endif
+            if (mate /= BOUNDARY) then
+               if (onlist(mate)) cycle
+            endif
+            nrefine = nrefine + 1
+            if (nrefine > size(refine_list)) then
+               newsize = 2*size(refine_list)
+               deallocate(refine_list,vert_lid,edge_lid,elem_lid)
+               allocate(refine_list(newsize), vert_lid(2,newsize), &
+                        edge_lid(6,newsize), elem_lid(4,newsize), stat=astat)
+               if (astat /= 0) then
+                  ierr = ALLOC_FAILED
+                  call fatal("memory allocation failed in h_refine_grid")
+                  stop
+               endif
+               reallocated = .true.
+               exit
+            endif
+            refine_list(nrefine) = elem
+            onlist(elem) = .true.
          endif
-         if (mate /= BOUNDARY) then
-            if (onlist(mate)) cycle
-         endif
-         nrefine = nrefine + 1
-         refine_list(nrefine) = elem
-         onlist(elem) = .true.
-      endif
+      end do
    end do
+
+! Get lids for the children, and other things that must be done
+! OpenMP-sequentially before the parallel loop.
+
+   if (nrefine /= 0) then
+      call before_h_refine(grid,refine_list,nrefine,vert_lid=vert_lid, &
+                           edge_lid=edge_lid,elem_lid=elem_lid, &
+                           desired_level=desired_level, &
+                           desired_degree=desired_degree, &
+                           elem_list=elem_list)
+   endif
+
+!$omp end single
 
 ! If the list is empty, move on to the next level.
 
    if (nrefine == 0) cycle
 
-! Get lids for the children, and other things that must be done
-! OpenMP-sequentially before the parallel loop.
-
-   call before_h_refine(grid,refine_list,nrefine,vert_lid=vert_lid, &
-                        edge_lid=edge_lid,elem_lid=elem_lid, &
-                        desired_level=desired_level, &
-                        desired_degree=desired_degree, &
-                        elem_list=elem_list)
-
-   total_delta_dof = 0
-   total_delta_dof_own = 0
-   total_delta_nelem = 0
-   total_delta_nelem_leaf = 0
-   total_delta_nelem_leaf_own = 0
-   total_delta_nedge = 0
-   total_delta_nedge_own = 0
-   total_delta_nvert = 0
-   total_delta_nvert_own = 0
-   max_max_nlev = 0
-
-!$omp parallel do &
-!$omp  default(shared) &
-!$omp  private(i,errcode,one_elem_lid,one_edge_lid,one_vert_lid, &
-!$omp    delta_dof, delta_dof_own, delta_nelem, delta_nelem_leaf, &
-!$omp    delta_nelem_leaf_own, delta_nedge, delta_nedge_own, &
-!$omp    delta_nvert, delta_nvert_own, max_nlev) &
-!$omp  reduction(+ : total_delta_dof, total_delta_dof_own, total_delta_nelem, &
-!$omp    total_delta_nelem_leaf, total_delta_nelem_leaf_own, total_delta_nedge,&
-!$omp    total_delta_nedge_own, total_delta_nvert, total_delta_nvert_own) &
-!$omp  reduction(max : max_max_nlev)
-
+!$omp do
    do i=1,nrefine
 ! TEMP I should be able to pass these array sections, but ifort gets SIGSEGV
       one_elem_lid = elem_lid(:,i)
       one_edge_lid = edge_lid(:,i)
       one_vert_lid = vert_lid(:,i)
-      call bisect_triangle_pair(grid,refine_list(i),errcode,refine_control, &
-                                vert_child_lid=one_vert_lid, &
+      call h_refine_element(grid,refine_list(i),errcode,refedge,refine_control,&
+                   solver_control,vert_child_lid=one_vert_lid, &
                    edge_child_lid=one_edge_lid,elem_child_lid=one_elem_lid, &
                    delta_dof=delta_dof,delta_dof_own=delta_dof_own, &
                    delta_nelem=delta_nelem,delta_nelem_leaf=delta_nelem_leaf, &
                    delta_nelem_leaf_own=delta_nelem_leaf_own, &
                    delta_nedge=delta_nedge,delta_nedge_own=delta_nedge_own, &
                    delta_nvert=delta_nvert,delta_nvert_own=delta_nvert_own, &
-                   max_nlev=max_nlev,delay_errind=.true.)
+                   max_nlev=max_nlev,delay_errind=.true., &
+                   desired_level=desired_level,desired_degree=desired_degree, &
+                   elem_list=elem_list)
 
+      if (errcode == 0) any_changes = .true.
       total_delta_dof = total_delta_dof + delta_dof
       total_delta_dof_own = total_delta_dof_own + delta_dof_own
       total_delta_nelem = total_delta_nelem + delta_nelem
@@ -1633,34 +1830,59 @@ do lev=1,grid%nlev
       total_delta_nvert_own = total_delta_nvert_own + delta_nvert_own
       max_max_nlev = max(max_max_nlev,max_nlev)
 
+! TEMP3D OPENMP this will not work in parallel
+      if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+         if (refedge /= -1) then
+            nrefedge = nrefedge + 1
+            refinement_edge_list(nrefedge) = refedge
+         endif
+      endif
+
    end do
-!$omp end parallel do
+!$omp end do
 
 ! Do things that must be done OpenMP-sequentially after the parallel loop.
 
-   grid%dof = grid%dof + total_delta_dof
-   grid%dof_own = grid%dof_own + total_delta_dof_own
-   grid%nelem = grid%nelem + total_delta_nelem
-   grid%nelem_leaf = grid%nelem_leaf + total_delta_nelem_leaf
-   grid%nelem_leaf_own = grid%nelem_leaf_own + total_delta_nelem_leaf_own
-   grid%nedge = grid%nedge + total_delta_nedge
-   grid%nedge_own = grid%nedge_own + total_delta_nedge_own
-   grid%nvert = grid%nvert + total_delta_nvert
-   grid%nvert_own = grid%nvert_own + total_delta_nvert_own
-   grid%nlev = max(grid%nlev,max_max_nlev)
+!$omp single
 
    call after_h_refine(grid,refine_list,nrefine,vert_lid,edge_lid,elem_lid)
 
+!$omp end single
+
 end do
+
+!$omp end parallel
+
+! total_* are reduced at end parallel, now add them to grid
+
+grid%dof = grid%dof + total_delta_dof
+grid%dof_own = grid%dof_own + total_delta_dof_own
+grid%nelem = grid%nelem + total_delta_nelem
+grid%nelem_leaf = grid%nelem_leaf + total_delta_nelem_leaf
+grid%nelem_leaf_own = grid%nelem_leaf_own + total_delta_nelem_leaf_own
+grid%nedge = grid%nedge + total_delta_nedge
+grid%nedge_own = grid%nedge_own + total_delta_nedge_own
+grid%nvert = grid%nvert + total_delta_nvert
+grid%nvert_own = grid%nvert_own + total_delta_nvert_own
+grid%nlev = max(grid%nlev,max_max_nlev)
 
 ! Free memory.
 
-deallocate(onlist)
+deallocate(onlist,refine_list,vert_lid,edge_lid,elem_lid)
+
+! for tetrahedra, make sure there are no hanging nodes
+
+if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+   call remove_hanging_nodes(grid,refinement_edge_list,nrefedge, &
+                             refine_control,solver_control, &
+                             desired_level,desired_degree,elem_list)
+   deallocate(refinement_edge_list)
+endif
 
 end subroutine h_refine_grid
 
 !          ---------------
-subroutine enforce_overlap(grid,refine_control,procs)
+subroutine enforce_overlap(grid,refine_control,solver_control,procs)
 !          ---------------
 
 !----------------------------------------------------
@@ -1672,12 +1894,13 @@ subroutine enforce_overlap(grid,refine_control,procs)
 
 type(grid_type), intent(inout) :: grid
 type(refine_options), intent(in) :: refine_control
+type(solver_options), intent(in) :: solver_control
 type(proc_info), intent(in) :: procs
 
 !----------------------------------------------------
 ! Local variables:
 
-integer :: part_bound_elements(size(grid%element)), npartbound, ni, nr, i, j, &
+integer :: part_bound_elements(grid%biggest_elem), npartbound, ni, nr, i, j, &
            k, count, p, nproc, my_processor, lid, err, lev, elem, astat
 type(hash_key) :: gid, ancestor
 integer, allocatable :: isend(:), nrecv(:)
@@ -1725,7 +1948,7 @@ call list_elements(grid,part_bound_elements,npartbound,own=.true., &
 
 ! Create a message containing the GIDs and degrees of those elements.
 
-ni = npartbound*(4*KEY_SIZE+1)
+ni = npartbound*((VERTICES_PER_ELEMENT+1)*KEY_SIZE+1)
 allocate(isend(ni),nrecv(nproc),stat=astat)
 if (astat /= 0) then
    ierr = ALLOC_FAILED
@@ -1734,7 +1957,7 @@ if (astat /= 0) then
 endif
 count = 1
 do i=1,npartbound
-   do j=1,3
+   do j=1,VERTICES_PER_ELEMENT
       call hash_pack_key(grid%vertex(grid%element(part_bound_elements(i))%vertex(j))%gid,isend,count)
       count = count + KEY_SIZE
    end do
@@ -1757,13 +1980,13 @@ if (my_processor /= MASTER) then
 ! For each element in the received message ...
 
    count = 1
-   do j=1,sum(nrecv)/(4*KEY_SIZE+1)
+   do j=1,sum(nrecv)/((VERTICES_PER_ELEMENT+1)*KEY_SIZE+1)
 
 ! See if the element is on my partition boundary (is one of the vertices on
 ! the boundary).
 
       on_boundary = .false.
-      do k=1,3
+      do k=1,VERTICES_PER_ELEMENT
          gid = hash_unpack_key(irecv,count)
          count = count + KEY_SIZE
          lid = hash_decode_key(gid,grid%vert_hash)
@@ -1786,7 +2009,7 @@ if (my_processor /= MASTER) then
          ancestor = gid
          lid = hash_decode_key(gid,grid%elem_hash)
          do while (lid == HASH_NOT_FOUND)
-            ancestor = ancestor/2
+            ancestor = ancestor/MAX_CHILD
             lid = hash_decode_key(ancestor,grid%elem_hash)
          end do
 
@@ -1794,7 +2017,9 @@ if (my_processor /= MASTER) then
 
          if (.not. ancestor == gid) then
 
-            call create_element(grid,gid,refine_control,err)
+            call create_element(grid,gid,refine_control,solver_control,err)
+! TEMP120206 are there arrays I need to check for increasing size?
+!            It appears isboundaryvert should be checked
             if (err /= 0) then
                ierr = PHAML_INTERNAL_ERROR
                call fatal("enforce_overlap: create_element returned error", &
@@ -1828,11 +2053,11 @@ contains
 
 recursive subroutine enforce_p(pelem)
 !                    ---------
-integer :: pelem, child(2)
+integer :: pelem, child(MAX_CHILD)
 
 ! If elem is not a leaf, do the children.
 
-child = get_child_lid(grid%element(pelem)%gid,(/1,2/),grid%elem_hash)
+child = get_child_lid(grid%element(pelem)%gid,ALL_CHILDREN,grid%elem_hash)
 if (child(1) /= NO_CHILD) then
    call enforce_p(child(1))
    call enforce_p(child(2))
@@ -1861,9 +2086,9 @@ end subroutine enforce_p
 end subroutine enforce_overlap
 
 !          -----------------
-subroutine pred_load_balance(grid,procs,refine_control,lb,partition_method, &
-                             still_sequential,balance_what,new_level,new_p, &
-                             any_changes)
+subroutine pred_load_balance(grid,procs,refine_control,solver_control,lb, &
+                             partition_method,still_sequential,balance_what, &
+                             new_level,new_p,any_changes)
 !          -----------------
 
 !----------------------------------------------------
@@ -1876,6 +2101,7 @@ subroutine pred_load_balance(grid,procs,refine_control,lb,partition_method, &
 type(grid_type), intent(inout) :: grid
 type(proc_info) :: procs
 type(refine_options), intent(in) :: refine_control
+type(solver_options), intent(in) :: solver_control
 type(Zoltan_Struct), pointer :: lb
 integer, intent(in) :: partition_method
 logical, intent(in) :: still_sequential
@@ -1951,8 +2177,9 @@ if (repart) then
                       total_nelem_leaf=nentity,no_master=.true.)
    redist = (numexp/float(nentity) > .05)
    if (redist) then
-      call redistribute(grid,procs,refine_control,export_gid,export_proc)
-      call reconcile(grid,procs,refine_control,still_sequential)
+      call redistribute(grid,procs,refine_control,solver_control,export_gid, &
+                        export_proc)
+      call reconcile(grid,procs,refine_control,solver_control,still_sequential)
       any_changes = .true.
    endif
    if (associated(export_gid)) then
@@ -2007,8 +2234,6 @@ subroutine old_refine_adaptive(grid,procs,refine_control,solver_control,io_contr
 ! reftol are refined, and each element is refined at most once.
 ! If refterm is ONE_REF_HALF_ERRIND then elements whose error indicator is
 ! larger than maximum_error_indicator / inc_factor are refined once.
-! If refterm ends with SMOOTH then after the criteria is met, refinement
-! continues until the current error indicator bin is emptied.
 !----------------------------------------------------
 
 !----------------------------------------------------
@@ -2026,7 +2251,8 @@ logical, intent(in), optional :: no_time
 !----------------------------------------------------
 ! Local variables:
 
-integer :: elem, errcode, astat, nproc, my_processor, target, mate, child(2)
+integer :: elem, errcode, astat, nproc, my_processor, target, mate, &
+           child(MAX_CHILD), refedge
 real(my_real) :: global_max_errind
 integer, pointer :: numhref(:), numpref(:), new_p(:,:)
 ! If len=1 is changed, also change it for temp_reftype in more_elements
@@ -2036,6 +2262,14 @@ logical :: return_to_elist, complete_elist, one_elist, target_met
 
 !----------------------------------------------------
 ! Begin executable code
+
+! Not modified for 3D
+
+if (global_element_kind == TETRAHEDRAL_ELEMENT) then
+   ierr = PHAML_INTERNAL_ERROR
+   call fatal("old_refine_adaptive has not been written for tetrahedra")
+   stop
+endif
 
 ! MASTER doesn't participate
 
@@ -2063,7 +2297,8 @@ call set_target(target,grid,procs,refine_control,global_max_errind, &
 ! derefine the grid, if requested
 
 if (refine_control%derefine) then
-   call derefinement(grid,procs,refine_control,global_max_errind,target)
+   call derefinement(grid,procs,refine_control,solver_control, &
+                     global_max_errind,target)
 endif
 
 ! set the number of times to refine each element
@@ -2105,7 +2340,7 @@ call mark_reftype(grid,refine_control,global_max_errind,reftype,elist,new_p)
 
 ! set controls for the refine loop:
 ! return_to_elist, tells if children get put into an elist
-! complete_elist, tells if you must finish the whole elist (SMOOTH)
+! complete_elist, tells if you must finish the whole elist
 ! one_elist, tells if you quit after finishing the first elist
 
 call set_loop_control(refine_control,return_to_elist,complete_elist,one_elist)
@@ -2164,10 +2399,11 @@ do
 ! refine the element and determine the type of refinement of the new element(s)
 
    if (reftype(elem) == "h") then
-      call bisect_triangle_pair(grid,elem,errcode,refine_control,elist,reftype,&
-                                new_p,numhref,numpref,return_to_elist)
+      call h_refine_element(grid,elem,errcode,refedge,refine_control, &
+                            solver_control,elist,reftype,new_p,numhref, &
+                            numpref,return_to_elist)
       reftype(elem) = "n"
-      child = get_child_lid(grid%element(elem)%gid,(/1,2/),grid%elem_hash)
+      child = get_child_lid(grid%element(elem)%gid,ALL_CHILDREN,grid%elem_hash)
       call mark_reftype_one(child(1),grid,refine_control,1.0_my_real,reftype, &
                             .true.,new_p(:,child(1)))
       call mark_reftype_one(child(2),grid,refine_control,1.0_my_real,reftype, &
@@ -2179,7 +2415,8 @@ do
       endif
       if (mate /= BOUNDARY) then
          reftype(mate) = "n"
-         child = get_child_lid(grid%element(mate)%gid,(/1,2/),grid%elem_hash)
+         child = get_child_lid(grid%element(mate)%gid,ALL_CHILDREN, &
+                               grid%elem_hash)
          call mark_reftype_one(child(1),grid,refine_control,1.0_my_real, &
                                reftype,.true.,new_p(:,child(1)))
          call mark_reftype_one(child(2),grid,refine_control,1.0_my_real, &
@@ -2294,25 +2531,25 @@ endif
 
 select case (refine_control%refterm)
 
-case (DOUBLE_NVERT, DOUBLE_NVERT_SMOOTH)
+case (DOUBLE_NVERT)
 
    total = init_nvert*refine_control%inc_factor**loop
    if (total > refine_control%max_vert) total = refine_control%max_vert
    target = ceiling(total*my_fraction)
 
-case (DOUBLE_NELEM, DOUBLE_NELEM_SMOOTH)
+case (DOUBLE_NELEM)
 
    total = init_nelem*refine_control%inc_factor**loop
    if (total > refine_control%max_elem) total = refine_control%max_elem
    target = ceiling(total*my_fraction)
 
-case (DOUBLE_NEQ, DOUBLE_NEQ_SMOOTH)
+case (DOUBLE_NEQ)
 
    total = init_dof*refine_control%inc_factor**loop
    if (total > refine_control%max_dof) total = refine_control%max_dof
    target = ceiling(total*my_fraction)
 
-case (KEEP_NVERT, KEEP_NVERT_SMOOTH)
+case (KEEP_NVERT)
 
    if (refine_control%max_vert /= huge(0)) then
       total = refine_control%max_vert
@@ -2323,7 +2560,7 @@ case (KEEP_NVERT, KEEP_NVERT_SMOOTH)
    endif
    target = total*my_fraction
 
-case (KEEP_NELEM, KEEP_NELEM_SMOOTH)
+case (KEEP_NELEM)
 
    if (refine_control%max_elem /= huge(0)) then
       total = refine_control%max_elem
@@ -2334,7 +2571,7 @@ case (KEEP_NELEM, KEEP_NELEM_SMOOTH)
    endif
    target = total*my_fraction
 
-case (KEEP_NEQ, KEEP_NEQ_SMOOTH)
+case (KEEP_NEQ)
 
    if (refine_control%max_dof /= huge(0)) then
       total = refine_control%max_dof
@@ -2408,7 +2645,8 @@ endif
 end function my_weight_fraction
 
 !          ------------
-subroutine derefinement(grid,procs,refine_control,max_errind,target)
+subroutine derefinement(grid,procs,refine_control,solver_control,max_errind, &
+                        target)
 !          ------------
 
 !----------------------------------------------------
@@ -2421,6 +2659,7 @@ subroutine derefinement(grid,procs,refine_control,max_errind,target)
 type(grid_type), intent(inout) :: grid
 type (proc_info), intent(in) :: procs
 type(refine_options), intent(in) :: refine_control
+type(solver_options), intent(in) :: solver_control
 real(my_real), intent(in) :: max_errind
 integer, intent(in) :: target
 !----------------------------------------------------
@@ -2470,14 +2709,16 @@ do
 ! relatives
 
          if (grid%element(elem)%level /= 1) then
-            parent = hash_decode_key(grid%element(elem)%gid/2,grid%elem_hash)
-            siblings(1:2) = get_child_lid(grid%element(parent)%gid,(/1,2/), &
-                                          grid%elem_hash)
+            parent = hash_decode_key(grid%element(elem)%gid/MAX_CHILD, &
+                                     grid%elem_hash)
+            siblings(1:2) = get_child_lid(grid%element(parent)%gid, &
+                                          ALL_CHILDREN,grid%elem_hash)
             if (grid%element(parent)%mate == BOUNDARY) then
                siblings(3:4) = NO_CHILD
             else
                siblings(3:4) = get_child_lid( &
-                              grid%element(parent)%mate,(/1,2/),grid%elem_hash)
+                                 grid%element(parent)%mate,ALL_CHILDREN, &
+                                 grid%elem_hash)
             endif
          endif
 
@@ -2562,7 +2803,7 @@ do
 
 ! perform h coarsening
 
-            call unbisect_triangle_pair(grid,parent,errcode,refine_control)
+            call h_coarsen_element(grid,parent,errcode,refine_control)
             if (errcode == 0) then
                num_deref = num_deref + 1
                deref_list(num_deref) = parent
@@ -2615,11 +2856,11 @@ do
 ! see if enough derefinement has occured
 
    select case (refine_control%refterm)
-   case (DOUBLE_NVERT, KEEP_NVERT, DOUBLE_NVERT_SMOOTH, KEEP_NVERT_SMOOTH)
+   case (DOUBLE_NVERT, KEEP_NVERT)
       if (grid%nvert_own <= target) exit
-   case (DOUBLE_NELEM, KEEP_NELEM, DOUBLE_NELEM_SMOOTH, KEEP_NELEM_SMOOTH)
+   case (DOUBLE_NELEM, KEEP_NELEM)
       if (grid%nelem_leaf_own <= target) exit
-   case (DOUBLE_NEQ, DOUBLE_NEQ_SMOOTH, KEEP_NEQ, KEEP_NEQ_SMOOTH)
+   case (DOUBLE_NEQ, KEEP_NEQ)
       if (grid%dof_own <= target) exit
    case default
       exit
@@ -2670,7 +2911,7 @@ do p=1,nproc
       elem = hash_decode_key(hash_unpack_key(irecv,isub),grid%elem_hash)
       if (elem /= HASH_NOT_FOUND) then
          if (irecv(isub+KEY_SIZE) == -1) then
-            call unbisect_triangle_pair(grid,elem,errcode,refine_control)
+            call h_coarsen_element(grid,elem,errcode,refine_control)
             if (errcode /= 0 .and. errcode /= -2) then
                num_deref = num_deref + 1
                deref_list(num_deref) = elem
@@ -2721,7 +2962,7 @@ do p=1,nproc
    do i=1,nrecv(p)/(KEY_SIZE+1)
       if (irecv(isub+KEY_SIZE) == -my_processor) then
          call create_element(grid,2*hash_unpack_key(irecv,isub), &
-                             refine_control,errcode)
+                             refine_control,solver_control,errcode)
       elseif (irecv(isub+KEY_SIZE) > 0) then
          elem = hash_decode_key(hash_unpack_key(irecv,isub),grid%elem_hash)
          if (elem /= HASH_NOT_FOUND) then
@@ -2780,7 +3021,7 @@ pcoarsen_indicator = 0
 do j=1,grid%system_size
  do k=1,max(1,grid%num_eval)
    temp = 0
-   do i = ((deg-2)*(deg-3))/2 + 1, ((deg-1)*(deg-2))/2
+   do i = element_dof(deg-1)+1, element_dof(deg)
       temp = temp + grid%element(elem)%solution(i,j,k)**2
    end do
    do i=1,EDGES_PER_ELEMENT
@@ -2992,13 +3233,13 @@ do j=1,grid%nsoln
          temp = temp + solution(i,j)**2
       end do
 ! along edge between children(2) and children(4)
-      isub = 3+3*degree + ((degree-1)*(degree-2))/2
+      isub = 3+3*degree + element_dof(degree)
       do i=isub,isub+2*((degree-2)/2),2
          temp = temp + solution(i,j)**2
       end do
 ! along edge between children(3) and children(4)
       if (children(3) /= NO_CHILD) then
-         isub = 1 + 5*degree + (degree-1)*(degree-2)
+         isub = 1 + 5*degree + 2*element_dof(degree)
          do i=isub,isub+2*((degree-2)/2),2
             temp = temp + solution(i,j)**2
          end do
@@ -3014,7 +3255,7 @@ do j=1,grid%nsoln
             isub = isub + degree - 2*k - 1
          end do
 ! interior of children(2)
-         isub = 1 + 5*degree + ((degree-1)*(degree-2))/2
+         isub = 1 + 5*degree + element_dof(degree)
          do k=1,(degree-1)/2
             do i=1,degree-2*k
                temp = temp + solution(isub,j)**2
@@ -3024,7 +3265,7 @@ do j=1,grid%nsoln
          end do
          if (children(3) /= NO_CHILD) then
 ! interior of children(3)
-            isub = -1 + 7*degree + (degree-1)*(degree-2)
+            isub = -1 + 7*degree + 2*element_dof(degree)
             do k=1,(degree-1)/2
                do i=1,degree-2*k
                   temp = temp + solution(isub,j)**2
@@ -3033,7 +3274,7 @@ do j=1,grid%nsoln
                isub = isub + degree - 2*k - 1
             end do
 ! interior of children(4)
-            isub = -2 + 8*degree + 3*((degree-1)*(degree-2))/2
+            isub = -2 + 8*degree + 3*element_dof(degree)
             do k=1,(degree-1)/2
                do i=1,degree-2*k
                   temp = temp + solution(isub,j)**2
@@ -3085,7 +3326,7 @@ logical :: is_uniform
 !----------------------------------------------------
 ! Begin executable code
 
-allocate(errind(size(grid%element)),stat=astat)
+allocate(errind(grid%biggest_elem),stat=astat)
 if (astat /= 0) then
    ierr = ALLOC_FAILED
    call fatal("memory allocation failed in make_elist",procs=procs)
@@ -3201,7 +3442,7 @@ subroutine set_loop_control(refine_control,return_to_elist,complete_elist, &
 !----------------------------------------------------
 ! This routine sets the variables that control the refine loop:
 ! return_to_elist, tells if children get put into an elist
-! complete_elist, tells if you must finish the whole elist (SMOOTH)
+! complete_elist, tells if you must finish the whole elist
 ! one_elist, tells if you quit after finishing the first elist
 !----------------------------------------------------
 
@@ -3224,11 +3465,6 @@ case (H_ADAPTIVE, P_ADAPTIVE)
       return_to_elist = .true.
       complete_elist = .false.
       one_elist = .false.
-   case (DOUBLE_NVERT_SMOOTH, DOUBLE_NELEM_SMOOTH, DOUBLE_NEQ_SMOOTH, &
-         KEEP_NVERT_SMOOTH, KEEP_NELEM_SMOOTH, KEEP_NEQ_SMOOTH)
-      return_to_elist = .true.
-      complete_elist = .true.
-      one_elist = .false.
    case (ONE_REF, ONE_REF_HALF_ERRIND)
       return_to_elist = .false.
       complete_elist = .true.
@@ -3244,11 +3480,6 @@ case (HP_ADAPTIVE)
             KEEP_NELEM, KEEP_NEQ, KEEP_ERREST)
          return_to_elist = .true.
          complete_elist = .false.
-         one_elist = .false.
-      case (DOUBLE_NVERT_SMOOTH, DOUBLE_NELEM_SMOOTH, DOUBLE_NEQ_SMOOTH, &
-            KEEP_NVERT_SMOOTH, KEEP_NELEM_SMOOTH, KEEP_NEQ_SMOOTH)
-         return_to_elist = .true.
-         complete_elist = .true.
          one_elist = .false.
       case (ONE_REF, ONE_REF_HALF_ERRIND)
          return_to_elist = .false.
@@ -3301,11 +3532,11 @@ logical :: check_target
 check_target = .false.
 
 select case (refine_control%refterm)
-case (DOUBLE_NVERT, KEEP_NVERT, DOUBLE_NVERT_SMOOTH, KEEP_NVERT_SMOOTH)
+case (DOUBLE_NVERT, KEEP_NVERT)
    if (grid%nvert_own >= target) check_target = .true.
-case (DOUBLE_NELEM, KEEP_NELEM, DOUBLE_NELEM_SMOOTH, KEEP_NELEM_SMOOTH)
+case (DOUBLE_NELEM, KEEP_NELEM)
    if (grid%nelem_leaf_own >= target) check_target = .true.
-case (DOUBLE_NEQ, KEEP_NEQ, DOUBLE_NEQ_SMOOTH, KEEP_NEQ_SMOOTH)
+case (DOUBLE_NEQ, KEEP_NEQ)
    if (grid%dof_own >= target) check_target = .true.
 case (HALVE_ERREST, KEEP_ERREST)
    if (elist%current_list > target) check_target = .true.
@@ -3319,7 +3550,7 @@ end select
 end function check_target
 
 !          ---------
-subroutine reconcile(grid,procs,refine_control,sequent)
+subroutine reconcile(grid,procs,refine_control,solver_control,sequent)
 !          ---------
 
 !----------------------------------------------------
@@ -3332,20 +3563,21 @@ subroutine reconcile(grid,procs,refine_control,sequent)
 type(grid_type), intent(inout) :: grid
 type(proc_info), intent(in) :: procs
 type(refine_options), intent(in) :: refine_control
+type(solver_options), intent(in) :: solver_control
 logical, intent(in) :: sequent
 
 !----------------------------------------------------
 ! Local variables:
 
 integer :: lev, elem, count, part, i, j, elemlid, errcode, vertlid, &
-           astat, nproc, vert, my_master
+           astat, nproc, vert, my_master, refedge
 ! newcomm
 integer :: nsend
 integer, allocatable :: isend(:), nrecv(:)
 integer, pointer :: irecv(:)
 type(hash_key) :: gid
-logical, allocatable :: isboundary(:)
-logical :: doit, isboundary_periodic, boundary_elem(size(grid%element))
+logical, pointer :: isboundary(:), boundary_elem(:)
+logical :: doit, isboundary_periodic
 
 !----------------------------------------------------
 ! Begin executable code
@@ -3437,7 +3669,8 @@ outer: do part=1,nproc
       endif
       if (irecv(count+KEY_SIZE) == -1) then
          if (grid%element(elemlid)%isleaf) then
-            call bisect_triangle_pair(grid,elemlid,errcode,refine_control)
+            call h_refine_element(grid,elemlid,errcode,refedge,refine_control, &
+                                  solver_control)
             if (errcode /= 0) then
                call warning("refinement failed during reconciliation")
                exit outer
@@ -3485,32 +3718,27 @@ do lev=1,grid%nlev
 end do
 
 ! periodic boundary vertices should be isboundary if either the master or
-! slave is
+! any slave is
 
 do lev=1,grid%nlev
    elem = grid%head_level_elem(lev)
    do while (elem /= END_OF_LIST)
       do i=1,VERTICES_PER_ELEMENT
          vert = grid%element(elem)%vertex(i)
-         my_master = vert
+         if (.not. is_periodic_vert(vert,grid)) cycle
          isboundary_periodic = isboundary(vert)
-         do while (any(grid%vertex_type(my_master,:)==PERIODIC_SLAVE) .or. &
-                   any(grid%vertex_type(my_master,:)==PERIODIC_SLAVE_DIR) .or. &
-                   any(grid%vertex_type(my_master,:)==PERIODIC_SLAVE_NAT) .or. &
-                   any(grid%vertex_type(my_master,:)==PERIODIC_SLAVE_MIX))
-            my_master = grid%vertex(my_master)%next
+         my_master = grid%vertex(vert)%next
+         do while (my_master /= vert)
             isboundary_periodic = isboundary_periodic .or. isboundary(my_master)
+            my_master = grid%vertex(my_master)%next
          end do
-         if (isboundary_periodic .and. my_master /= vert) then
-            my_master = vert
-            do while (any(grid%vertex_type(my_master,:)==PERIODIC_SLAVE) .or. &
-                   any(grid%vertex_type(my_master,:)==PERIODIC_SLAVE_DIR) .or. &
-                   any(grid%vertex_type(my_master,:)==PERIODIC_SLAVE_NAT) .or. &
-                   any(grid%vertex_type(my_master,:)==PERIODIC_SLAVE_MIX))
+         if (isboundary_periodic) then
+            isboundary(vert) = .true.
+            my_master = grid%vertex(vert)%next
+            do while (my_master /= vert)
                isboundary(my_master) = .true.
                my_master = grid%vertex(my_master)%next
             end do
-               isboundary(my_master) = .true.
          endif
       end do
       elem = grid%element(elem)%next
@@ -3584,6 +3812,12 @@ deallocate(isend,stat=astat)
 ! it doesn't exist, and p refine if the element or edge degrees are too small.
 ! Also, keep track of which ones are on the partition boundary for later.
 
+allocate(boundary_elem(size(grid%element)),stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("allocation failed in reconcile",procs=procs)
+   return
+endif
 boundary_elem = .false.
 count = 1
 do part=1,nproc
@@ -3602,11 +3836,17 @@ do part=1,nproc
          gid = hash_unpack_key(irecv,count)
          elemlid = hash_decode_key(gid,grid%elem_hash)
          if (elemlid == HASH_NOT_FOUND) then
-            call create_element(grid,gid,refine_control,errcode)
+            call create_element(grid,gid,refine_control,solver_control,errcode)
             if (errcode /= 0) then
                call warning("refinement for overlap failed")
                count = count + 4*(KEY_SIZE+1)
                cycle
+            endif
+            if (size(isboundary) /= size(grid%vertex)) then
+               call realloc_isboundary(isboundary,size(grid%vertex))
+            endif
+            if (size(boundary_elem) /= size(grid%element)) then
+               call realloc_boundary_elem(boundary_elem,size(grid%element))
             endif
             elemlid = hash_decode_key(gid,grid%elem_hash)
          endif
@@ -3655,6 +3895,7 @@ if (refine_control%reftype == P_ADAPTIVE .or. &
    end do
 endif
 
+deallocate(boundary_elem)
 grid%errind_up2date = .false.
 
 ! stop timing the reconciliation process
@@ -3662,6 +3903,74 @@ grid%errind_up2date = .false.
 call stop_watch((/precon,trecon/))
 
 end subroutine reconcile
+
+!          ------------------
+subroutine realloc_isboundary(isboundary,newsize)
+!          ------------------
+
+!----------------------------------------------------
+! This routine reallocates isboundary to newsize
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+
+logical, pointer :: isboundary(:)
+integer, intent(in) :: newsize
+!----------------------------------------------------
+! Local variables:
+
+logical, pointer :: newvar(:)
+integer :: astat
+!----------------------------------------------------
+! Begin executable code
+
+allocate(newvar(newsize),stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("allocation failed in realloc_isboundary")
+   stop
+endif
+newvar(1:size(isboundary)) = isboundary
+newvar(size(isboundary)+1:newsize) = .false.
+deallocate(isboundary)
+isboundary => newvar
+
+end subroutine realloc_isboundary
+
+!          ------------------
+subroutine realloc_boundary_elem(boundary_elem,newsize)
+!          ------------------
+
+!----------------------------------------------------
+! This routine reallocates boundary_elem to newsize
+!----------------------------------------------------
+
+!----------------------------------------------------
+! Dummy arguments
+
+logical, pointer :: boundary_elem(:)
+integer, intent(in) :: newsize
+!----------------------------------------------------
+! Local variables:
+
+logical, pointer :: newvar(:)
+integer :: astat
+!----------------------------------------------------
+! Begin executable code
+
+allocate(newvar(newsize),stat=astat)
+if (astat /= 0) then
+   ierr = ALLOC_FAILED
+   call fatal("allocation failed in realloc_boundary_elem")
+   stop
+endif
+newvar(1:size(boundary_elem)) = boundary_elem
+newvar(size(boundary_elem)+1:newsize) = .false.
+deallocate(boundary_elem)
+boundary_elem => newvar
+
+end subroutine realloc_boundary_elem
 
 !          ------------------
 subroutine adjust_edge_degree(grid,edge,newdeg)

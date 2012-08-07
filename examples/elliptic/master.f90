@@ -77,6 +77,7 @@ prob_param = -20.0_my_real
 ! create the pde object
 
 call phaml_create(pde1,nproc, &
+!                  spawn_form=DEBUG_SLAVE,debug_command="gdb", &
                   draw_grid_who = MASTER)
 
 ! Make sure the slaves have the problem parameter

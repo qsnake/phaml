@@ -22,4 +22,4 @@ do
 done
 
 source ../mkinc/mktail.inc
-echo "	rm -f save*" 1>>$f
+echo "	rm -f save* mshhole* polyhole*" 1>>$f

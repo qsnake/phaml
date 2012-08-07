@@ -1,0 +1,185 @@
+
+------------------------------------------------------
+          PHAML Version 1.11.0 WARNING
+parallel not yet supported in 3D; setting nproc to 1
+------------------------------------------------------
+
+---------------------------------------------------------
+           PHAML   Version 1.11.0
+
+Output from the master process
+  PDE id is     0
+  Number of slave processors is     1
+  Number of OpenMP threads is       1
+
+Subroutine phaml_solve_pde parameters:
+  max_elem           infinity
+  max_vert                  500
+  max_eq             infinity
+  max_lev            infinity
+  stop_on_maxlev     false
+  max_deg                    22
+  stop_on_maxdeg     false
+  max_refsolveloop   infinity
+  task               BALANCE_REFINE_SOLVE
+  solve_init         true
+  system_size                 1
+  pde_has_first_order_terms  false
+  pde_has_cross_derivative   false
+  laplacian_operator         true
+  isosceles_right_triangles  false
+  print_grid_when    PHASES
+  print_grid_who     MASTER
+  print_linsys_when  NEVER
+  print_solver_when  NEVER
+  print_error_when   PHASES
+  print_error_who    MASTER
+  print_error_what   ENERGY_LINF_L2_ERR
+  print_errest_what  NEVER
+  print_time_when    NEVER
+  pause_after_draw   false
+  pause_after_phases false
+  pause_at_start     false
+  pause_at_end       false
+  degree             existing
+  sequential_vert           100
+  inc_factor          2.0000000000E+00
+  error_estimator    HIERARCHICAL_COEFFICIENT
+  errtype            ABSOLUTE_ERROR
+  reftype            H_ADAPTIVE
+  edge_rule          MINIMUM_RULE
+  refterm            DOUBLE_NEQ
+  derefine           false
+  partition_method   RTK
+  ignore_quad_err    true
+  solver             PETSC_RICHARDSON_SOLVER
+  preconditioner     PETSC_JACOBI_PRECONDITION
+  petsc_matrix_free  false
+  petsc_rtol           1.0000000000E-10
+  petsc_atol         default
+  petsc_dtol         default
+  petsc_maxits       default
+  petsc_richardson_damping_factor   default
+---------------------------------------------------------
+
+Total Grid:
+   number of vertices      =          14
+   number of leaf elements =          24
+   number of levels        =           1
+   degrees of freedom      =          14
+   min and max degree      =           1          1
+
+Norms of error:
+   energy norm of error       3.6353755854E+00
+   Linf norm of error         1.3325242996E+00
+   L2 norm of error           1.8549360427E+00
+
+Total Grid:
+   number of vertices      =          36
+   number of leaf elements =          85
+   number of levels        =           4
+   degrees of freedom      =          36
+   min and max degree      =           1          1
+
+Norms of error:
+   energy norm of error       4.3200614377E+00
+      reduced by              1.1883397839E+00
+   Linf norm of error         1.2159746038E+00
+      reduced by              9.1253465631E-01
+   L2 norm of error           1.4664930416E+00
+      reduced by              7.9058954478E-01
+
+Total Grid:
+   number of vertices      =          69
+   number of leaf elements =         227
+   number of levels        =           6
+   degrees of freedom      =          69
+   min and max degree      =           1          1
+
+Norms of error:
+   energy norm of error       4.8501324003E+00
+      reduced by              1.1226998667E+00
+   Linf norm of error         9.1862329188E-01
+      reduced by              7.5546256396E-01
+   L2 norm of error           8.2328657632E-01
+      reduced by              5.6139821533E-01
+
+Total Grid:
+   number of vertices      =         139
+   number of leaf elements =         465
+   number of levels        =           7
+   degrees of freedom      =         139
+   min and max degree      =           1          1
+
+Norms of error:
+   energy norm of error       4.2325914453E+00
+      reduced by              8.7267544388E-01
+   Linf norm of error         7.1880025730E-01
+      reduced by              7.8247554101E-01
+   L2 norm of error           5.2987690262E-01
+      reduced by              6.4361173601E-01
+
+Total Grid:
+   number of vertices      =         247
+   number of leaf elements =         973
+   number of levels        =           7
+   degrees of freedom      =         247
+   min and max degree      =           1          1
+
+Norms of error:
+   energy norm of error       4.0851458848E+00
+      reduced by              9.6516423509E-01
+   Linf norm of error         4.9218589961E-01
+      reduced by              6.8473250338E-01
+   L2 norm of error           3.6356319014E-01
+      reduced by              6.8612764275E-01
+
+Total Grid:
+   number of vertices      =         463
+   number of leaf elements =        1880
+   number of levels        =          10
+   degrees of freedom      =         463
+   min and max degree      =           1          1
+
+Norms of error:
+   energy norm of error       3.4380771019E+00
+      reduced by              8.4160448583E-01
+   Linf norm of error         4.0558102230E-01
+      reduced by              8.2404031205E-01
+   L2 norm of error           2.3697204978E-01
+      reduced by              6.5180429758E-01
+
+Total Grid:
+   number of vertices      =         932
+   number of leaf elements =        4065
+   number of levels        =          10
+   degrees of freedom      =         932
+   min and max degree      =           1          1
+
+Norms of error:
+   energy norm of error       2.5170517260E+00
+      reduced by              7.3211031964E-01
+   Linf norm of error         2.1736223850E-01
+      reduced by              5.3592803052E-01
+   L2 norm of error           1.4415696864E-01
+      reduced by              6.0832899397E-01
+
+Total Grid:
+   number of vertices      =         932
+   number of leaf elements =        4065
+   number of levels        =          10
+   degrees of freedom      =         932
+   min and max degree      =           1          1
+
+Norms of error:
+   energy norm of error       2.5170517260E+00
+   Linf norm of error         2.1736223850E-01
+   L2 norm of error           1.4415696864E-01
+
+---------------------------------------------------------
+phaml_solve_pde complete
+
+number of loops through phases =           6
+termination condition:
+  maximum vertices achieved
+---------------------------------------------------------
